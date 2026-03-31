@@ -1,53 +1,533 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
+import "@/App.css";
 
+// API Configuration
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-const Home = () => {
-  const helloWorldApi = async () => {
+// Configure axios defaults
+axios.defaults.withCredentials = true;
+
+// Auth Context
+const AuthContext = createContext(null);
+
+export const useAuth = () => useContext(AuthContext);
+
+// Format API Error
+const formatApiErrorDetail = (detail) => {
+  if (detail == null) return "Algo salió mal. Por favor, inténtalo de nuevo.";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail))
+    return detail.map((e) => (e && typeof e.msg === "string" ? e.msg : JSON.stringify(e))).filter(Boolean).join(" ");
+  if (detail && typeof detail.msg === "string") return detail.msg;
+  return String(detail);
+};
+
+// Auth Provider
+const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
     try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
+      const { data } = await axios.get(`${API}/auth/me`);
+      setUser(data);
+    } catch {
+      setUser(false);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
+  const login = async (email, password) => {
+    const { data } = await axios.post(`${API}/auth/login`, { email, password });
+    setUser(data);
+    return data;
+  };
+
+  const logout = async () => {
+    await axios.post(`${API}/auth/logout`);
+    setUser(false);
+  };
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
+    <AuthContext.Provider value={{ user, loading, login, logout, checkAuth }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// Protected Route
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-800"></div>
+      </div>
+    );
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+};
+
+// Login Page
+const LoginPage = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const { login, user } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) navigate("/");
+  }, [user, navigate]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
+    try {
+      await login(email, password);
+      navigate("/");
+    } catch (err) {
+      setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex">
+      {/* Left side - Image */}
+      <div 
+        className="hidden lg:flex lg:w-1/2 bg-cover bg-center relative"
+        style={{ backgroundImage: "url('https://static.prod-images.emergentagent.com/jobs/234efbab-6f82-4a1d-a46a-8abdc8d709c6/images/72918666a3aff7419cc647ca9dbd829fc66c63a17a0ae330882aae3b0e9e0827.png')" }}
+      >
+        <div className="absolute inset-0 bg-slate-900/60"></div>
+        <div className="relative z-10 flex flex-col justify-end p-12 text-white">
+          <h1 className="font-cabinet text-4xl font-bold mb-4">Panel de Gestión de Convocatorias</h1>
+          <p className="font-ibm text-lg text-slate-200">Sistema integral para la gestión de temporadas, eventos y comunicaciones musicales.</p>
+        </div>
+      </div>
+      
+      {/* Right side - Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
+        <div className="w-full max-w-md">
+          <div className="mb-8">
+            <h2 className="font-cabinet text-3xl font-bold text-slate-900 mb-2">Iniciar sesión</h2>
+            <p className="font-ibm text-slate-600">Introduce tus credenciales para acceder al panel</p>
+          </div>
+          
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-md" data-testid="login-error">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-transparent font-ibm"
+                placeholder="admin@convocatorias.com"
+                required
+                data-testid="login-email"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Contraseña</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-transparent font-ibm"
+                placeholder="••••••••"
+                required
+                data-testid="login-password"
+              />
+            </div>
+            
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3 px-4 bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors font-ibm font-medium disabled:opacity-50"
+              data-testid="login-submit"
+            >
+              {isLoading ? "Iniciando sesión..." : "Iniciar sesión"}
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   );
 };
 
+// Sidebar Navigation
+const Sidebar = ({ isCollapsed, onToggle }) => {
+  const { logout, user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [expandedSections, setExpandedSections] = useState({});
+
+  const navItems = [
+    { 
+      id: "dashboard", 
+      label: "Dashboard", 
+      icon: "LayoutDashboard", 
+      path: "/" 
+    },
+    { 
+      id: "configuracion", 
+      label: "Configuración de temporada", 
+      icon: "Settings",
+      path: "/configuracion",
+      children: [
+        { id: "eventos", label: "Eventos", path: "/configuracion/eventos" },
+        { id: "base-datos", label: "Base de datos", path: "/configuracion/base-datos" },
+        { id: "plantillas", label: "Plantillas de comunicación", path: "/configuracion/plantillas" }
+      ]
+    },
+    { 
+      id: "seguimiento", 
+      label: "Seguimiento de convocatorias", 
+      icon: "Users",
+      path: "/seguimiento"
+    },
+    { 
+      id: "confirmacion", 
+      label: "Confirmación de plantillas", 
+      icon: "CheckSquare",
+      path: "/confirmacion"
+    },
+    { 
+      id: "asistencia", 
+      label: "Asistencia y pagos", 
+      icon: "CreditCard",
+      path: "/asistencia"
+    },
+    { 
+      id: "informes", 
+      label: "Informes", 
+      icon: "BarChart3",
+      path: "/informes"
+    }
+  ];
+
+  const toggleSection = (id) => {
+    setExpandedSections(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const isActive = (path) => location.pathname === path;
+  const isParentActive = (item) => item.children?.some(child => location.pathname.startsWith(child.path));
+
+  useEffect(() => {
+    // Auto-expand section when navigating to a child
+    navItems.forEach(item => {
+      if (item.children && item.children.some(child => location.pathname.startsWith(child.path))) {
+        setExpandedSections(prev => ({ ...prev, [item.id]: true }));
+      }
+    });
+  }, [location.pathname]);
+
+  const getIcon = (iconName) => {
+    const icons = {
+      LayoutDashboard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>,
+      Settings: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>,
+      Users: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+      CheckSquare: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>,
+      CreditCard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
+      BarChart3: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>,
+      ChevronRight: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>,
+      ChevronDown: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>,
+      LogOut: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>,
+      Menu: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    };
+    return icons[iconName] || null;
+  };
+
+  return (
+    <aside className={`bg-slate-900 text-slate-200 flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'}`}>
+      {/* Header */}
+      <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+        {!isCollapsed && <h1 className="font-cabinet font-bold text-lg text-white">Convocatorias</h1>}
+        <button 
+          onClick={onToggle}
+          className="p-2 hover:bg-slate-800 rounded-md transition-colors"
+          data-testid="sidebar-toggle"
+        >
+          {getIcon("Menu")}
+        </button>
+      </div>
+      
+      {/* Navigation */}
+      <nav className="flex-1 py-4 overflow-y-auto" data-testid="sidebar-nav">
+        {navItems.map(item => (
+          <div key={item.id}>
+            <button
+              onClick={() => {
+                if (item.children) {
+                  toggleSection(item.id);
+                } else {
+                  navigate(item.path);
+                }
+              }}
+              className={`w-full flex items-center px-4 py-3 text-left transition-colors ${
+                isActive(item.path) || isParentActive(item) 
+                  ? 'bg-slate-800 text-white' 
+                  : 'hover:bg-slate-800/50'
+              }`}
+              data-testid={`sidebar-nav-${item.id}`}
+            >
+              <span className="flex-shrink-0">{getIcon(item.icon)}</span>
+              {!isCollapsed && (
+                <>
+                  <span className="ml-3 font-ibm text-sm flex-1">{item.label}</span>
+                  {item.children && (
+                    <span className="ml-auto">
+                      {expandedSections[item.id] ? getIcon("ChevronDown") : getIcon("ChevronRight")}
+                    </span>
+                  )}
+                </>
+              )}
+            </button>
+            
+            {/* Children */}
+            {item.children && expandedSections[item.id] && !isCollapsed && (
+              <div className="bg-slate-950/50">
+                {item.children.map(child => (
+                  <button
+                    key={child.id}
+                    onClick={() => navigate(child.path)}
+                    className={`w-full flex items-center pl-12 pr-4 py-2 text-left text-sm transition-colors ${
+                      isActive(child.path) 
+                        ? 'bg-slate-800 text-white' 
+                        : 'hover:bg-slate-800/50 text-slate-400'
+                    }`}
+                    data-testid={`sidebar-nav-${child.id}`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-current mr-3"></span>
+                    {child.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </nav>
+      
+      {/* User & Logout */}
+      <div className="p-4 border-t border-slate-700">
+        {!isCollapsed && user && (
+          <div className="mb-3 px-2">
+            <p className="text-xs text-slate-400">Conectado como</p>
+            <p className="text-sm font-medium text-white truncate">{user.name}</p>
+          </div>
+        )}
+        <button
+          onClick={logout}
+          className="w-full flex items-center px-2 py-2 text-sm hover:bg-slate-800 rounded-md transition-colors text-slate-400 hover:text-white"
+          data-testid="logout-btn"
+        >
+          {getIcon("LogOut")}
+          {!isCollapsed && <span className="ml-3">Cerrar sesión</span>}
+        </button>
+      </div>
+    </aside>
+  );
+};
+
+// Layout
+const Layout = ({ children }) => {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  return (
+    <div className="min-h-screen flex bg-slate-100">
+      <Sidebar isCollapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      <main className="flex-1 overflow-auto">
+        {children}
+      </main>
+    </div>
+  );
+};
+
+// Dashboard Page
+const DashboardPage = () => {
+  const [stats, setStats] = useState({ events: 0, contacts: 0, seasons: 0 });
+  const [recentEvents, setRecentEvents] = useState([]);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [eventsRes, contactsRes, seasonsRes] = await Promise.all([
+        axios.get(`${API}/events`),
+        axios.get(`${API}/contacts`),
+        axios.get(`${API}/seasons`)
+      ]);
+      setStats({
+        events: eventsRes.data.length,
+        contacts: contactsRes.data.length,
+        seasons: seasonsRes.data.length
+      });
+      setRecentEvents(eventsRes.data.slice(0, 5));
+    } catch (err) {
+      console.error("Error loading dashboard data:", err);
+    }
+  };
+
+  return (
+    <div className="p-6" data-testid="dashboard-page">
+      <header className="mb-8">
+        <h1 className="font-cabinet text-3xl font-bold text-slate-900">Dashboard</h1>
+        <p className="font-ibm text-slate-600 mt-1">Visión general de la temporada actual</p>
+      </header>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-lg border border-slate-200" data-testid="stat-events">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-600">Eventos</p>
+              <p className="text-3xl font-bold text-slate-900 font-mono">{stats.events}</p>
+            </div>
+            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg border border-slate-200" data-testid="stat-contacts">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-600">Contactos</p>
+              <p className="text-3xl font-bold text-slate-900 font-mono">{stats.contacts}</p>
+            </div>
+            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg border border-slate-200" data-testid="stat-seasons">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-600">Temporadas</p>
+              <p className="text-3xl font-bold text-slate-900 font-mono">{stats.seasons}</p>
+            </div>
+            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Events */}
+      <div className="bg-white rounded-lg border border-slate-200">
+        <div className="p-4 border-b border-slate-200">
+          <h2 className="font-cabinet text-lg font-semibold text-slate-900">Próximos eventos</h2>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {recentEvents.length === 0 ? (
+            <p className="p-4 text-slate-500 text-sm">No hay eventos programados</p>
+          ) : (
+            recentEvents.map(event => (
+              <div key={event.id} className="p-4 hover:bg-slate-50 transition-colors" data-testid={`event-${event.id}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-slate-900">{event.name}</h3>
+                    <p className="text-sm text-slate-500">{event.date} a las {event.time}</p>
+                  </div>
+                  <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-medium rounded-full">
+                    {event.rehearsals?.length || 0} ensayos
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Placeholder pages
+const PlaceholderPage = ({ title, description }) => (
+  <div className="p-6">
+    <header className="mb-8">
+      <h1 className="font-cabinet text-3xl font-bold text-slate-900">{title}</h1>
+      <p className="font-ibm text-slate-600 mt-1">{description}</p>
+    </header>
+    <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
+      <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+        </svg>
+      </div>
+      <p className="text-slate-500">Esta sección estará disponible próximamente</p>
+    </div>
+  </div>
+);
+
+// Import subpages
+import ConfiguracionEventos from "./pages/ConfiguracionEventos";
+import ConfiguracionBaseDatos from "./pages/ConfiguracionBaseDatos";
+import ConfiguracionPlantillas from "./pages/ConfiguracionPlantillas";
+import SeguimientoConvocatorias from "./pages/SeguimientoConvocatorias";
+
 function App() {
   return (
-    <div className="App">
+    <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Routes>
+                    <Route path="/" element={<DashboardPage />} />
+                    <Route path="/configuracion" element={<Navigate to="/configuracion/eventos" replace />} />
+                    <Route path="/configuracion/eventos" element={<ConfiguracionEventos />} />
+                    <Route path="/configuracion/base-datos" element={<ConfiguracionBaseDatos />} />
+                    <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
+                    <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
+                    <Route path="/confirmacion" element={<PlaceholderPage title="Confirmación de plantillas" description="Gestiona las confirmaciones de los músicos" />} />
+                    <Route path="/asistencia" element={<PlaceholderPage title="Asistencia y pagos" description="Control de asistencia y gestión de pagos" />} />
+                    <Route path="/informes" element={<PlaceholderPage title="Informes" description="Generación de informes y estadísticas" />} />
+                  </Routes>
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </BrowserRouter>
-    </div>
+    </AuthProvider>
   );
 }
 
