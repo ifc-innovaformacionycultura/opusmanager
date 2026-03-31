@@ -1,0 +1,140 @@
+{
+  "theme": "light",
+  "archetype": "4",
+  "archetype_name": "Swiss & High-Contrast",
+  "emotional_tone": "Professional, authoritative, high-density, organized, clear.",
+  "typography": {
+    "headings": {
+      "font_family": "Cabinet Grotesk, sans-serif",
+      "weights": ["500", "700"],
+      "usage": "Page titles, widget titles, section headers. Gives an authoritative, structured feel. Avoid default SaaS look.",
+      "letter_spacing": "tracking-tight",
+      "max_size": "text-4xl"
+    },
+    "body": {
+      "font_family": "IBM Plex Sans, sans-serif",
+      "weights": ["400", "500", "600"],
+      "usage": "Data grids, dense tables, forms, sidebar navigation. Extremely legible for dense numerical and text data."
+    },
+    "mono": {
+      "font_family": "IBM Plex Mono, monospace",
+      "usage": "Metrics, numerical data, availability percentages in tables."
+    }
+  },
+  "color_palette": {
+    "background": {
+      "primary": "#FFFFFF",
+      "secondary": "#F9FAFB",
+      "tertiary": "#F3F4F6",
+      "sidebar": "#0F172A"
+    },
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#4B5563",
+      "tertiary": "#9CA3AF",
+      "inverse": "#FFFFFF",
+      "sidebar": "#E2E8F0",
+      "sidebar_active": "#FFFFFF"
+    },
+    "accent": {
+      "primary": "#1E293B",
+      "hover": "#0F172A",
+      "ring": "#94A3B8"
+    },
+    "borders": {
+      "default": "#E5E7EB",
+      "focus": "#94A3B8",
+      "sidebar": "#1E293B"
+    },
+    "status_availability": {
+      "critical": {
+        "range": "0-30%",
+        "bg": "bg-red-50",
+        "text": "text-red-700",
+        "border": "border-red-200"
+      },
+      "warning": {
+        "range": "31-60%",
+        "bg": "bg-orange-50",
+        "text": "text-orange-700",
+        "border": "border-orange-200"
+      },
+      "moderate": {
+        "range": "61-80%",
+        "bg": "bg-yellow-50",
+        "text": "text-yellow-700",
+        "border": "border-yellow-200"
+      },
+      "optimal": {
+        "range": "81-100%",
+        "bg": "bg-green-50",
+        "text": "text-green-700",
+        "border": "border-green-200"
+      }
+    }
+  },
+  "layout_and_spacing": {
+    "grid_system": "Control Room Grid",
+    "sidebar": "Fixed left, hierarchical tree navigation, collapsible, width w-64, dark theme to contrast with light data area.",
+    "main_content": "Full height, responsive grid, dense spacing for data (p-4 to p-6 containers).",
+    "surface_strategy": "Grid Borders (Technical Look). Expose the skeleton. Tables and cards use sharp 1px borders (border-border), no floating shadows, flat and structured.",
+    "tables": "High density. Sticky headers, sticky first column. Use small padding (px-3 py-2 or px-2 py-1) and text-sm for max data visibility."
+  },
+  "components_and_interactions": {
+    "data_grid": {
+      "type": "Custom HTML/Tailwind high-density table.",
+      "features": [
+        "Sticky header row",
+        "Sticky left columns (Musician Name, Instrument)",
+        "Expandable rows for sub-events",
+        "Multi-select checkboxes",
+        "Colored badges for availability metrics",
+        "Hover row highlight (bg-slate-50)"
+      ]
+    },
+    "sidebar": {
+      "features": [
+        "Multi-level accordion structure (Tree view)",
+        "Expand/collapse icons (chevron-right, chevron-down)",
+        "Active state styling (bg-slate-800 text-white)",
+        "Indent sub-items (pl-8, pl-12)"
+      ]
+    },
+    "season_configuration": {
+      "features": [
+        "Accordions for 50 events",
+        "Complex tables mapping instrumentation (Cuerda, Viento, Percusión, Coro, Teclados)",
+        "Email template editor blocks"
+      ]
+    },
+    "buttons": "Square or rounded-md. Solid dark colors for primary actions, outline for secondary.",
+    "inputs": "Shadcn based. Sharp borders, clear focus rings."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "login_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/234efbab-6f82-4a1d-a46a-8abdc8d709c6/images/72918666a3aff7419cc647ca9dbd829fc66c63a17a0ae330882aae3b0e9e0827.png",
+        "description": "Elegant abstract concert hall interior, used as the hero background for the login split-screen."
+      },
+      {
+        "category": "login_background_alternative",
+        "url": "https://static.prod-images.emergentagent.com/jobs/234efbab-6f82-4a1d-a46a-8abdc8d709c6/images/620185e12fc814d9386f9943bc294bed8cf1d7a845e26034ff8fac2552714583.png",
+        "description": "Macro shot of a glowing cello string for luxury instrument feel."
+      }
+    ],
+    "icons": "lucide-react"
+  },
+  "accessibility_and_testing": {
+    "contrast": "Ensure all table text meets 4.5:1 ratio. Badges must use dark text (700/800) on light bg (50/100) for legibility.",
+    "testing": "All interactive elements, buttons, inputs, table rows, and sidebar links MUST include data-testid attributes (e.g., data-testid='sidebar-nav-season-config')."
+  },
+  "instructions_to_main_agent": [
+    "Build a split-screen Login page using the provided login_background image on one side, and a clean login form on the other.",
+    "Create a persistent Layout with a hierarchical Dark Sidebar (w-64) and a Light Main Content area.",
+    "In the Sidebar, implement a tree navigation with categories: Dashboard, Configuración de temporada, Seguimiento de convocatorias, Confirmación de plantillas, Asistencia y pagos, Informes.",
+    "For the 'Configuración de temporada' page, use a series of Shadcn Accordions containing tables to define instrumentation needs (Cuerdas, Vientos, etc.).",
+    "For the 'Seguimiento de convocatorias' page, build a highly dense DataGrid. Ensure it scrolls horizontally if needed, with a sticky left column for the musician's name. Apply the exact color-coding rules to availability percentages (0-30% Red, 31-60% Orange, 61-80% Yellow, 81-100% Green). Add a right-side panel (drawer/sidebar) for sending communications.",
+    "Inject the 'Cabinet Grotesk' font for Headings and 'IBM Plex Sans' for the body text in the global CSS."
+  ]
+}
