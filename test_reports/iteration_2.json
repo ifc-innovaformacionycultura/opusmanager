@@ -1,0 +1,60 @@
+{
+  "summary": "Completed frontend testing of 3 new subpages in Convocatorias Management Panel. Login, navigation, and core functionality working correctly.",
+  
+  "backend_issues": {},
+  
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "PlantillasDefinitivas - Hierarchical Structure",
+        "issue": "Instrument sections (Cuerda, Viento Madera, etc.) not expanding to show contact tables with attendance and cache fields",
+        "selector": "button:has-text('Cuerda'), button:has-text('Viento')",
+        "fix_priority": "MEDIUM",
+        "impact": "Users cannot access detailed contact management within sections"
+      },
+      {
+        "component": "AsistenciaPagos - Economic Block",
+        "issue": "Economic block fields (production, transport, others) not fully visible when sections are collapsed",
+        "selector": ".bg-blue-50 input fields",
+        "fix_priority": "MEDIUM",
+        "impact": "Economic data entry may be limited"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "component": "Hierarchical Navigation",
+        "issue": "Events > Sections > Contacts structure partially working - events expand but sections may not show contact details",
+        "affected_selectors": ["[data-testid^='event-accordion-']", "button:has-text('Cuerda')"],
+        "affected_screen": ["Plantillas Definitivas", "Asistencia y Pagos"]
+      }
+    ]
+  },
+  
+  "passed_tests": [
+    "Login functionality with admin@convocatorias.com / Admin123!",
+    "Sidebar shows new sections: Plantillas definitivas, Asistencia y pagos with subnivels",
+    "Navigation to all 3 new pages working correctly",
+    "Análisis Económico - global season summary displaying",
+    "Análisis Económico - charts rendering (6 chart elements found)",
+    "Análisis Económico - Excel and XML export buttons functional",
+    "Event filter dropdown working in analytics",
+    "Section breakdown table with 3 sections",
+    "Contact detail table with IBAN information (6 contacts)",
+    "Previous pages (Dashboard, Configuration, Seguimiento) still accessible",
+    "Communications panel in Plantillas Definitivas opens correctly",
+    "Economic totals calculation and display working",
+    "Google Drive folder input field present"
+  ],
+  
+  "test_report_links": [],
+  
+  "action_item_for_main_agent": "Fix hierarchical structure expansion in Plantillas Definitivas - instrument sections should expand to show contact tables with attendance percentage inputs, cache euro inputs, and atril assignment fields. Ensure economic block visual differentiation is fully functional in Asistencia y Pagos.",
+  
+  "updated_files": [],
+  
+  "success_percentage": "frontend: 85% - Core functionality working, minor UI expansion issues",
+  
+  "should_call_test_agent_after_fix": "true",
+  "should_main_agent_test_itself": "false"
+}

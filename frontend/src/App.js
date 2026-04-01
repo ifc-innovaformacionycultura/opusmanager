@@ -211,16 +211,20 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       path: "/seguimiento"
     },
     { 
-      id: "confirmacion", 
-      label: "Confirmación de plantillas", 
+      id: "plantillas-definitivas", 
+      label: "Plantillas definitivas", 
       icon: "CheckSquare",
-      path: "/confirmacion"
+      path: "/plantillas-definitivas"
     },
     { 
       id: "asistencia", 
       label: "Asistencia y pagos", 
       icon: "CreditCard",
-      path: "/asistencia"
+      path: "/asistencia",
+      children: [
+        { id: "asistencia-pagos", label: "Gestión económica", path: "/asistencia/pagos" },
+        { id: "analisis-economico", label: "Análisis económico", path: "/asistencia/analisis" }
+      ]
     },
     { 
       id: "informes", 
@@ -498,6 +502,9 @@ import ConfiguracionEventos from "./pages/ConfiguracionEventos";
 import ConfiguracionBaseDatos from "./pages/ConfiguracionBaseDatos";
 import ConfiguracionPlantillas from "./pages/ConfiguracionPlantillas";
 import SeguimientoConvocatorias from "./pages/SeguimientoConvocatorias";
+import PlantillasDefinitivas from "./pages/PlantillasDefinitivas";
+import AsistenciaPagos from "./pages/AsistenciaPagos";
+import AnalisisEconomico from "./pages/AnalisisEconomico";
 
 function App() {
   return (
@@ -517,8 +524,10 @@ function App() {
                     <Route path="/configuracion/base-datos" element={<ConfiguracionBaseDatos />} />
                     <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
                     <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
-                    <Route path="/confirmacion" element={<PlaceholderPage title="Confirmación de plantillas" description="Gestiona las confirmaciones de los músicos" />} />
-                    <Route path="/asistencia" element={<PlaceholderPage title="Asistencia y pagos" description="Control de asistencia y gestión de pagos" />} />
+                    <Route path="/plantillas-definitivas" element={<PlantillasDefinitivas />} />
+                    <Route path="/asistencia" element={<Navigate to="/asistencia/pagos" replace />} />
+                    <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
+                    <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
                     <Route path="/informes" element={<PlaceholderPage title="Informes" description="Generación de informes y estadísticas" />} />
                   </Routes>
                 </Layout>
