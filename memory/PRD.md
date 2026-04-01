@@ -70,6 +70,21 @@ Sistema integral para la gestión de temporadas, eventos y comunicaciones musica
   - Exportación a Excel (CSV)
   - Exportación XML bancario
 
+- ✅ **Generación de Informes:**
+  - 5 tipos de informes corporativos:
+    - A. Plantilla Definitiva (lista + plano de orquesta visual)
+    - B. Informe Económico por Evento
+    - C. Informe Estadístico de Asistencia
+    - D. Informe de Configuración de Eventos
+    - E. Informe Combinado "Todo en Uno"
+  - Panel lateral de filtros (evento, secciones, fechas)
+  - Previsualización antes de exportar
+  - Exportación: PDF, Excel (CSV), XML
+  - Envío por correo (simulado)
+  - Botón "Generar todos los informes"
+  - Cabecera corporativa con fecha/hora
+  - Espacio para firmas (Dirección, Producción, Gerencia)
+
 ### APIs Implementadas
 - POST/GET /api/auth/login, logout, me, refresh
 - GET/POST /api/seasons
@@ -87,14 +102,14 @@ Sistema integral para la gestión de temporadas, eventos y comunicaciones musica
 - [ ] Integración real con Gmail API para envío de emails
 
 ### P1 - Importante
-- [ ] Confirmación de plantillas (página completa)
-- [ ] Asistencia y pagos (página completa)
-- [ ] Informes y estadísticas
+- [ ] Persistencia de datos de asistencia real y cachés en MongoDB
+- [ ] Subida real de documentos a Google Drive
 
 ### P2 - Nice to have
 - [ ] Exportación de código a Google Apps Script
 - [ ] Modo oscuro
 - [ ] Notificaciones push
+- [ ] Alertas de desviación presupuestaria
 
 ## Next Tasks
 1. Usuario confirma si continuar con integraciones Google (Sheets/Gmail)

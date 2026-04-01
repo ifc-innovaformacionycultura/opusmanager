@@ -505,6 +505,7 @@ import SeguimientoConvocatorias from "./pages/SeguimientoConvocatorias";
 import PlantillasDefinitivas from "./pages/PlantillasDefinitivas";
 import AsistenciaPagos from "./pages/AsistenciaPagos";
 import AnalisisEconomico from "./pages/AnalisisEconomico";
+import Informes from "./pages/Informes";
 
 function App() {
   return (
@@ -528,7 +529,7 @@ function App() {
                     <Route path="/asistencia" element={<Navigate to="/asistencia/pagos" replace />} />
                     <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
                     <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
-                    <Route path="/informes" element={<PlaceholderPage title="Informes" description="Generación de informes y estadísticas" />} />
+                    <Route path="/informes" element={<Informes />} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>
