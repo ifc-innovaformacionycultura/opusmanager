@@ -239,6 +239,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       path: "/admin",
       children: [
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
+        { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
         { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" }
       ]
     }
@@ -519,6 +520,7 @@ import AnalisisEconomico from "./pages/AnalisisEconomico";
 import Informes from "./pages/Informes";
 import GestionUsuarios from "./pages/GestionUsuarios";
 import RegistroActividad from "./pages/RegistroActividad";
+import GestionPermisos from "./pages/GestionPermisos";
 
 function App() {
   return (
@@ -545,6 +547,7 @@ function App() {
                     <Route path="/informes" element={<Informes />} />
                     <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
                     <Route path="/admin/usuarios" element={<GestionUsuarios />} />
+                    <Route path="/admin/permisos" element={<GestionPermisos />} />
                     <Route path="/admin/actividad" element={<RegistroActividad />} />
                   </Routes>
                 </Layout>

@@ -789,6 +789,109 @@ async def export_activity_logs(
     
     return {"logs": logs, "format": format, "count": len(logs)}
 
+# =====================================================
+# ROLES & PERMISSIONS CONFIGURATION
+# =====================================================
+
+# Default roles configuration
+DEFAULT_ROLES = [
+    {"id": "admin", "name": "Administrador", "description": "Acceso completo a todas las funciones del sistema", "color": "red", "isSystem": True},
+    {"id": "personal", "name": "Gestor de Personal", "description": "Gestión de contactos, comunicaciones y seguimiento de músicos", "color": "blue", "isSystem": False},
+    {"id": "logistica", "name": "Gestor de Logística", "description": "Gestión de eventos, atriles, transporte y alojamiento", "color": "green", "isSystem": False},
+    {"id": "archivo", "name": "Gestor de Archivo", "description": "Gestión documental, informes y exportaciones", "color": "purple", "isSystem": False},
+    {"id": "economico", "name": "Gestor Económico", "description": "Gestión de cachés, pagos y análisis financiero", "color": "yellow", "isSystem": False}
+]
+
+@api_router.get("/admin/roles-config")
+async def get_roles_config(request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    config = await db.roles_config.find_one({}, {"_id": 0})
+    if not config:
+        return {"roles": DEFAULT_ROLES}
+    return config
+
+@api_router.post("/admin/roles-config")
+async def save_roles_config(config: dict, request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    # Delete existing config
+    await db.roles_config.delete_many({})
+    
+    # Save new config
+    config["updated_at"] = datetime.now(timezone.utc).isoformat()
+    config["updated_by"] = current_user["_id"]
+    await db.roles_config.insert_one(config)
+    
+    await log_activity(
+        user_id=current_user["_id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="update",
+        entity_type="roles_config",
+        details={"roles_count": len(config.get("roles", []))}
+    )
+    
+    return {"message": "Roles configuration saved"}
+
+@api_router.get("/admin/permissions-config")
+async def get_permissions_config(request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    config = await db.permissions_config.find_one({}, {"_id": 0})
+    return config or {"permissions": {}}
+
+@api_router.post("/admin/permissions-config")
+async def save_permissions_config(config: dict, request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    # Delete existing config
+    await db.permissions_config.delete_many({})
+    
+    # Save new config
+    config["updated_at"] = datetime.now(timezone.utc).isoformat()
+    config["updated_by"] = current_user["_id"]
+    await db.permissions_config.insert_one(config)
+    
+    await log_activity(
+        user_id=current_user["_id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="update",
+        entity_type="permissions_config",
+        details={"sections_count": len(config.get("permissions", {}))}
+    )
+    
+    return {"message": "Permissions configuration saved"}
+
+# Endpoint to check user permissions
+@api_router.get("/user/permissions")
+async def get_user_permissions(request: Request):
+    current_user = await get_current_user(request)
+    user_role = current_user.get("role", "viewer")
+    
+    # Admin has all permissions
+    if user_role == "admin":
+        return {"role": "admin", "permissions": "all"}
+    
+    # Get permissions config
+    config = await db.permissions_config.find_one({}, {"_id": 0})
+    if not config:
+        return {"role": user_role, "permissions": {}}
+    
+    # Extract permissions for user's role
+    user_permissions = {}
+    for section_id, section_perms in config.get("permissions", {}).items():
+        user_permissions[section_id] = {}
+        for perm_id, roles_perms in section_perms.items():
+            user_permissions[section_id][perm_id] = roles_perms.get(user_role, False)
+    
+    return {"role": user_role, "permissions": user_permissions}
+
 # Include routers
 app.include_router(auth_router)
 app.include_router(api_router)
