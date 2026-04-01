@@ -464,9 +464,6 @@ async def get_event_responses(event_id: str, request: Request):
 # CONTACT OPERATIONS WITH DETAILED LOGGING
 # ============================================
 
-@api_router.post("/contacts/{contact_id}/confirm-attendance")
-async def confirm_contact_attendance(
-
 # Budget Models
 class BudgetData(BaseModel):
     season_id: str
@@ -657,10 +654,6 @@ async def calculate_cache_endpoint(data: dict, request: Request):
     
     return result
 
-    contact_id: str,
-    data: dict,  # {event_id, rehearsals: [bool], function: bool, notes: str}
-    request: Request
-):
     """Confirmar asistencia de un contacto a un evento"""
     current_user = await get_current_user(request)
     
