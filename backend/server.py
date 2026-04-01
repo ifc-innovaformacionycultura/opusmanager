@@ -435,6 +435,32 @@ class UserCreate(BaseModel):
     name: str
     role: str = "viewer"  # admin, manager, editor, viewer
 
+# Feedback/Bug Report Models
+class FeedbackReportCreate(BaseModel):
+    page: str  # Dashboard, Configuración › Eventos, etc.
+    section: Optional[str] = None  # Subsección específica
+    type: str  # "error" o "mejora"
+    description: str
+    user_agent: Optional[str] = None  # Info del navegador
+    screenshot_url: Optional[str] = None  # URL de captura de pantalla si la hay
+
+class FeedbackReportUpdate(BaseModel):
+    status: str  # "reportado", "en_proceso", "solucionado"
+
+class FeedbackReportResponse(BaseModel):
+    id: str
+    page: str
+    section: Optional[str]
+    type: str
+    description: str
+    status: str
+    reported_by: str  # Email del usuario
+    reported_by_name: str  # Nombre del usuario
+    created_at: str
+    updated_at: str
+    user_agent: Optional[str]
+    screenshot_url: Optional[str]
+
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
@@ -897,6 +923,200 @@ async def get_user_permissions(request: Request):
             user_permissions[section_id][perm_id] = roles_perms.get(user_role, False)
     
     return {"role": user_role, "permissions": user_permissions}
+
+# ============================================
+# FEEDBACK/BUG REPORTS ENDPOINTS
+# ============================================
+
+@api_router.post("/feedback")
+async def create_feedback_report(report: FeedbackReportCreate, request: Request):
+    """Create a new feedback/bug report"""
+    current_user = await get_current_user(request)
+    
+    report_doc = {
+        "id": str(uuid.uuid4()),
+        "page": report.page,
+        "section": report.section,
+        "type": report.type,
+        "description": report.description,
+        "status": "reportado",  # reportado, en_proceso, solucionado
+        "reported_by": current_user["email"],
+        "reported_by_name": current_user["name"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "user_agent": report.user_agent,
+        "screenshot_url": report.screenshot_url
+    }
+    
+    await db.feedback_reports.insert_one(report_doc)
+    
+    # Log activity
+    await log_activity(
+        user_id=current_user["id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action=f"Reportar {report.type}",
+        entity_type="feedback",
+        entity_id=report_doc["id"],
+        entity_name=f"{report.page} - {report.type}",
+        details={"description": report.description[:100]}
+    )
+    
+    return {"message": "Reporte creado exitosamente", "id": report_doc["id"]}
+
+@api_router.get("/feedback")
+async def get_feedback_reports(
+    request: Request,
+    type: Optional[str] = None,
+    status: Optional[str] = None,
+    page: Optional[str] = None
+):
+    """Get all feedback reports with optional filters"""
+    current_user = await get_current_user(request)
+    
+    # Build filter
+    filter_query = {}
+    if type:
+        filter_query["type"] = type
+    if status:
+        filter_query["status"] = status
+    if page:
+        filter_query["page"] = page
+    
+    reports = await db.feedback_reports.find(filter_query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    return {"reports": reports, "total": len(reports)}
+
+@api_router.put("/feedback/{report_id}")
+async def update_feedback_status(report_id: str, update: FeedbackReportUpdate, request: Request):
+    """Update feedback report status (admin only)"""
+    current_user = await get_current_user(request)
+    
+    # Check if user is admin
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can update report status")
+    
+    result = await db.feedback_reports.update_one(
+        {"id": report_id},
+        {"$set": {
+            "status": update.status,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Log activity
+    await log_activity(
+        user_id=current_user["id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="Actualizar estado de reporte",
+        entity_type="feedback",
+        entity_id=report_id,
+        entity_name=f"Estado: {update.status}",
+        details={}
+    )
+    
+    return {"message": "Estado actualizado"}
+
+@api_router.delete("/feedback/{report_id}")
+async def delete_feedback_report(report_id: str, request: Request):
+    """Delete a feedback report (admin only)"""
+    current_user = await get_current_user(request)
+    
+    # Check if user is admin
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can delete reports")
+    
+    result = await db.feedback_reports.delete_one({"id": report_id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    return {"message": "Reporte eliminado"}
+
+@api_router.get("/feedback/export/excel")
+async def export_feedback_to_excel(request: Request):
+    """Export all feedback reports to Excel format (CSV)"""
+    current_user = await get_current_user(request)
+    
+    # Check if user is admin
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can export reports")
+    
+    reports = await db.feedback_reports.find({}, {"_id": 0}).sort("created_at", -1).to_list(10000)
+    
+    # Create CSV content
+    import csv
+    import io
+    
+    output = io.StringIO()
+    fieldnames = ["id", "created_at", "updated_at", "reported_by", "reported_by_name", 
+                  "page", "section", "type", "status", "description", "user_agent"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    
+    for report in reports:
+        writer.writerow({
+            "id": report.get("id", ""),
+            "created_at": report.get("created_at", ""),
+            "updated_at": report.get("updated_at", ""),
+            "reported_by": report.get("reported_by", ""),
+            "reported_by_name": report.get("reported_by_name", ""),
+            "page": report.get("page", ""),
+            "section": report.get("section", ""),
+            "type": report.get("type", ""),
+            "status": report.get("status", ""),
+            "description": report.get("description", ""),
+            "user_agent": report.get("user_agent", "")
+        })
+    
+    csv_content = output.getvalue()
+    output.close()
+    
+    from fastapi.responses import Response as FastAPIResponse
+    return FastAPIResponse(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=reportes_feedback.csv"}
+    )
+
+@api_router.get("/feedback/stats")
+async def get_feedback_stats(request: Request):
+    """Get statistics about feedback reports"""
+    current_user = await get_current_user(request)
+    
+    total = await db.feedback_reports.count_documents({})
+    errors = await db.feedback_reports.count_documents({"type": "error"})
+    improvements = await db.feedback_reports.count_documents({"type": "mejora"})
+    
+    reportados = await db.feedback_reports.count_documents({"status": "reportado"})
+    en_proceso = await db.feedback_reports.count_documents({"status": "en_proceso"})
+    solucionados = await db.feedback_reports.count_documents({"status": "solucionado"})
+    
+    # Get reports by page
+    pipeline = [
+        {"$group": {"_id": "$page", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]
+    by_page = await db.feedback_reports.aggregate(pipeline).to_list(10)
+    
+    return {
+        "total": total,
+        "by_type": {
+            "error": errors,
+            "mejora": improvements
+        },
+        "by_status": {
+            "reportado": reportados,
+            "en_proceso": en_proceso,
+            "solucionado": solucionados
+        },
+        "by_page": [{"page": item["_id"], "count": item["count"]} for item in by_page]
+    }
 
 # Include routers
 app.include_router(auth_router)

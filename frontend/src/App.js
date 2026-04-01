@@ -262,7 +262,8 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       children: [
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
         { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
-        { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" }
+        { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" },
+        { id: "reportes", label: "Reportes del equipo", path: "/admin/reportes" }
       ]
     },
     { 
@@ -298,6 +299,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       CreditCard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
       BarChart3: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>,
       Shield: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+      HelpCircle: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
       ChevronRight: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>,
       ChevronDown: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>,
       LogOut: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>,
@@ -400,12 +402,54 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
 // Layout
 const Layout = ({ children }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const location = useLocation();
+
+  // Detectar página y sección actual basándose en la ruta
+  const getCurrentPageInfo = () => {
+    const path = location.pathname;
+    
+    if (path === "/" || path === "/dashboard") {
+      return { page: "Dashboard", section: null };
+    } else if (path.startsWith("/configuracion/eventos")) {
+      return { page: "Configuración de temporada", section: "Eventos" };
+    } else if (path.startsWith("/configuracion/base-datos")) {
+      return { page: "Configuración de temporada", section: "Base de Datos" };
+    } else if (path.startsWith("/configuracion/plantillas")) {
+      return { page: "Configuración de temporada", section: "Plantillas Email" };
+    } else if (path.startsWith("/seguimiento")) {
+      return { page: "Seguimiento de convocatorias", section: null };
+    } else if (path.startsWith("/plantillas-definitivas")) {
+      return { page: "Plantillas definitivas", section: null };
+    } else if (path.startsWith("/asistencia/pagos")) {
+      return { page: "Asistencia y pagos", section: "Gestión económica" };
+    } else if (path.startsWith("/asistencia/analisis")) {
+      return { page: "Asistencia y pagos", section: "Análisis económico" };
+    } else if (path.startsWith("/informes")) {
+      return { page: "Informes", section: null };
+    } else if (path.startsWith("/admin/usuarios")) {
+      return { page: "Administración", section: "Gestión de usuarios" };
+    } else if (path.startsWith("/admin/permisos")) {
+      return { page: "Administración", section: "Gestión de permisos" };
+    } else if (path.startsWith("/admin/actividad")) {
+      return { page: "Administración", section: "Registro de actividad" };
+    } else if (path.startsWith("/admin/reportes")) {
+      return { page: "Administración", section: "Reportes del equipo" };
+    } else if (path.startsWith("/ayuda")) {
+      return { page: "Manual de Usuario", section: null };
+    }
+    
+    return { page: "Página desconocida", section: null };
+  };
+
+  const pageInfo = getCurrentPageInfo();
 
   return (
     <div className="min-h-screen flex bg-slate-100">
       <Sidebar isCollapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
       <main className="flex-1 overflow-auto">
         {children}
+        {/* Botón flotante de feedback - visible en todas las páginas */}
+        <FeedbackButton currentPage={pageInfo.page} currentSection={pageInfo.section} />
       </main>
     </div>
   );
@@ -550,6 +594,8 @@ import GestionUsuarios from "./pages/GestionUsuarios";
 import RegistroActividad from "./pages/RegistroActividad";
 import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
+import GestionReportes from "./pages/GestionReportes";
+import FeedbackButton from "./components/FeedbackButton";
 
 function App() {
   return (
@@ -578,6 +624,7 @@ function App() {
                     <Route path="/admin/usuarios" element={<GestionUsuarios />} />
                     <Route path="/admin/permisos" element={<GestionPermisos />} />
                     <Route path="/admin/actividad" element={<RegistroActividad />} />
+                    <Route path="/admin/reportes" element={<GestionReportes />} />
                     <Route path="/ayuda" element={<ManualUsuario />} />
                   </Routes>
                 </Layout>
