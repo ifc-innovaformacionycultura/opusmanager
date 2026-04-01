@@ -231,6 +231,16 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       label: "Informes", 
       icon: "BarChart3",
       path: "/informes"
+    },
+    { 
+      id: "administracion", 
+      label: "Administración", 
+      icon: "Shield",
+      path: "/admin",
+      children: [
+        { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
+        { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" }
+      ]
     }
   ];
 
@@ -258,6 +268,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       CheckSquare: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>,
       CreditCard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
       BarChart3: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>,
+      Shield: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
       ChevronRight: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>,
       ChevronDown: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>,
       LogOut: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>,
@@ -506,6 +517,8 @@ import PlantillasDefinitivas from "./pages/PlantillasDefinitivas";
 import AsistenciaPagos from "./pages/AsistenciaPagos";
 import AnalisisEconomico from "./pages/AnalisisEconomico";
 import Informes from "./pages/Informes";
+import GestionUsuarios from "./pages/GestionUsuarios";
+import RegistroActividad from "./pages/RegistroActividad";
 
 function App() {
   return (
@@ -530,6 +543,9 @@ function App() {
                     <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
                     <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
                     <Route path="/informes" element={<Informes />} />
+                    <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
+                    <Route path="/admin/usuarios" element={<GestionUsuarios />} />
+                    <Route path="/admin/actividad" element={<RegistroActividad />} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>

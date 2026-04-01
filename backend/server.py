@@ -419,6 +419,376 @@ async def save_email_matrix(matrix: List[dict], request: Request):
         await db.email_matrix.insert_many(matrix)
     return {"message": "Matrix saved"}
 
+# =====================================================
+# USER MANAGEMENT & ACTIVITY LOG
+# =====================================================
+
+# Pydantic Models for User Management
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+    role: str = "viewer"  # admin, manager, editor, viewer
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class PasswordChange(BaseModel):
+    new_password: str
+
+class PasswordReset(BaseModel):
+    user_id: str
+    new_password: str
+
+# Activity Log Helper
+async def log_activity(
+    user_id: str,
+    user_email: str,
+    user_name: str,
+    action: str,
+    entity_type: str,
+    entity_id: str = None,
+    entity_name: str = None,
+    details: dict = None,
+    ip_address: str = None
+):
+    """Log user activity for audit trail"""
+    log_entry = {
+        "id": str(uuid.uuid4()),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "user_id": user_id,
+        "user_email": user_email,
+        "user_name": user_name,
+        "action": action,  # create, update, delete, login, logout, view, export
+        "entity_type": entity_type,  # user, event, contact, season, template, etc.
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "details": details or {},
+        "ip_address": ip_address
+    }
+    await db.activity_logs.insert_one(log_entry)
+    return log_entry
+
+# Role check helper
+def require_admin(user: dict):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+def require_manager_or_admin(user: dict):
+    if user.get("role") not in ["admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Manager or admin access required")
+
+# Available roles
+AVAILABLE_ROLES = [
+    {"id": "admin", "name": "Administrador", "description": "Acceso completo a todas las funciones"},
+    {"id": "manager", "name": "Gestor", "description": "Gestión de eventos, contactos y comunicaciones"},
+    {"id": "editor", "name": "Editor", "description": "Edición de datos, sin acceso a configuración"},
+    {"id": "viewer", "name": "Visor", "description": "Solo lectura de información"}
+]
+
+# User Management Endpoints
+@api_router.get("/admin/roles")
+async def get_available_roles(request: Request):
+    user = await get_current_user(request)
+    require_admin(user)
+    return AVAILABLE_ROLES
+
+@api_router.get("/admin/users")
+async def get_all_users(request: Request):
+    user = await get_current_user(request)
+    require_admin(user)
+    
+    users = await db.users.find({}, {"password_hash": 0}).to_list(100)
+    # Convert ObjectId to string
+    for u in users:
+        u["id"] = str(u.pop("_id"))
+    
+    await log_activity(
+        user_id=user["_id"],
+        user_email=user["email"],
+        user_name=user["name"],
+        action="view",
+        entity_type="user_list",
+        details={"count": len(users)}
+    )
+    
+    return users
+
+@api_router.post("/admin/users")
+async def create_user(user_data: UserCreate, request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    # Check if email exists
+    existing = await db.users.find_one({"email": user_data.email.lower()})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create user
+    hashed = hash_password(user_data.password)
+    user_doc = {
+        "email": user_data.email.lower(),
+        "password_hash": hashed,
+        "name": user_data.name,
+        "role": user_data.role,
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": current_user["_id"]
+    }
+    result = await db.users.insert_one(user_doc)
+    user_id = str(result.inserted_id)
+    
+    await log_activity(
+        user_id=current_user["_id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="create",
+        entity_type="user",
+        entity_id=user_id,
+        entity_name=user_data.name,
+        details={"email": user_data.email, "role": user_data.role}
+    )
+    
+    return {
+        "id": user_id,
+        "email": user_data.email.lower(),
+        "name": user_data.name,
+        "role": user_data.role,
+        "is_active": True
+    }
+
+@api_router.put("/admin/users/{user_id}")
+async def update_user(user_id: str, user_data: UserUpdate, request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    update_data = {k: v for k, v in user_data.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data to update")
+    
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_data["updated_by"] = current_user["_id"]
+    
+    result = await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    updated_user = await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0})
+    updated_user["id"] = str(updated_user.pop("_id"))
+    
+    await log_activity(
+        user_id=current_user["_id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="update",
+        entity_type="user",
+        entity_id=user_id,
+        entity_name=updated_user["name"],
+        details={"changes": update_data}
+    )
+    
+    return updated_user
+
+@api_router.delete("/admin/users/{user_id}")
+async def delete_user(user_id: str, request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    # Prevent self-deletion
+    if user_id == current_user["_id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    
+    user_to_delete = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user_to_delete:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    await db.users.delete_one({"_id": ObjectId(user_id)})
+    
+    await log_activity(
+        user_id=current_user["_id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="delete",
+        entity_type="user",
+        entity_id=user_id,
+        entity_name=user_to_delete.get("name", "Unknown"),
+        details={"email": user_to_delete.get("email")}
+    )
+    
+    return {"message": "User deleted"}
+
+@api_router.post("/admin/users/{user_id}/reset-password")
+async def reset_user_password(user_id: str, password_data: PasswordChange, request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    hashed = hash_password(password_data.new_password)
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {
+            "password_hash": hashed,
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "password_changed_by": current_user["_id"]
+        }}
+    )
+    
+    await log_activity(
+        user_id=current_user["_id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="password_reset",
+        entity_type="user",
+        entity_id=user_id,
+        entity_name=user.get("name", "Unknown"),
+        details={"target_email": user.get("email")}
+    )
+    
+    return {"message": "Password reset successfully"}
+
+@api_router.post("/admin/users/{user_id}/send-credentials")
+async def send_user_credentials(user_id: str, request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # In production, this would send an email via Gmail API
+    # For now, we simulate it
+    await log_activity(
+        user_id=current_user["_id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="send_credentials",
+        entity_type="user",
+        entity_id=user_id,
+        entity_name=user.get("name", "Unknown"),
+        details={"target_email": user.get("email")}
+    )
+    
+    return {"message": f"Credentials sent to {user.get('email')} (simulated)"}
+
+# Activity Log Endpoints
+@api_router.get("/admin/activity-logs")
+async def get_activity_logs(
+    request: Request,
+    user_id: Optional[str] = None,
+    action: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0
+):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    # Build query
+    query = {}
+    if user_id:
+        query["user_id"] = user_id
+    if action:
+        query["action"] = action
+    if entity_type:
+        query["entity_type"] = entity_type
+    if start_date:
+        query["timestamp"] = {"$gte": start_date}
+    if end_date:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = end_date
+        else:
+            query["timestamp"] = {"$lte": end_date}
+    
+    # Get logs
+    logs = await db.activity_logs.find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    
+    # Get total count
+    total = await db.activity_logs.count_documents(query)
+    
+    return {
+        "logs": logs,
+        "total": total,
+        "limit": limit,
+        "skip": skip
+    }
+
+@api_router.get("/admin/activity-logs/stats")
+async def get_activity_stats(request: Request):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    # Get stats by action type
+    pipeline = [
+        {"$group": {"_id": "$action", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    action_stats = await db.activity_logs.aggregate(pipeline).to_list(20)
+    
+    # Get stats by user
+    pipeline_user = [
+        {"$group": {"_id": {"user_id": "$user_id", "user_name": "$user_name"}, "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]
+    user_stats = await db.activity_logs.aggregate(pipeline_user).to_list(10)
+    
+    # Get stats by entity type
+    pipeline_entity = [
+        {"$group": {"_id": "$entity_type", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    entity_stats = await db.activity_logs.aggregate(pipeline_entity).to_list(20)
+    
+    # Get recent activity count (last 24 hours)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    recent_count = await db.activity_logs.count_documents({"timestamp": {"$gte": yesterday}})
+    
+    return {
+        "by_action": [{"action": s["_id"], "count": s["count"]} for s in action_stats],
+        "by_user": [{"user_id": s["_id"]["user_id"], "user_name": s["_id"]["user_name"], "count": s["count"]} for s in user_stats],
+        "by_entity": [{"entity_type": s["_id"], "count": s["count"]} for s in entity_stats],
+        "recent_24h": recent_count
+    }
+
+@api_router.get("/admin/activity-logs/export")
+async def export_activity_logs(
+    request: Request,
+    format: str = "csv",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    current_user = await get_current_user(request)
+    require_admin(current_user)
+    
+    query = {}
+    if start_date:
+        query["timestamp"] = {"$gte": start_date}
+    if end_date:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = end_date
+        else:
+            query["timestamp"] = {"$lte": end_date}
+    
+    logs = await db.activity_logs.find(query, {"_id": 0}).sort("timestamp", -1).to_list(10000)
+    
+    await log_activity(
+        user_id=current_user["_id"],
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="export",
+        entity_type="activity_logs",
+        details={"format": format, "count": len(logs)}
+    )
+    
+    return {"logs": logs, "format": format, "count": len(logs)}
+
 # Include routers
 app.include_router(auth_router)
 app.include_router(api_router)

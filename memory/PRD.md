@@ -85,6 +85,25 @@ Sistema integral para la gestión de temporadas, eventos y comunicaciones musica
   - Cabecera corporativa con fecha/hora
   - Espacio para firmas (Dirección, Producción, Gerencia)
 
+### Fase 3 - Administración (Abr 2026)
+- ✅ **Gestión de Usuarios:**
+  - CRUD completo de usuarios
+  - 4 roles: Administrador, Gestor, Editor, Visor
+  - Cambio de contraseña por admin
+  - Envío de credenciales por email (simulado)
+  - Activar/desactivar usuarios
+  - Filtros por nombre, email y rol
+
+- ✅ **Registro de Actividad (Auditoría):**
+  - Log automático de todas las acciones del sistema
+  - Tarjetas de estadísticas (24h, totales, usuarios activos)
+  - Gráficos: acciones por tipo, actividad por usuario
+  - Filtros: usuario, acción, entidad, rango de fechas
+  - Tabla detallada con fecha/hora, usuario, acción, entidad
+  - Modal de detalle completo con JSON de cambios
+  - Exportación CSV
+  - Paginación
+
 ### APIs Implementadas
 - POST/GET /api/auth/login, logout, me, refresh
 - GET/POST /api/seasons
