@@ -23,6 +23,42 @@ const INSTRUMENT_SECTIONS = [
   { id: 'otros', name: 'Otros', instruments: ['Arpa', 'Guitarra', 'Solista'] }
 ];
 
+// Helper function to get section ID from instrument
+const getSectionFromInstrument = (instrument) => {
+  if (!instrument) return 'otros';
+  
+  const section = INSTRUMENT_SECTIONS.find(s => 
+    s.instruments.some(inst => 
+      instrument.toLowerCase().includes(inst.toLowerCase())
+    )
+  );
+  
+  return section ? section.id : 'otros';
+};
+
+// Helper function to calculate cache from budget data
+const calculateCacheFromBudget = (budgetData, sectionId, studyLevel, eventId, attendancePercentage) => {
+  if (!budgetData || !budgetData[sectionId]) {
+    return 100; // Fallback to base cache if no budget data
+  }
+  
+  // Default to 'superior_finalizado' if no study level specified
+  const level = studyLevel || 'superior_finalizado';
+  
+  const budgetCell = budgetData[sectionId]?.[level]?.[eventId];
+  
+  if (!budgetCell) {
+    return 100; // Fallback if no budget configured
+  }
+  
+  // Formula: cache_total × (weight / 100) × (attendance / 100)
+  const cacheTotal = budgetCell.cache_total || 0;
+  const weight = budgetCell.weight || 100;
+  const finalCache = cacheTotal * (weight / 100) * (attendancePercentage / 100);
+  
+  return Math.round(finalCache);
+};
+
 // File Upload Component
 const FileUpload = ({ label, value, onChange, eventName, contactName }) => {
   const handleUpload = (e) => {
@@ -61,7 +97,7 @@ const FileUpload = ({ label, value, onChange, eventName, contactName }) => {
 };
 
 // Contact Row with Economic Block
-const ContactRowEconomic = ({ contact, event, eventResponses, contactData, onDataChange }) => {
+const ContactRowEconomic = ({ contact, event, eventResponses, contactData, onDataChange, budgetData }) => {
   const data = contactData || {
     atril_numero: '',
     atril_letra: '',
@@ -87,9 +123,12 @@ const ContactRowEconomic = ({ contact, event, eventResponses, contactData, onDat
     ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
     : 0;
 
+  // Calculate cache using budget data
+  const sectionId = getSectionFromInstrument(contact.especialidad);
+  const studyLevel = contact.nivel_estudios || 'superior_finalizado';
+  const cacheReal = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
+  
   // Calculate totals
-  const cacheBase = 100;
-  const cacheReal = Math.round(cacheBase * (realPct / 100));
   const cacheExtra = parseFloat(data.cache_extra) || 0;
   const extraProduccion = parseFloat(data.extra_produccion) || 0;
   const extraTransporte = parseFloat(data.extra_transporte) || 0;
@@ -214,7 +253,7 @@ const ContactRowEconomic = ({ contact, event, eventResponses, contactData, onDat
 };
 
 // Section Component
-const SectionEconomic = ({ section, contacts, event, eventResponses, contactsData, onDataChange, isExpanded, onToggle }) => {
+const SectionEconomic = ({ section, contacts, event, eventResponses, contactsData, onDataChange, isExpanded, onToggle, budgetData }) => {
   const sectionContacts = contacts.filter(c => 
     section.instruments.some(inst => 
       c.especialidad?.toLowerCase().includes(inst.toLowerCase())
@@ -223,17 +262,20 @@ const SectionEconomic = ({ section, contacts, event, eventResponses, contactsDat
 
   if (sectionContacts.length === 0) return null;
 
-  // Calculate section totals
+  // Calculate section totals using budget data
   let sectionTotal = 0;
   sectionContacts.forEach(contact => {
     const data = contactsData[contact.id] || {};
     const responses = eventResponses.find(r => r.contact_id === contact.id)?.responses || {};
     const realValues = Object.values(data.asistencia_real || {});
     const realPct = realValues.length > 0 
-      ? realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length / 100
+      ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
       : 0;
     
-    const cacheReal = 100 * realPct;
+    const sectionId = getSectionFromInstrument(contact.especialidad);
+    const studyLevel = contact.nivel_estudios || 'superior_finalizado';
+    const cacheReal = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
+    
     sectionTotal += cacheReal + (parseFloat(data.cache_extra) || 0) + (parseFloat(data.extra_produccion) || 0) + (parseFloat(data.extra_transporte) || 0) + (parseFloat(data.otros_gastos) || 0);
   });
 
@@ -283,6 +325,7 @@ const SectionEconomic = ({ section, contacts, event, eventResponses, contactsDat
                   eventResponses={eventResponses}
                   contactData={contactsData[contact.id]}
                   onDataChange={onDataChange}
+                  budgetData={budgetData}
                 />
               ))}
             </tbody>
@@ -294,7 +337,7 @@ const SectionEconomic = ({ section, contacts, event, eventResponses, contactsDat
 };
 
 // Event Accordion
-const EventAccordionEconomic = ({ event, index, contacts, eventResponses, contactsData, onDataChange, isExpanded, onToggle }) => {
+const EventAccordionEconomic = ({ event, index, contacts, eventResponses, contactsData, onDataChange, isExpanded, onToggle, budgetData }) => {
   const [expandedSections, setExpandedSections] = useState({});
   const [driveFolder, setDriveFolder] = useState('');
 
@@ -302,7 +345,7 @@ const EventAccordionEconomic = ({ event, index, contacts, eventResponses, contac
     setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
   };
 
-  // Calculate event totals
+  // Calculate event totals using budget data
   let totalCacheReal = 0;
   let totalExtras = 0;
   let totalGeneral = 0;
@@ -311,10 +354,12 @@ const EventAccordionEconomic = ({ event, index, contacts, eventResponses, contac
     const data = contactsData[contact.id] || {};
     const realValues = Object.values(data.asistencia_real || {});
     const realPct = realValues.length > 0 
-      ? realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length / 100
+      ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
       : 0;
     
-    const cacheReal = 100 * realPct;
+    const sectionId = getSectionFromInstrument(contact.especialidad);
+    const studyLevel = contact.nivel_estudios || 'superior_finalizado';
+    const cacheReal = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
     const extras = (parseFloat(data.cache_extra) || 0) + (parseFloat(data.extra_produccion) || 0) + (parseFloat(data.extra_transporte) || 0) + (parseFloat(data.otros_gastos) || 0);
     
     totalCacheReal += cacheReal;
@@ -373,6 +418,7 @@ const EventAccordionEconomic = ({ event, index, contacts, eventResponses, contac
               onDataChange={onDataChange}
               isExpanded={expandedSections[section.id]}
               onToggle={() => toggleSection(section.id)}
+              budgetData={budgetData}
             />
           ))}
         </div>
@@ -389,6 +435,8 @@ const AsistenciaPagos = () => {
   const [contactsData, setContactsData] = useState({});
   const [expandedEvents, setExpandedEvents] = useState({});
   const [loading, setLoading] = useState(true);
+  const [budgetData, setBudgetData] = useState(null);
+  const [seasons, setSeasons] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -396,13 +444,27 @@ const AsistenciaPagos = () => {
 
   const loadData = async () => {
     try {
-      const [eventsRes, contactsRes] = await Promise.all([
+      const [eventsRes, contactsRes, seasonsRes] = await Promise.all([
         axios.get(`${API}/events`),
-        axios.get(`${API}/contacts`)
+        axios.get(`${API}/contacts`),
+        axios.get(`${API}/seasons`)
       ]);
       
       setEvents(eventsRes.data);
       setContacts(contactsRes.data);
+      setSeasons(seasonsRes.data);
+
+      // Load budget for current season
+      if (seasonsRes.data.length > 0) {
+        const currentSeasonId = seasonsRes.data[0].id;
+        try {
+          const budgetRes = await axios.get(`${API}/budgets/${currentSeasonId}`);
+          setBudgetData(budgetRes.data.budget_data || {});
+        } catch (err) {
+          console.warn("No budget data found for season");
+          setBudgetData({});
+        }
+      }
 
       const responsesMap = {};
       for (const event of eventsRes.data) {
@@ -498,6 +560,7 @@ const AsistenciaPagos = () => {
             onDataChange={handleDataChange}
             isExpanded={expandedEvents[event.id]}
             onToggle={() => toggleEvent(event.id)}
+            budgetData={budgetData}
           />
         ))}
       </div>

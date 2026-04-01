@@ -101,8 +101,44 @@ const INSTRUMENT_SECTIONS = [
   { id: 'otros', name: 'Otros', instruments: ['Arpa', 'Guitarra', 'Solista'] }
 ];
 
+// Helper function to get section ID from instrument
+const getSectionFromInstrument = (instrument) => {
+  if (!instrument) return 'otros';
+  
+  const section = INSTRUMENT_SECTIONS.find(s => 
+    s.instruments.some(inst => 
+      instrument.toLowerCase().includes(inst.toLowerCase())
+    )
+  );
+  
+  return section ? section.id : 'otros';
+};
+
+// Helper function to calculate cache from budget data
+const calculateCacheFromBudget = (budgetData, sectionId, studyLevel, eventId, attendancePercentage) => {
+  if (!budgetData || !budgetData[sectionId]) {
+    return 100; // Fallback to base cache if no budget data
+  }
+  
+  // Default to 'superior_finalizado' if no study level specified
+  const level = studyLevel || 'superior_finalizado';
+  
+  const budgetCell = budgetData[sectionId]?.[level]?.[eventId];
+  
+  if (!budgetCell) {
+    return 100; // Fallback if no budget configured
+  }
+  
+  // Formula: cache_total × (weight / 100) × (attendance / 100)
+  const cacheTotal = budgetCell.cache_total || 0;
+  const weight = budgetCell.weight || 100;
+  const finalCache = cacheTotal * (weight / 100) * (attendancePercentage / 100);
+  
+  return Math.round(finalCache);
+};
+
 // Contact Row Component
-const ContactRow = ({ contact, event, eventResponses, contactData, onDataChange, isSelected, onSelect }) => {
+const ContactRow = ({ contact, event, eventResponses, contactData, onDataChange, isSelected, onSelect, budgetData }) => {
   const data = contactData || {
     atril_numero: '',
     atril_letra: '',
@@ -123,10 +159,12 @@ const ContactRow = ({ contact, event, eventResponses, contactData, onDataChange,
     ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
     : 0;
 
-  // Calculate cache
-  const cacheBase = 100; // Base cache per event
-  const cachePrevisto = Math.round(cacheBase * (previstoPct / 100));
-  const cacheReal = Math.round(cacheBase * (realPct / 100));
+  // Calculate cache using budget data
+  const sectionId = getSectionFromInstrument(contact.especialidad);
+  const studyLevel = contact.nivel_estudios || 'superior_finalizado'; // Default if not specified
+  
+  const cachePrevisto = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, previstoPct);
+  const cacheReal = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
 
   const previstoColors = getAvailabilityColor(previstoPct);
   const realColors = getAvailabilityColor(realPct);
@@ -241,7 +279,7 @@ const ContactRow = ({ contact, event, eventResponses, contactData, onDataChange,
 };
 
 // Section Component
-const InstrumentSection = ({ section, contacts, event, eventResponses, contactsData, onDataChange, selectedContacts, onSelectContact, isExpanded, onToggle }) => {
+const InstrumentSection = ({ section, contacts, event, eventResponses, contactsData, onDataChange, selectedContacts, onSelectContact, isExpanded, onToggle, budgetData }) => {
   const sectionContacts = contacts.filter(c => 
     section.instruments.some(inst => 
       c.especialidad?.toLowerCase().includes(inst.toLowerCase())
@@ -311,6 +349,7 @@ const InstrumentSection = ({ section, contacts, event, eventResponses, contactsD
                   onDataChange={onDataChange}
                   isSelected={selectedContacts.includes(contact.id)}
                   onSelect={onSelectContact}
+                  budgetData={budgetData}
                 />
               ))}
             </tbody>
@@ -322,14 +361,14 @@ const InstrumentSection = ({ section, contacts, event, eventResponses, contactsD
 };
 
 // Event Accordion Component
-const EventAccordion = ({ event, index, contacts, eventResponses, contactsData, onDataChange, selectedContacts, onSelectContact, isExpanded, onToggle }) => {
+const EventAccordion = ({ event, index, contacts, eventResponses, contactsData, onDataChange, selectedContacts, onSelectContact, isExpanded, onToggle, budgetData }) => {
   const [expandedSections, setExpandedSections] = useState({});
 
   const toggleSection = (sectionId) => {
     setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
   };
 
-  // Calculate event totals
+  // Calculate event totals using budget data
   const eventContacts = contacts;
   let totalCachePrevisto = 0;
   let totalCacheReal = 0;
@@ -339,17 +378,19 @@ const EventAccordion = ({ event, index, contacts, eventResponses, contactsData, 
     const responses = eventResponses.find(r => r.contact_id === contact.id)?.responses || {};
     const totalDates = Object.keys(responses).length || 1;
     const previstoYes = Object.values(responses).filter(v => v === 'si').length;
-    const previstoPct = previstoYes / totalDates;
+    const previstoPct = Math.round((previstoYes / totalDates) * 100);
     
     const data = contactsData[contact.id] || {};
     const realValues = Object.values(data.asistencia_real || {});
     const realPct = realValues.length > 0 
-      ? realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length / 100
+      ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
       : 0;
 
-    const cacheBase = 100;
-    totalCachePrevisto += cacheBase * previstoPct;
-    totalCacheReal += cacheBase * realPct;
+    const sectionId = getSectionFromInstrument(contact.especialidad);
+    const studyLevel = contact.nivel_estudios || 'superior_finalizado';
+    
+    totalCachePrevisto += calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, previstoPct);
+    totalCacheReal += calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
     totalCacheExtra += parseFloat(data.cache_extra) || 0;
   });
 
@@ -397,6 +438,7 @@ const EventAccordion = ({ event, index, contacts, eventResponses, contactsData, 
               onSelectContact={onSelectContact}
               isExpanded={expandedSections[section.id]}
               onToggle={() => toggleSection(section.id)}
+              budgetData={budgetData}
             />
           ))}
         </div>
@@ -416,6 +458,8 @@ const PlantillasDefinitivas = () => {
   const [expandedEvents, setExpandedEvents] = useState({});
   const [showCommunications, setShowCommunications] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [budgetData, setBudgetData] = useState(null);
+  const [seasons, setSeasons] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -423,15 +467,29 @@ const PlantillasDefinitivas = () => {
 
   const loadData = async () => {
     try {
-      const [eventsRes, contactsRes, templatesRes] = await Promise.all([
+      const [eventsRes, contactsRes, templatesRes, seasonsRes] = await Promise.all([
         axios.get(`${API}/events`),
         axios.get(`${API}/contacts`),
-        axios.get(`${API}/email-templates`)
+        axios.get(`${API}/email-templates`),
+        axios.get(`${API}/seasons`)
       ]);
       
       setEvents(eventsRes.data);
       setContacts(contactsRes.data);
       setTemplates(templatesRes.data);
+      setSeasons(seasonsRes.data);
+
+      // Load budget for current season
+      if (seasonsRes.data.length > 0) {
+        const currentSeasonId = seasonsRes.data[0].id;
+        try {
+          const budgetRes = await axios.get(`${API}/budgets/${currentSeasonId}`);
+          setBudgetData(budgetRes.data.budget_data || {});
+        } catch (err) {
+          console.warn("No budget data found for season");
+          setBudgetData({});
+        }
+      }
 
       // Load responses for each event
       const responsesMap = {};
@@ -535,6 +593,7 @@ const PlantillasDefinitivas = () => {
             onSelectContact={toggleContactSelection}
             isExpanded={expandedEvents[event.id]}
             onToggle={() => toggleEvent(event.id)}
+            budgetData={budgetData}
           />
         ))}
       </div>
