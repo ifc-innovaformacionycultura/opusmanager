@@ -480,12 +480,13 @@ def require_manager_or_admin(user: dict):
     if user.get("role") not in ["admin", "manager"]:
         raise HTTPException(status_code=403, detail="Manager or admin access required")
 
-# Available roles
+# Available roles (same as DEFAULT_ROLES for consistency)
 AVAILABLE_ROLES = [
-    {"id": "admin", "name": "Administrador", "description": "Acceso completo a todas las funciones"},
-    {"id": "manager", "name": "Gestor", "description": "Gestión de eventos, contactos y comunicaciones"},
-    {"id": "editor", "name": "Editor", "description": "Edición de datos, sin acceso a configuración"},
-    {"id": "viewer", "name": "Visor", "description": "Solo lectura de información"}
+    {"id": "admin", "name": "Administrador", "description": "Acceso completo a todas las funciones del sistema", "color": "red", "isSystem": True},
+    {"id": "personal", "name": "Gestor de Personal", "description": "Gestión de contactos, comunicaciones y seguimiento de músicos", "color": "blue", "isSystem": False},
+    {"id": "logistica", "name": "Gestor de Logística", "description": "Gestión de eventos, atriles, transporte y alojamiento", "color": "green", "isSystem": False},
+    {"id": "archivo", "name": "Gestor de Archivo", "description": "Gestión documental, informes y exportaciones", "color": "purple", "isSystem": False},
+    {"id": "economico", "name": "Gestor Económico", "description": "Gestión de cachés, pagos y análisis financiero", "color": "yellow", "isSystem": False}
 ]
 
 # User Management Endpoints
@@ -897,10 +898,20 @@ app.include_router(auth_router)
 app.include_router(api_router)
 
 # CORS
+# When using credentials (cookies), we cannot use wildcard "*" for origins
+# We need to allow both localhost (for local dev) and the preview domain
 frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+preview_domain = "https://contact-conductor.preview.emergentagent.com"
+
+allowed_origins = [
+    frontend_url,
+    "http://localhost:3000",
+    preview_domain
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
