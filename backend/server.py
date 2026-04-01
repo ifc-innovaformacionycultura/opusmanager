@@ -173,11 +173,16 @@ async def login(user_data: UserLogin, response: Response):
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=900, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
     
+    # Return token in response body for Authorization header usage
     return {
-        "id": user_id,
-        "email": user["email"],
-        "name": user["name"],
-        "role": user.get("role", "user")
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user_id,
+            "email": user["email"],
+            "name": user["name"],
+            "role": user.get("role", "user")
+        }
     }
 
 @auth_router.post("/register")

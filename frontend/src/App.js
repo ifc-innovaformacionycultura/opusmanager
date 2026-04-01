@@ -8,7 +8,18 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 // Configure axios defaults
-axios.defaults.withCredentials = true;
+// Note: Not using withCredentials due to CORS restrictions with ingress
+// Using Authorization header instead
+const getAuthToken = () => localStorage.getItem('auth_token');
+
+// Add auth token to all requests
+axios.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 // Auth Context
 const AuthContext = createContext(null);
@@ -47,12 +58,23 @@ const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const { data } = await axios.post(`${API}/auth/login`, { email, password });
-    setUser(data);
-    return data;
+    // Store token in localStorage
+    if (data.access_token) {
+      localStorage.setItem('auth_token', data.access_token);
+    }
+    // The response now has a "user" object
+    const userData = data.user || data;
+    setUser(userData);
+    return userData;
   };
 
   const logout = async () => {
-    await axios.post(`${API}/auth/logout`);
+    try {
+      await axios.post(`${API}/auth/logout`);
+    } catch (err) {
+      // Ignore errors on logout
+    }
+    localStorage.removeItem('auth_token');
     setUser(false);
   };
 
