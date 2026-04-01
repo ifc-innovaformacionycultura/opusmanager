@@ -85,8 +85,9 @@ const Presupuestos = () => {
         initialData[section.id][level.id] = {};
         eventsList.forEach(event => {
           initialData[section.id][level.id][event.id] = {
-            rehearsals: 0,
-            functions: 0,
+            num_rehearsals: 0,
+            num_functions: 0,
+            cache_total: 0,
             weight: 100 // Default 100%
           };
         });
@@ -118,7 +119,7 @@ const Presupuestos = () => {
       STUDY_LEVELS.forEach(level => {
         const cell = budgetData[section.id]?.[level.id]?.[eventId];
         if (cell) {
-          const subtotal = (cell.rehearsals + cell.functions) * (cell.weight / 100);
+          const subtotal = cell.cache_total * (cell.weight / 100);
           total += subtotal;
         }
       });
@@ -131,7 +132,7 @@ const Presupuestos = () => {
     STUDY_LEVELS.forEach(level => {
       const cell = budgetData[sectionId]?.[level.id]?.[eventId];
       if (cell) {
-        const subtotal = (cell.rehearsals + cell.functions) * (cell.weight / 100);
+        const subtotal = cell.cache_total * (cell.weight / 100);
         total += subtotal;
       }
     });
@@ -280,7 +281,7 @@ const Presupuestos = () => {
                     return (
                       <th 
                         key={event.id} 
-                        colSpan={isCollapsed ? 1 : 3} 
+                        colSpan={isCollapsed ? 1 : 4} 
                         className="px-2 py-2 text-center font-semibold text-slate-700 border-r border-slate-300 relative"
                       >
                         <div className="flex items-center justify-center gap-2">
@@ -324,8 +325,9 @@ const Presupuestos = () => {
                     }
                     return (
                       <React.Fragment key={`header-${event.id}`}>
-                        <th className="px-1 py-2 text-center border-r border-slate-200">Ensayos €</th>
-                        <th className="px-1 py-2 text-center border-r border-slate-200">Funciones €</th>
+                        <th className="px-1 py-2 text-center border-r border-slate-200"># Ensayos</th>
+                        <th className="px-1 py-2 text-center border-r border-slate-200"># Funciones</th>
+                        <th className="px-1 py-2 text-center border-r border-slate-200">Caché Total €</th>
                         <th className="px-1 py-2 text-center border-r border-slate-300">Pond. %</th>
                       </React.Fragment>
                     );
@@ -338,7 +340,7 @@ const Presupuestos = () => {
                 <React.Fragment key={section.id}>
                   {/* Section Header */}
                   <tr className={`${section.color} border-b border-slate-300`}>
-                    <td colSpan={events.length * 3 + 2} className="px-3 py-2 font-bold text-slate-800 text-xs uppercase tracking-wide">
+                    <td colSpan={events.length * 4 + 2} className="px-3 py-2 font-bold text-slate-800 text-xs uppercase tracking-wide">
                       {section.name}
                     </td>
                   </tr>
@@ -350,12 +352,12 @@ const Presupuestos = () => {
                         <span className="pl-4">{level.name}</span>
                       </td>
                       {events.map(event => {
-                        const cell = budgetData[section.id]?.[level.id]?.[event.id] || { rehearsals: 0, functions: 0, weight: 100 };
+                        const cell = budgetData[section.id]?.[level.id]?.[event.id] || { num_rehearsals: 0, num_functions: 0, cache_total: 0, weight: 100 };
                         const isCollapsed = collapsedEvents[event.id];
                         
                         if (isCollapsed) {
                           // Show only total when collapsed
-                          const subtotal = (cell.rehearsals + cell.functions) * (cell.weight / 100);
+                          const subtotal = cell.cache_total * (cell.weight / 100);
                           return (
                             <td key={`${section.id}-${level.id}-${event.id}`} className="px-2 py-2 text-center border-r border-slate-300 text-xs font-medium">
                               {subtotal.toFixed(2)}€
@@ -363,14 +365,14 @@ const Presupuestos = () => {
                           );
                         }
                         
-                        // Show all three columns when expanded
+                        // Show all four columns when expanded
                         return (
                           <React.Fragment key={`${section.id}-${level.id}-${event.id}`}>
                             <td className="px-1 py-1 border-r border-slate-200">
                               <input
                                 type="number"
-                                value={cell.rehearsals}
-                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'rehearsals', e.target.value)}
+                                value={cell.num_rehearsals}
+                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'num_rehearsals', e.target.value)}
                                 className="w-full px-1 py-1 text-center border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 min="0"
                                 step="1"
@@ -379,11 +381,21 @@ const Presupuestos = () => {
                             <td className="px-1 py-1 border-r border-slate-200">
                               <input
                                 type="number"
-                                value={cell.functions}
-                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'functions', e.target.value)}
+                                value={cell.num_functions}
+                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'num_functions', e.target.value)}
                                 className="w-full px-1 py-1 text-center border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 min="0"
                                 step="1"
+                              />
+                            </td>
+                            <td className="px-1 py-1 border-r border-slate-200">
+                              <input
+                                type="number"
+                                value={cell.cache_total}
+                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'cache_total', e.target.value)}
+                                className="w-full px-1 py-1 text-center border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500 bg-green-50 font-medium"
+                                min="0"
+                                step="10"
                               />
                             </td>
                             <td className="px-1 py-1 border-r border-slate-300">
@@ -418,7 +430,7 @@ const Presupuestos = () => {
                       return (
                         <td 
                           key={`subtotal-${section.id}-${event.id}`} 
-                          colSpan={isCollapsed ? 1 : 3} 
+                          colSpan={isCollapsed ? 1 : 4} 
                           className="px-2 py-2 text-center text-slate-900 border-r border-slate-300 text-xs"
                         >
                           {total.toFixed(2)}€
@@ -465,10 +477,11 @@ const Presupuestos = () => {
       <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
         <h3 className="font-semibold text-blue-900 mb-2 text-sm">💡 Cómo usar esta tabla</h3>
         <ul className="text-xs text-blue-800 space-y-1">
-          <li>• <strong>Ensayos €:</strong> Importe total pagado por asistir a todos los ensayos del evento</li>
-          <li>• <strong>Funciones €:</strong> Importe total pagado por asistir a todas las funciones del evento</li>
+          <li>• <strong># Ensayos:</strong> Número total de ensayos del evento (cantidad)</li>
+          <li>• <strong># Funciones:</strong> Número total de funciones del evento (cantidad)</li>
+          <li>• <strong>Caché Total €:</strong> Importe total a pagar por el evento completo (ensayos + funciones)</li>
           <li>• <strong>Ponderación %:</strong> Factor de ajuste aplicable al total (100% = sin cambios, 80% = reducción 20%, 120% = incremento 20%)</li>
-          <li>• Los importes se calculan considerando 100% de asistencia real</li>
+          <li>• El importe final se calcula como: <strong>Caché Total × (Ponderación % / 100)</strong></li>
           <li>• Los totales se actualizan automáticamente al modificar cualquier valor</li>
           <li>• <strong className="text-green-600">Haz clic en "Guardar Presupuesto" para aplicar los cambios a Plantillas y Asistencia/Pagos</strong></li>
         </ul>
