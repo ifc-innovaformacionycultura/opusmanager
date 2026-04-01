@@ -11,13 +11,18 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 const ACTION_INFO = {
   create: { label: 'Crear', color: 'bg-green-100 text-green-700', icon: '➕' },
   update: { label: 'Actualizar', color: 'bg-blue-100 text-blue-700', icon: '✏️' },
+  update_contact: { label: 'Modificar contacto', color: 'bg-blue-100 text-blue-700', icon: '👤' },
   delete: { label: 'Eliminar', color: 'bg-red-100 text-red-700', icon: '🗑️' },
   view: { label: 'Ver', color: 'bg-slate-100 text-slate-700', icon: '👁️' },
   login: { label: 'Iniciar sesión', color: 'bg-purple-100 text-purple-700', icon: '🔐' },
   logout: { label: 'Cerrar sesión', color: 'bg-purple-100 text-purple-700', icon: '🚪' },
   export: { label: 'Exportar', color: 'bg-yellow-100 text-yellow-700', icon: '📤' },
   password_reset: { label: 'Cambiar contraseña', color: 'bg-orange-100 text-orange-700', icon: '🔑' },
-  send_credentials: { label: 'Enviar credenciales', color: 'bg-cyan-100 text-cyan-700', icon: '📧' }
+  send_credentials: { label: 'Enviar credenciales', color: 'bg-cyan-100 text-cyan-700', icon: '📧' },
+  confirm_attendance: { label: 'Confirmar asistencia', color: 'bg-green-100 text-green-700', icon: '✅' },
+  send_invitation: { label: 'Enviar invitación', color: 'bg-blue-100 text-blue-700', icon: '✉️' },
+  assign_to_roster: { label: 'Asignar a plantilla', color: 'bg-purple-100 text-purple-700', icon: '🎼' },
+  update_cache: { label: 'Modificar caché', color: 'bg-yellow-100 text-yellow-700', icon: '💰' }
 };
 
 // Entity type translations
@@ -26,9 +31,13 @@ const ENTITY_LABELS = {
   user_list: 'Lista de usuarios',
   event: 'Evento',
   contact: 'Contacto',
+  attendance: 'Asistencia',
+  roster: 'Plantilla',
+  email: 'Email',
   season: 'Temporada',
-  template: 'Plantilla',
-  activity_logs: 'Registro de actividad'
+  template: 'Plantilla email',
+  activity_logs: 'Registro de actividad',
+  feedback: 'Reporte'
 };
 
 // Action Badge Component
@@ -72,7 +81,7 @@ const DetailModal = ({ log, isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
         <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
           <h3 className="font-semibold text-lg">Detalle de actividad</h3>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded">
@@ -81,52 +90,134 @@ const DetailModal = ({ log, isOpen, onClose }) => {
             </svg>
           </button>
         </div>
-        <div className="p-4 space-y-4">
+        <div className="p-6 space-y-6">
+          {/* Basic Info Grid */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-slate-500">Fecha y hora</p>
-              <p className="font-medium">{new Date(log.timestamp).toLocaleString('es-ES')}</p>
+              <p className="text-xs font-medium text-slate-500 mb-1">Fecha y hora</p>
+              <p className="text-sm font-medium">{new Date(log.timestamp).toLocaleString('es-ES', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+              })}</p>
             </div>
             <div>
-              <p className="text-sm text-slate-500">Acción</p>
+              <p className="text-xs font-medium text-slate-500 mb-1">Acción</p>
               <ActionBadge action={log.action} />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Usuario</p>
-              <p className="font-medium">{log.user_name}</p>
+              <p className="text-xs font-medium text-slate-500 mb-1">Usuario</p>
+              <p className="text-sm font-medium">{log.user_name}</p>
               <p className="text-xs text-slate-500">{log.user_email}</p>
             </div>
             <div>
-              <p className="text-sm text-slate-500">Tipo de entidad</p>
-              <p className="font-medium">{ENTITY_LABELS[log.entity_type] || log.entity_type}</p>
+              <p className="text-xs font-medium text-slate-500 mb-1">Tipo de entidad</p>
+              <p className="text-sm font-medium">{ENTITY_LABELS[log.entity_type] || log.entity_type}</p>
             </div>
             {log.entity_name && (
-              <div>
-                <p className="text-sm text-slate-500">Entidad afectada</p>
-                <p className="font-medium">{log.entity_name}</p>
-              </div>
-            )}
-            {log.entity_id && (
-              <div>
-                <p className="text-sm text-slate-500">ID de entidad</p>
-                <p className="font-mono text-xs">{log.entity_id}</p>
+              <div className="col-span-2">
+                <p className="text-xs font-medium text-slate-500 mb-1">Entidad afectada</p>
+                <p className="text-sm font-medium">{log.entity_name}</p>
               </div>
             )}
           </div>
+
+          {/* Changes Section (Before/After) - NUEVO */}
+          {log.changes && Object.keys(log.changes).length > 0 && (
+            <div className="border-t border-slate-200 pt-4">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">📝</span>
+                <h4 className="text-sm font-semibold text-slate-900">Cambios Realizados</h4>
+              </div>
+              <div className="space-y-3">
+                {Object.entries(log.changes).map(([field, change]) => (
+                  <div key={field} className="bg-slate-50 rounded-lg p-4">
+                    <div className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide">
+                      {field.replace(/_/g, ' ')}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Before */}
+                      <div>
+                        <div className="flex items-center gap-1 mb-2">
+                          <span className="text-xs font-medium text-red-700">Antes</span>
+                          <svg className="w-3 h-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </div>
+                        <div className="bg-white border-2 border-red-200 rounded-md px-3 py-2">
+                          <code className="text-sm text-red-900 break-all">
+                            {typeof change.before === 'object' 
+                              ? JSON.stringify(change.before, null, 2) 
+                              : (change.before === null || change.before === undefined || change.before === '')
+                                ? <span className="text-slate-400 italic">(vacío)</span>
+                                : String(change.before)
+                            }
+                          </code>
+                        </div>
+                      </div>
+                      {/* After */}
+                      <div>
+                        <div className="flex items-center gap-1 mb-2">
+                          <span className="text-xs font-medium text-green-700">Después</span>
+                          <svg className="w-3 h-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                        <div className="bg-white border-2 border-green-200 rounded-md px-3 py-2">
+                          <code className="text-sm text-green-900 break-all">
+                            {typeof change.after === 'object' 
+                              ? JSON.stringify(change.after, null, 2) 
+                              : (change.after === null || change.after === undefined || change.after === '')
+                                ? <span className="text-slate-400 italic">(vacío)</span>
+                                : String(change.after)
+                            }
+                          </code>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           
+          {/* Details Section */}
           {log.details && Object.keys(log.details).length > 0 && (
-            <div>
-              <p className="text-sm text-slate-500 mb-2">Detalles adicionales</p>
-              <pre className="bg-slate-50 p-3 rounded text-xs overflow-auto max-h-48">
-                {JSON.stringify(log.details, null, 2)}
-              </pre>
+            <div className="border-t border-slate-200 pt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">ℹ️</span>
+                <h4 className="text-sm font-semibold text-slate-900">Información Adicional</h4>
+              </div>
+              
+              {log.details.summary && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                  <div className="text-xs font-medium text-blue-700 mb-1">Resumen</div>
+                  <div className="text-sm text-blue-900">{log.details.summary}</div>
+                </div>
+              )}
+              
+              <div className="bg-slate-50 rounded-lg p-3 space-y-2">
+                {Object.entries(log.details).map(([key, value]) => {
+                  if (key === 'summary' || key === 'fields_modified') return null;
+                  return (
+                    <div key={key} className="flex gap-2">
+                      <span className="text-xs font-medium text-slate-600 min-w-[120px]">{key}:</span>
+                      <span className="text-xs text-slate-900 flex-1">
+                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
           
           {log.ip_address && (
-            <div>
-              <p className="text-sm text-slate-500">Dirección IP</p>
-              <p className="font-mono text-sm">{log.ip_address}</p>
+            <div className="text-xs text-slate-500 border-t border-slate-200 pt-3">
+              <span className="font-medium">Dirección IP:</span> {log.ip_address}
             </div>
           )}
         </div>

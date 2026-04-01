@@ -340,12 +340,49 @@ async def create_contact(contact: ContactCreate, request: Request):
 
 @api_router.put("/contacts/{contact_id}")
 async def update_contact(contact_id: str, contact: ContactCreate, request: Request):
-    await get_current_user(request)
+    current_user = await get_current_user(request)
+    
+    # Get old document for comparison
+    old_contact = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
+    if not old_contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    # Update data
     update_data = contact.model_dump()
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    # Perform update
     result = await db.contacts.update_one({"id": contact_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
+    
+    # Get updated document
     updated = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
+    
+    # Calculate detailed changes
+    changes = calculate_changes(old_contact, updated)
+    
+    # Create detailed activity description
+    action_details = []
+    for field, change in changes.items():
+        action_details.append(f"{field}: {change['before']} → {change['after']}")
+    
+    # Log activity with detailed changes
+    await log_activity(
+        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="update_contact",
+        entity_type="contact",
+        entity_id=contact_id,
+        entity_name=updated.get("name", "Unknown"),
+        details={
+            "summary": ", ".join(action_details[:3]) if action_details else "Actualización de contacto",
+            "fields_modified": list(changes.keys())
+        },
+        changes=changes
+    )
+    
     return updated
 
 # Email Templates
@@ -382,6 +419,253 @@ async def get_event_responses(event_id: str, request: Request):
     await get_current_user(request)
     responses = await db.event_responses.find({"event_id": event_id}, {"_id": 0}).to_list(1000)
     return responses
+
+# ============================================
+# CONTACT OPERATIONS WITH DETAILED LOGGING
+# ============================================
+
+@api_router.post("/contacts/{contact_id}/confirm-attendance")
+async def confirm_contact_attendance(
+    contact_id: str,
+    data: dict,  # {event_id, rehearsals: [bool], function: bool, notes: str}
+    request: Request
+):
+    """Confirmar asistencia de un contacto a un evento"""
+    current_user = await get_current_user(request)
+    
+    # Get contact
+    contact = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    event_id = data.get("event_id")
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    
+    # Create or update attendance record
+    attendance_record = {
+        "contact_id": contact_id,
+        "contact_name": contact.get("name", "Unknown"),
+        "event_id": event_id,
+        "event_name": event.get("name", "Unknown") if event else "Unknown",
+        "status": "confirmed",
+        "rehearsals_confirmed": data.get("rehearsals", []),
+        "function_confirmed": data.get("function", False),
+        "notes": data.get("notes", ""),
+        "confirmed_by": current_user["email"],
+        "confirmed_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Update or insert
+    await db.attendance.update_one(
+        {"contact_id": contact_id, "event_id": event_id},
+        {"$set": attendance_record},
+        upsert=True
+    )
+    
+    # Log activity
+    await log_activity(
+        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="confirm_attendance",
+        entity_type="attendance",
+        entity_id=f"{contact_id}_{event_id}",
+        entity_name=f"{contact.get('name')} - {event.get('name') if event else 'Evento'}",
+        details={
+            "contact": contact.get("name"),
+            "event": event.get("name") if event else "Unknown",
+            "rehearsals": data.get("rehearsals", []),
+            "function": data.get("function", False),
+            "notes": data.get("notes", "")
+        },
+        changes={
+            "status": {"before": "pending", "after": "confirmed"},
+            "rehearsals": {"before": [], "after": data.get("rehearsals", [])},
+            "function": {"before": False, "after": data.get("function", False)}
+        }
+    )
+    
+    return {"message": "Attendance confirmed", "attendance": attendance_record}
+
+@api_router.post("/contacts/{contact_id}/send-invitation")
+async def send_contact_invitation(
+    contact_id: str,
+    data: dict,  # {event_id, template_id, custom_message}
+    request: Request
+):
+    """Enviar invitación/convocatoria a un contacto"""
+    current_user = await get_current_user(request)
+    
+    contact = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    event_id = data.get("event_id")
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    
+    # Record email sent
+    email_record = {
+        "id": str(uuid.uuid4()),
+        "contact_id": contact_id,
+        "contact_email": contact.get("email"),
+        "contact_name": contact.get("name"),
+        "event_id": event_id,
+        "event_name": event.get("name") if event else "Unknown",
+        "template_id": data.get("template_id"),
+        "custom_message": data.get("custom_message", ""),
+        "sent_by": current_user["email"],
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+        "status": "sent"  # In production: sent, bounced, opened, clicked
+    }
+    
+    await db.email_logs.insert_one(email_record)
+    
+    # Log activity
+    await log_activity(
+        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="send_invitation",
+        entity_type="email",
+        entity_id=email_record["id"],
+        entity_name=f"Invitación a {contact.get('name')}",
+        details={
+            "recipient": contact.get("email"),
+            "recipient_name": contact.get("name"),
+            "event": event.get("name") if event else "Unknown",
+            "template_id": data.get("template_id")
+        }
+    )
+    
+    return {"message": "Invitation sent (simulated)", "email_log": email_record}
+
+@api_router.post("/contacts/{contact_id}/assign-to-roster")
+async def assign_contact_to_roster(
+    contact_id: str,
+    data: dict,  # {event_id, section, position, stand_number, cache}
+    request: Request
+):
+    """Asignar contacto a plantilla definitiva"""
+    current_user = await get_current_user(request)
+    
+    contact = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    event_id = data.get("event_id")
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    
+    # Create roster assignment
+    roster_assignment = {
+        "id": str(uuid.uuid4()),
+        "contact_id": contact_id,
+        "contact_name": contact.get("name"),
+        "event_id": event_id,
+        "event_name": event.get("name") if event else "Unknown",
+        "section": data.get("section"),  # Cuerda, Viento Madera, etc.
+        "instrument": contact.get("instrument"),
+        "position": data.get("position"),  # Principal, tutti, etc.
+        "stand_number": data.get("stand_number"),
+        "cache": data.get("cache", 0),
+        "cache_extra": data.get("cache_extra", 0),
+        "assigned_by": current_user["email"],
+        "assigned_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.roster_assignments.update_one(
+        {"contact_id": contact_id, "event_id": event_id},
+        {"$set": roster_assignment},
+        upsert=True
+    )
+    
+    # Log activity
+    await log_activity(
+        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="assign_to_roster",
+        entity_type="roster",
+        entity_id=roster_assignment["id"],
+        entity_name=f"{contact.get('name')} → {event.get('name') if event else 'Evento'}",
+        details={
+            "contact": contact.get("name"),
+            "event": event.get("name") if event else "Unknown",
+            "section": data.get("section"),
+            "position": data.get("position"),
+            "stand": data.get("stand_number"),
+            "cache": data.get("cache", 0)
+        },
+        changes={
+            "roster_status": {"before": "not_assigned", "after": "assigned"},
+            "section": {"before": None, "after": data.get("section")},
+            "cache": {"before": 0, "after": data.get("cache", 0)}
+        }
+    )
+    
+    return {"message": "Contact assigned to roster", "assignment": roster_assignment}
+
+@api_router.put("/roster-assignments/{assignment_id}/update-cache")
+async def update_roster_cache(
+    assignment_id: str,
+    data: dict,  # {cache, cache_extra, reason}
+    request: Request
+):
+    """Actualizar caché de un músico en la plantilla"""
+    current_user = await get_current_user(request)
+    
+    # Get old assignment
+    old_assignment = await db.roster_assignments.find_one({"id": assignment_id}, {"_id": 0})
+    if not old_assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    
+    # Update cache
+    new_cache = data.get("cache", old_assignment.get("cache", 0))
+    new_cache_extra = data.get("cache_extra", old_assignment.get("cache_extra", 0))
+    
+    update_result = await db.roster_assignments.update_one(
+        {"id": assignment_id},
+        {"$set": {
+            "cache": new_cache,
+            "cache_extra": new_cache_extra,
+            "cache_updated_by": current_user["email"],
+            "cache_updated_at": datetime.now(timezone.utc).isoformat(),
+            "cache_update_reason": data.get("reason", "")
+        }}
+    )
+    
+    if update_result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    
+    # Get updated assignment
+    updated_assignment = await db.roster_assignments.find_one({"id": assignment_id}, {"_id": 0})
+    
+    # Calculate totals
+    old_total = old_assignment.get("cache", 0) + old_assignment.get("cache_extra", 0)
+    new_total = new_cache + new_cache_extra
+    
+    # Log activity
+    await log_activity(
+        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="update_cache",
+        entity_type="roster",
+        entity_id=assignment_id,
+        entity_name=f"Caché de {old_assignment.get('contact_name')}",
+        details={
+            "contact": old_assignment.get("contact_name"),
+            "event": old_assignment.get("event_name"),
+            "reason": data.get("reason", "")
+        },
+        changes={
+            "cache_base": {"before": old_assignment.get("cache", 0), "after": new_cache},
+            "cache_extra": {"before": old_assignment.get("cache_extra", 0), "after": new_cache_extra},
+            "cache_total": {"before": old_total, "after": new_total}
+        }
+    )
+    
+    return {"message": "Cache updated", "assignment": updated_assignment}
+
 
 @api_router.post("/event-responses")
 async def create_event_response(response_data: dict, request: Request):
@@ -483,24 +767,67 @@ async def log_activity(
     entity_id: str = None,
     entity_name: str = None,
     details: dict = None,
-    ip_address: str = None
+    ip_address: str = None,
+    changes: dict = None  # NEW: Para capturar before/after de cambios
 ):
-    """Log user activity for audit trail"""
+    """
+    Log user activity for audit trail with detailed change tracking
+    
+    Args:
+        changes: Dict with format {"field_name": {"before": old_value, "after": new_value}}
+    """
     log_entry = {
         "id": str(uuid.uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "user_id": user_id,
         "user_email": user_email,
         "user_name": user_name,
-        "action": action,  # create, update, delete, login, logout, view, export
+        "action": action,  # create, update, delete, login, logout, view, export, confirm, assign, email_sent, etc.
         "entity_type": entity_type,  # user, event, contact, season, template, etc.
         "entity_id": entity_id,
         "entity_name": entity_name,
         "details": details or {},
+        "changes": changes or {},  # Detailed before/after for each changed field
         "ip_address": ip_address
     }
     await db.activity_logs.insert_one(log_entry)
     return log_entry
+
+def calculate_changes(old_doc: dict, new_doc: dict, fields_to_track: list = None) -> dict:
+    """
+    Calculate changes between old and new documents
+    
+    Args:
+        old_doc: Original document
+        new_doc: Updated document
+        fields_to_track: List of field names to track (None = track all)
+    
+    Returns:
+        Dict with format {"field_name": {"before": old_value, "after": new_value}}
+    """
+    changes = {}
+    
+    # Determine which fields to check
+    if fields_to_track:
+        fields = fields_to_track
+    else:
+        # Track all fields that exist in either document
+        fields = set(list(old_doc.keys()) + list(new_doc.keys()))
+        # Exclude system fields
+        fields = fields - {"_id", "id", "created_at", "updated_at"}
+    
+    for field in fields:
+        old_value = old_doc.get(field)
+        new_value = new_doc.get(field)
+        
+        # Only log if value actually changed
+        if old_value != new_value:
+            changes[field] = {
+                "before": old_value,
+                "after": new_value
+            }
+    
+    return changes
 
 # Role check helper
 def require_admin(user: dict):
