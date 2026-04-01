@@ -952,7 +952,7 @@ async def create_feedback_report(report: FeedbackReportCreate, request: Request)
     
     # Log activity
     await log_activity(
-        user_id=current_user["id"],
+        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
         user_email=current_user["email"],
         user_name=current_user["name"],
         action=f"Reportar {report.type}",
