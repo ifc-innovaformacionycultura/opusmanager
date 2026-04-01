@@ -654,63 +654,6 @@ async def calculate_cache_endpoint(data: dict, request: Request):
     
     return result
 
-    """Confirmar asistencia de un contacto a un evento"""
-    current_user = await get_current_user(request)
-    
-    # Get contact
-    contact = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    
-    event_id = data.get("event_id")
-    event = await db.events.find_one({"id": event_id}, {"_id": 0})
-    
-    # Create or update attendance record
-    attendance_record = {
-        "contact_id": contact_id,
-        "contact_name": contact.get("name", "Unknown"),
-        "event_id": event_id,
-        "event_name": event.get("name", "Unknown") if event else "Unknown",
-        "status": "confirmed",
-        "rehearsals_confirmed": data.get("rehearsals", []),
-        "function_confirmed": data.get("function", False),
-        "notes": data.get("notes", ""),
-        "confirmed_by": current_user["email"],
-        "confirmed_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    # Update or insert
-    await db.attendance.update_one(
-        {"contact_id": contact_id, "event_id": event_id},
-        {"$set": attendance_record},
-        upsert=True
-    )
-    
-    # Log activity
-    await log_activity(
-        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
-        user_email=current_user["email"],
-        user_name=current_user["name"],
-        action="confirm_attendance",
-        entity_type="attendance",
-        entity_id=f"{contact_id}_{event_id}",
-        entity_name=f"{contact.get('name')} - {event.get('name') if event else 'Evento'}",
-        details={
-            "contact": contact.get("name"),
-            "event": event.get("name") if event else "Unknown",
-            "rehearsals": data.get("rehearsals", []),
-            "function": data.get("function", False),
-            "notes": data.get("notes", "")
-        },
-        changes={
-            "status": {"before": "pending", "after": "confirmed"},
-            "rehearsals": {"before": [], "after": data.get("rehearsals", [])},
-            "function": {"before": False, "after": data.get("function", False)}
-        }
-    )
-    
-    return {"message": "Attendance confirmed", "attendance": attendance_record}
-
 @api_router.post("/contacts/{contact_id}/send-invitation")
 async def send_contact_invitation(
     contact_id: str,

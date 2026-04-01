@@ -458,6 +458,7 @@ const Presupuestos = () => {
             </tbody>
           </table>
         </div>
+      </div>
       )}
 
       {/* Legend */}
