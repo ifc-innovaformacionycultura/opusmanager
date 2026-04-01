@@ -44,6 +44,32 @@ Sistema integral para la gestión de temporadas, eventos y comunicaciones musica
   - Configuración de Plantillas (templates + matriz de activación)
   - Seguimiento de Convocatorias (DataGrid con filtros, porcentajes, panel de comunicaciones)
 
+### Fase 2 - Módulos Económicos (Abr 2026)
+- ✅ **Plantillas Definitivas:**
+  - Tabla jerárquica multinivel (Eventos > Secciones instrumentales > Contactos)
+  - Asignación de atriles (número, letra, comentarios)
+  - Asistencia prevista vs real con códigos de color
+  - Cálculo automático de cachés (previsto, real, extra)
+  - Panel de comunicaciones integrado
+
+- ✅ **Asistencia, Pagos y Bloque Económico:**
+  - Todos los campos de Plantillas Definitivas
+  - Bloque económico diferenciado (fondo azul): producción, transporte, otros gastos
+  - Gestión documental: subida de justificantes (transporte, alojamiento, titulaciones)
+  - Renombrado automático de archivos
+  - Columna "Total a percibir" destacada (fondo verde)
+  - Configuración de carpeta Google Drive
+
+- ✅ **Análisis Económico:**
+  - Resumen global de temporada
+  - Tarjetas de métricas: previsto, real, extras, total general
+  - Gráfico de barras: comparativa presupuestaria
+  - Gráfico circular: distribución de gastos
+  - Desglose por sección instrumental
+  - Tabla detallada de contactos con IBAN
+  - Exportación a Excel (CSV)
+  - Exportación XML bancario
+
 ### APIs Implementadas
 - POST/GET /api/auth/login, logout, me, refresh
 - GET/POST /api/seasons
