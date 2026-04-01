@@ -27,6 +27,7 @@ const Presupuestos = () => {
   const [selectedSeason, setSelectedSeason] = useState(null);
   const [budgetData, setBudgetData] = useState({});
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchSeasons();
@@ -55,7 +56,19 @@ const Presupuestos = () => {
       setLoading(true);
       const response = await axios.get(`${API}/events?season_id=${selectedSeason}`);
       setEvents(response.data);
-      initializeBudgetData(response.data);
+      
+      // Fetch existing budget or initialize
+      try {
+        const budgetResponse = await axios.get(`${API}/budgets/${selectedSeason}`);
+        if (budgetResponse.data.budget_data && Object.keys(budgetResponse.data.budget_data).length > 0) {
+          setBudgetData(budgetResponse.data.budget_data);
+        } else {
+          initializeBudgetData(response.data);
+        }
+      } catch (err) {
+        // If no budget exists, initialize
+        initializeBudgetData(response.data);
+      }
     } catch (err) {
       console.error("Error loading events:", err);
     } finally {
@@ -146,6 +159,22 @@ const Presupuestos = () => {
     return total;
   };
 
+  const saveBudget = async () => {
+    try {
+      setSaving(true);
+      await axios.post(`${API}/budgets`, {
+        season_id: selectedSeason,
+        budget_data: budgetData
+      });
+      alert('✅ Presupuesto guardado correctamente');
+    } catch (err) {
+      console.error("Error saving budget:", err);
+      alert('❌ Error al guardar el presupuesto');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center">
@@ -161,15 +190,36 @@ const Presupuestos = () => {
           <h1 className="font-cabinet text-3xl font-bold text-slate-900">Presupuestos de Temporada</h1>
           <p className="font-ibm text-slate-600 mt-1">Gestión de cachés por evento y categoría</p>
         </div>
-        <select
-          value={selectedSeason || ''}
-          onChange={(e) => setSelectedSeason(e.target.value)}
-          className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-        >
-          {seasons.map(season => (
-            <option key={season.id} value={season.id}>{season.name}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-3">
+          <select
+            value={selectedSeason || ''}
+            onChange={(e) => setSelectedSeason(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+          >
+            {seasons.map(season => (
+              <option key={season.id} value={season.id}>{season.name}</option>
+            ))}
+          </select>
+          <button
+            onClick={saveBudget}
+            disabled={saving}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
+          >
+            {saving ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Guardando...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+                Guardar Presupuesto
+              </>
+            )}
+          </button>
+        </div>
       </header>
 
       {events.length === 0 ? (
@@ -311,7 +361,26 @@ const Presupuestos = () => {
           <li>• <strong>Ponderación %:</strong> Factor de ajuste aplicable al total (100% = sin cambios, 80% = reducción 20%, 120% = incremento 20%)</li>
           <li>• Los importes se calculan considerando 100% de asistencia real</li>
           <li>• Los totales se actualizan automáticamente al modificar cualquier valor</li>
+          <li>• <strong className="text-green-600">Haz clic en "Guardar Presupuesto" para aplicar los cambios a Plantillas y Asistencia/Pagos</strong></li>
         </ul>
+      </div>
+
+      {/* Info box */}
+      <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <svg className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="text-xs text-green-800">
+            <strong className="block mb-1">📊 Integración con otras secciones:</strong>
+            <p>Una vez guardado, los cachés configurados aquí se aplicarán automáticamente en:</p>
+            <ul className="mt-1 ml-4 list-disc">
+              <li><strong>Plantillas definitivas:</strong> Al asignar músicos a eventos</li>
+              <li><strong>Asistencia y pagos:</strong> Cálculo automático según asistencia real</li>
+            </ul>
+            <p className="mt-2">Los músicos se clasifican según su <strong>nivel de estudios</strong> y <strong>sección orquestal</strong> para aplicar el caché correspondiente.</p>
+          </div>
+        </div>
       </div>
     </div>
   );

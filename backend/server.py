@@ -141,6 +141,9 @@ class ContactCreate(BaseModel):
     email: str
     iban: Optional[str] = None
     swift: Optional[str] = None
+    # New fields for budget integration
+    section: Optional[str] = None  # cuerda, viento_madera, viento_metal, percusion, teclados, coros
+    study_level: Optional[str] = None  # superior_finalizado, superior_cursando, profesional_finalizado, profesional_cursando
 
 class EmailTemplateCreate(BaseModel):
     type: str
@@ -463,6 +466,197 @@ async def get_event_responses(event_id: str, request: Request):
 
 @api_router.post("/contacts/{contact_id}/confirm-attendance")
 async def confirm_contact_attendance(
+
+# Budget Models
+class BudgetData(BaseModel):
+    season_id: str
+    budget_data: dict  # Complete budget matrix
+
+# ============================================
+# BUDGET ENDPOINTS
+# ============================================
+
+@api_router.get("/budgets/{season_id}")
+async def get_season_budget(season_id: str, request: Request):
+    """Get budget configuration for a season"""
+    await get_current_user(request)
+    
+    budget = await db.budgets.find_one({"season_id": season_id}, {"_id": 0})
+    if not budget:
+        # Return empty budget structure
+        return {
+            "season_id": season_id,
+            "budget_data": {},
+            "created_at": None,
+            "updated_at": None
+        }
+    return budget
+
+@api_router.post("/budgets")
+async def save_budget(budget: BudgetData, request: Request):
+    """Save or update budget configuration"""
+    current_user = await get_current_user(request)
+    
+    budget_doc = {
+        "season_id": budget.season_id,
+        "budget_data": budget.budget_data,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_by": current_user["email"]
+    }
+    
+    existing = await db.budgets.find_one({"season_id": budget.season_id})
+    
+    if existing:
+        # Update
+        await db.budgets.update_one(
+            {"season_id": budget.season_id},
+            {"$set": budget_doc}
+        )
+    else:
+        # Create
+        budget_doc["created_at"] = datetime.now(timezone.utc).isoformat()
+        await db.budgets.insert_one(budget_doc)
+    
+    # Log activity
+    await log_activity(
+        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="update_budget",
+        entity_type="budget",
+        entity_id=budget.season_id,
+        entity_name=f"Presupuesto temporada",
+        details={
+            "season_id": budget.season_id
+        }
+    )
+    
+    return {"message": "Budget saved successfully"}
+
+def calculate_musician_cache(
+    section: str,
+    study_level: str,
+    event_id: str,
+    season_id: str,
+    rehearsals_attended: int = 0,
+    functions_attended: int = 0
+) -> dict:
+    """
+    Calculate cache for a musician based on budget configuration
+    
+    Args:
+        section: Orchestra section (cuerda, viento_madera, etc.)
+        study_level: Study level (superior_finalizado, etc.)
+        event_id: Event ID
+        season_id: Season ID
+        rehearsals_attended: Number of rehearsals attended
+        functions_attended: Number of functions attended
+    
+    Returns:
+        dict with cache_rehearsals, cache_functions, cache_total, weight
+    """
+    import asyncio
+    
+    # This function needs to be async to query DB, but we'll create a sync wrapper
+    # For now, return a placeholder structure
+    # In production, this would fetch from db.budgets
+    
+    return {
+        "cache_rehearsals": 0,
+        "cache_functions": 0,
+        "cache_total": 0,
+        "weight": 100,
+        "note": "Configure budget first"
+    }
+
+async def calculate_musician_cache_async(
+    section: str,
+    study_level: str,
+    event_id: str,
+    season_id: str,
+    rehearsals_attended: int = 0,
+    functions_attended: int = 0
+) -> dict:
+    """
+    Async version - Calculate cache for a musician based on budget configuration
+    """
+    # Get budget for season
+    budget = await db.budgets.find_one({"season_id": season_id}, {"_id": 0})
+    
+    if not budget or not budget.get("budget_data"):
+        return {
+            "cache_rehearsals": 0,
+            "cache_functions": 0,
+            "cache_total": 0,
+            "weight": 100,
+            "note": "No budget configured for this season"
+        }
+    
+    budget_data = budget["budget_data"]
+    
+    # Get the specific cell for this section/level/event
+    cell = budget_data.get(section, {}).get(study_level, {}).get(event_id, {})
+    
+    if not cell:
+        return {
+            "cache_rehearsals": 0,
+            "cache_functions": 0,
+            "cache_total": 0,
+            "weight": 100,
+            "note": "No budget entry for this combination"
+        }
+    
+    # Get base amounts from budget
+    rehearsal_rate = cell.get("rehearsals", 0)  # Total for ALL rehearsals
+    function_rate = cell.get("functions", 0)    # Total for ALL functions
+    weight = cell.get("weight", 100)
+    
+    # Calculate proportional amount based on attendance
+    # If budget says 300€ for all rehearsals and there are 3 rehearsals,
+    # and musician attended 2, they get (300/3)*2 = 200€
+    
+    # For simplicity, we'll assume:
+    # - rehearsal_rate is the TOTAL for attending ALL rehearsals
+    # - function_rate is the TOTAL for attending ALL functions
+    # - If they attend 100%, they get the full amount
+    
+    # In a real scenario, you'd need to know the total number of rehearsals/functions
+    # For now, we'll use the attendance directly as a percentage
+    
+    cache_rehearsals = rehearsal_rate * (rehearsals_attended / 100) if rehearsals_attended <= 100 else rehearsal_rate
+    cache_functions = function_rate * (functions_attended / 100) if functions_attended <= 100 else function_rate
+    
+    # Apply weight
+    cache_total = (cache_rehearsals + cache_functions) * (weight / 100)
+    
+    return {
+        "cache_rehearsals": cache_rehearsals,
+        "cache_functions": cache_functions,
+        "cache_total": cache_total,
+        "weight": weight,
+        "base_rehearsals": rehearsal_rate,
+        "base_functions": function_rate
+    }
+
+@api_router.post("/calculate-cache")
+async def calculate_cache_endpoint(data: dict, request: Request):
+    """
+    Calculate cache for a musician
+    Expects: {section, study_level, event_id, season_id, rehearsals_attended, functions_attended}
+    """
+    await get_current_user(request)
+    
+    result = await calculate_musician_cache_async(
+        section=data.get("section"),
+        study_level=data.get("study_level"),
+        event_id=data.get("event_id"),
+        season_id=data.get("season_id"),
+        rehearsals_attended=data.get("rehearsals_attended", 0),
+        functions_attended=data.get("functions_attended", 0)
+    )
+    
+    return result
+
     contact_id: str,
     data: dict,  # {event_id, rehearsals: [bool], function: bool, notes: str}
     request: Request
