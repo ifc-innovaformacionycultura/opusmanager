@@ -28,6 +28,7 @@ const Presupuestos = () => {
   const [budgetData, setBudgetData] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [collapsedEvents, setCollapsedEvents] = useState({}); // Track which events are collapsed
 
   useEffect(() => {
     fetchSeasons();
@@ -175,6 +176,25 @@ const Presupuestos = () => {
     }
   };
 
+  const toggleEventCollapse = (eventId) => {
+    setCollapsedEvents(prev => ({
+      ...prev,
+      [eventId]: !prev[eventId]
+    }));
+  };
+
+  const collapseAllEvents = () => {
+    const allCollapsed = {};
+    events.forEach(event => {
+      allCollapsed[event.id] = true;
+    });
+    setCollapsedEvents(allCollapsed);
+  };
+
+  const expandAllEvents = () => {
+    setCollapsedEvents({});
+  };
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center">
@@ -185,12 +205,31 @@ const Presupuestos = () => {
 
   return (
     <div className="p-6">
-      <header className="mb-6 flex items-center justify-between">
+      <header className="mb-6 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-cabinet text-3xl font-bold text-slate-900">Presupuestos de Temporada</h1>
           <p className="font-ibm text-slate-600 mt-1">Gestión de cachés por evento y categoría</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Collapse controls */}
+          <div className="flex items-center gap-2 border border-slate-300 rounded-md px-2 py-1">
+            <button
+              onClick={collapseAllEvents}
+              className="px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded"
+              title="Contraer todos los eventos"
+            >
+              ⊟ Contraer todos
+            </button>
+            <div className="w-px h-4 bg-slate-300"></div>
+            <button
+              onClick={expandAllEvents}
+              className="px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded"
+              title="Expandir todos los eventos"
+            >
+              ⊞ Expandir todos
+            </button>
+          </div>
+          
           <select
             value={selectedSeason || ''}
             onChange={(e) => setSelectedSeason(e.target.value)}
@@ -227,35 +266,73 @@ const Presupuestos = () => {
           <p className="text-slate-500">No hay eventos configurados para esta temporada</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-100 border-b border-slate-300">
-                <th className="px-3 py-3 text-left font-semibold text-slate-700 sticky left-0 bg-slate-100 border-r border-slate-300 min-w-[200px]">
-                  Sección / Nivel de Estudios
-                </th>
-                {events.map(event => (
-                  <th key={event.id} colSpan={3} className="px-2 py-3 text-center font-semibold text-slate-700 border-r border-slate-300">
-                    <div className="text-xs font-bold mb-1">{event.name}</div>
-                    <div className="text-[10px] text-slate-500">{event.date}</div>
+        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+          {/* Wrapper with horizontal scroll */}
+          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
+            <table className="w-full text-sm" style={{ minWidth: '1400px' }}>
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-300">
+                  <th className="px-3 py-3 text-left font-semibold text-slate-700 sticky left-0 bg-slate-100 border-r border-slate-300 min-w-[200px] z-10">
+                    Sección / Nivel de Estudios
                   </th>
-                ))}
-                <th className="px-3 py-3 text-center font-semibold text-slate-700 bg-slate-200 min-w-[100px]">
-                  TOTAL
-                </th>
-              </tr>
-              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-600">
-                <th className="px-3 py-2 sticky left-0 bg-slate-50 border-r border-slate-300"></th>
-                {events.map(event => (
-                  <React.Fragment key={`header-${event.id}`}>
-                    <th className="px-1 py-2 text-center border-r border-slate-200">Ensayos €</th>
-                    <th className="px-1 py-2 text-center border-r border-slate-200">Funciones €</th>
-                    <th className="px-1 py-2 text-center border-r border-slate-300">Pond. %</th>
-                  </React.Fragment>
-                ))}
-                <th className="px-3 py-2 bg-slate-200"></th>
-              </tr>
-            </thead>
+                  {events.map(event => {
+                    const isCollapsed = collapsedEvents[event.id];
+                    return (
+                      <th 
+                        key={event.id} 
+                        colSpan={isCollapsed ? 1 : 3} 
+                        className="px-2 py-2 text-center font-semibold text-slate-700 border-r border-slate-300 relative"
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => toggleEventCollapse(event.id)}
+                            className="hover:bg-slate-200 rounded p-1 transition-colors"
+                            title={isCollapsed ? "Expandir evento" : "Contraer evento"}
+                          >
+                            {isCollapsed ? (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            )}
+                          </button>
+                          <div>
+                            <div className="text-xs font-bold">{event.name}</div>
+                            <div className="text-[10px] text-slate-500">{event.date}</div>
+                          </div>
+                        </div>
+                      </th>
+                    );
+                  })}
+                  <th className="px-3 py-3 text-center font-semibold text-slate-700 bg-slate-200 min-w-[100px]">
+                    TOTAL
+                  </th>
+                </tr>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-600">
+                  <th className="px-3 py-2 sticky left-0 bg-slate-50 border-r border-slate-300 z-10"></th>
+                  {events.map(event => {
+                    const isCollapsed = collapsedEvents[event.id];
+                    if (isCollapsed) {
+                      return (
+                        <th key={`header-${event.id}`} className="px-2 py-2 text-center border-r border-slate-300">
+                          Total €
+                        </th>
+                      );
+                    }
+                    return (
+                      <React.Fragment key={`header-${event.id}`}>
+                        <th className="px-1 py-2 text-center border-r border-slate-200">Ensayos €</th>
+                        <th className="px-1 py-2 text-center border-r border-slate-200">Funciones €</th>
+                        <th className="px-1 py-2 text-center border-r border-slate-300">Pond. %</th>
+                      </React.Fragment>
+                    );
+                  })}
+                  <th className="px-3 py-2 bg-slate-200"></th>
+                </tr>
+              </thead>
             <tbody>
               {SECTIONS.map((section, sectionIdx) => (
                 <React.Fragment key={section.id}>
@@ -269,11 +346,24 @@ const Presupuestos = () => {
                   {/* Study Levels */}
                   {STUDY_LEVELS.map((level, levelIdx) => (
                     <tr key={`${section.id}-${level.id}`} className="border-b border-slate-200 hover:bg-slate-50">
-                      <td className="px-3 py-2 text-slate-700 sticky left-0 bg-white border-r border-slate-300 text-xs">
+                      <td className="px-3 py-2 text-slate-700 sticky left-0 bg-white border-r border-slate-300 text-xs z-10">
                         <span className="pl-4">{level.name}</span>
                       </td>
                       {events.map(event => {
                         const cell = budgetData[section.id]?.[level.id]?.[event.id] || { rehearsals: 0, functions: 0, weight: 100 };
+                        const isCollapsed = collapsedEvents[event.id];
+                        
+                        if (isCollapsed) {
+                          // Show only total when collapsed
+                          const subtotal = (cell.rehearsals + cell.functions) * (cell.weight / 100);
+                          return (
+                            <td key={`${section.id}-${level.id}-${event.id}`} className="px-2 py-2 text-center border-r border-slate-300 text-xs font-medium">
+                              {subtotal.toFixed(2)}€
+                            </td>
+                          );
+                        }
+                        
+                        // Show all three columns when expanded
                         return (
                           <React.Fragment key={`${section.id}-${level.id}-${event.id}`}>
                             <td className="px-1 py-1 border-r border-slate-200">
@@ -303,7 +393,7 @@ const Presupuestos = () => {
                                 onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'weight', e.target.value)}
                                 className="w-full px-1 py-1 text-center border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500 bg-yellow-50"
                                 min="0"
-                                max="100"
+                                max="200"
                                 step="1"
                               />
                             </td>
@@ -318,14 +408,23 @@ const Presupuestos = () => {
                   
                   {/* Section Subtotal */}
                   <tr className="bg-slate-100 border-b-2 border-slate-400 font-semibold">
-                    <td className="px-3 py-2 text-slate-800 sticky left-0 bg-slate-100 border-r border-slate-300 text-xs">
+                    <td className="px-3 py-2 text-slate-800 sticky left-0 bg-slate-100 border-r border-slate-300 text-xs z-10">
                       SUBTOTAL {section.name}
                     </td>
-                    {events.map(event => (
-                      <td key={`subtotal-${section.id}-${event.id}`} colSpan={3} className="px-2 py-2 text-center text-slate-900 border-r border-slate-300 text-xs">
-                        {calculateSectionEventTotal(section.id, event.id).toFixed(2)}€
-                      </td>
-                    ))}
+                    {events.map(event => {
+                      const isCollapsed = collapsedEvents[event.id];
+                      const total = calculateSectionEventTotal(section.id, event.id);
+                      
+                      return (
+                        <td 
+                          key={`subtotal-${section.id}-${event.id}`} 
+                          colSpan={isCollapsed ? 1 : 3} 
+                          className="px-2 py-2 text-center text-slate-900 border-r border-slate-300 text-xs"
+                        >
+                          {total.toFixed(2)}€
+                        </td>
+                      );
+                    })}
                     <td className="px-3 py-2 text-center text-slate-900 bg-slate-200 text-xs">
                       {STUDY_LEVELS.reduce((sum, level) => sum + calculateRowTotal(section.id, level.id), 0).toFixed(2)}€
                     </td>
@@ -335,14 +434,23 @@ const Presupuestos = () => {
               
               {/* Grand Total */}
               <tr className="bg-slate-800 text-white font-bold">
-                <td className="px-3 py-3 sticky left-0 bg-slate-800 border-r border-slate-600 text-sm uppercase">
+                <td className="px-3 py-3 sticky left-0 bg-slate-800 border-r border-slate-600 text-sm uppercase z-10">
                   TOTAL TEMPORADA
                 </td>
-                {events.map(event => (
-                  <td key={`total-${event.id}`} colSpan={3} className="px-2 py-3 text-center border-r border-slate-600 text-sm">
-                    {calculateEventTotal(event.id).toFixed(2)}€
-                  </td>
-                ))}
+                {events.map(event => {
+                  const isCollapsed = collapsedEvents[event.id];
+                  const total = calculateEventTotal(event.id);
+                  
+                  return (
+                    <td 
+                      key={`total-${event.id}`} 
+                      colSpan={isCollapsed ? 1 : 3} 
+                      className="px-2 py-3 text-center border-r border-slate-600 text-sm"
+                    >
+                      {total.toFixed(2)}€
+                    </td>
+                  );
+                })}
                 <td className="px-3 py-3 text-center bg-slate-900 text-base">
                   {calculateGrandTotal().toFixed(2)}€
                 </td>
