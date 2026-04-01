@@ -246,24 +246,26 @@ const PasswordResetForm = ({ user, onSave, onCancel }) => {
 };
 
 // Role Badge Component
-const RoleBadge = ({ role }) => {
-  const colors = {
-    admin: 'bg-red-100 text-red-700 border-red-200',
-    manager: 'bg-blue-100 text-blue-700 border-blue-200',
-    editor: 'bg-green-100 text-green-700 border-green-200',
-    viewer: 'bg-slate-100 text-slate-700 border-slate-200'
+const RoleBadge = ({ role, roles }) => {
+  // Find the role info from the roles list
+  const roleInfo = roles?.find(r => r.id === role);
+  
+  const colorClasses = {
+    red: 'bg-red-100 text-red-700 border-red-200',
+    blue: 'bg-blue-100 text-blue-700 border-blue-200',
+    green: 'bg-green-100 text-green-700 border-green-200',
+    purple: 'bg-purple-100 text-purple-700 border-purple-200',
+    yellow: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    slate: 'bg-slate-100 text-slate-700 border-slate-200'
   };
   
-  const names = {
-    admin: 'Administrador',
-    manager: 'Gestor',
-    editor: 'Editor',
-    viewer: 'Visor'
-  };
+  // Use role info if found, otherwise fallback to displaying the role id
+  const displayName = roleInfo?.name || role;
+  const colorClass = roleInfo?.color ? colorClasses[roleInfo.color] : colorClasses.slate;
   
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium border ${colors[role] || colors.viewer}`}>
-      {names[role] || role}
+    <span className={`px-2 py-1 rounded-full text-xs font-medium border ${colorClass}`}>
+      {displayName}
     </span>
   );
 };
@@ -430,7 +432,7 @@ const GestionUsuarios = () => {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-600">{user.email}</td>
-                <td className="px-4 py-3"><RoleBadge role={user.role} /></td>
+                <td className="px-4 py-3"><RoleBadge role={user.role} roles={roles} /></td>
                 <td className="px-4 py-3 text-center">
                   {user.is_active !== false ? (
                     <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">Activo</span>
@@ -503,7 +505,7 @@ const GestionUsuarios = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {roles.map(role => (
             <div key={role.id} className="bg-white p-3 rounded border border-slate-200">
-              <RoleBadge role={role.id} />
+              <RoleBadge role={role.id} roles={roles} />
               <p className="text-xs text-slate-500 mt-2">{role.description}</p>
             </div>
           ))}
