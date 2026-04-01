@@ -222,6 +222,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       path: "/configuracion",
       children: [
         { id: "eventos", label: "Eventos", path: "/configuracion/eventos" },
+        { id: "presupuestos", label: "Presupuestos", path: "/configuracion/presupuestos" },
         { id: "base-datos", label: "Base de datos", path: "/configuracion/base-datos" },
         { id: "plantillas", label: "Plantillas de comunicación", path: "/configuracion/plantillas" }
       ]
