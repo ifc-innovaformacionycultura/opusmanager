@@ -320,6 +320,43 @@ async def delete_event(event_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Event not found")
     return {"message": "Event deleted"}
 
+@api_router.post("/events/{event_id}/duplicate")
+async def duplicate_event(event_id: str, request: Request):
+    """Duplicar un evento con toda su información"""
+    current_user = await get_current_user(request)
+    
+    # Get original event
+    original_event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not original_event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Create duplicate with new ID and modified name
+    duplicated_event = original_event.copy()
+    duplicated_event["id"] = str(uuid.uuid4())
+    duplicated_event["name"] = f"{original_event['name']} (Copia)"
+    duplicated_event["created_at"] = datetime.now(timezone.utc).isoformat()
+    
+    # Insert duplicate
+    await db.events.insert_one(duplicated_event)
+    
+    # Log activity
+    await log_activity(
+        user_id=str(current_user.get("_id", current_user.get("id", "unknown"))),
+        user_email=current_user["email"],
+        user_name=current_user["name"],
+        action="duplicate_event",
+        entity_type="event",
+        entity_id=duplicated_event["id"],
+        entity_name=duplicated_event["name"],
+        details={
+            "original_event_id": event_id,
+            "original_event_name": original_event["name"]
+        }
+    )
+    
+    return {k: v for k, v in duplicated_event.items() if k != "_id"}
+
+
 # Contacts
 @api_router.get("/contacts")
 async def get_contacts(request: Request):

@@ -585,6 +585,7 @@ const PlaceholderPage = ({ title, description }) => (
 import ConfiguracionEventos from "./pages/ConfiguracionEventos";
 import ConfiguracionBaseDatos from "./pages/ConfiguracionBaseDatos";
 import ConfiguracionPlantillas from "./pages/ConfiguracionPlantillas";
+import Presupuestos from "./pages/Presupuestos";
 import SeguimientoConvocatorias from "./pages/SeguimientoConvocatorias";
 import PlantillasDefinitivas from "./pages/PlantillasDefinitivas";
 import AsistenciaPagos from "./pages/AsistenciaPagos";
@@ -612,6 +613,7 @@ function App() {
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/configuracion" element={<Navigate to="/configuracion/eventos" replace />} />
                     <Route path="/configuracion/eventos" element={<ConfiguracionEventos />} />
+                    <Route path="/configuracion/presupuestos" element={<Presupuestos />} />
                     <Route path="/configuracion/base-datos" element={<ConfiguracionBaseDatos />} />
                     <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
                     <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
