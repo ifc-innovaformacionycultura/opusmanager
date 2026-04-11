@@ -4,8 +4,14 @@ import axios from "axios";
 import "@/App.css";
 
 // API Configuration
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+const API = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
+
+console.log('🔧 Environment check:', {
+  BACKEND_URL,
+  API,
+  hasBackendUrl: !!process.env.REACT_APP_BACKEND_URL
+});
 
 // Configure axios defaults
 // Note: Not using withCredentials due to CORS restrictions with ingress
@@ -657,4 +663,58 @@ function App() {
   );
 }
 
-export default App;
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('❌ Error boundary caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-md">
+            <h1 className="text-2xl font-bold text-red-600 mb-4">Error de Aplicación</h1>
+            <p className="text-slate-600 mb-4">
+              Ha ocurrido un error. Por favor, recarga la página.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Recargar Página
+            </button>
+            <details className="mt-4 text-left">
+              <summary className="cursor-pointer text-sm text-slate-500">Detalles técnicos</summary>
+              <pre className="mt-2 p-2 bg-slate-100 rounded text-xs overflow-auto">
+                {this.state.error?.toString()}
+              </pre>
+            </details>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Wrap App with Error Boundary
+function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+export default AppWithErrorBoundary;
