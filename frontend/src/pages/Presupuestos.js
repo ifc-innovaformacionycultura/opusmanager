@@ -236,7 +236,7 @@ const Presupuestos = () => {
             onChange={(e) => setSelectedSeason(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
           >
-            {seasons.map(season => (
+            {(seasons || []).map(season => (
               <option key={season.id} value={season.id}>{season.name}</option>
             ))}
           </select>
@@ -276,7 +276,7 @@ const Presupuestos = () => {
                   <th className="px-3 py-3 text-left font-semibold text-slate-700 sticky left-0 bg-slate-100 border-r border-slate-300 min-w-[200px] z-10">
                     Sección / Nivel de Estudios
                   </th>
-                  {events.map(event => {
+                  {(events || []).map(event => {
                     const isCollapsed = collapsedEvents[event.id];
                     return (
                       <th 
@@ -314,7 +314,7 @@ const Presupuestos = () => {
                 </tr>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-600">
                   <th className="px-3 py-2 sticky left-0 bg-slate-50 border-r border-slate-300 z-10"></th>
-                  {events.map(event => {
+                  {(events || []).map(event => {
                     const isCollapsed = collapsedEvents[event.id];
                     if (isCollapsed) {
                       return (
@@ -346,12 +346,12 @@ const Presupuestos = () => {
                   </tr>
                   
                   {/* Study Levels */}
-                  {STUDY_LEVELS.map((level, levelIdx) => (
+                  {(STUDY_LEVELS || []).map((level, levelIdx) => (
                     <tr key={`${section.id}-${level.id}`} className="border-b border-slate-200 hover:bg-slate-50">
                       <td className="px-3 py-2 text-slate-700 sticky left-0 bg-white border-r border-slate-300 text-xs z-10">
                         <span className="pl-4">{level.name}</span>
                       </td>
-                      {events.map(event => {
+                      {(events || []).map(event => {
                         const cell = budgetData[section.id]?.[level.id]?.[event.id] || { num_rehearsals: 0, num_functions: 0, cache_total: 0, weight: 100 };
                         const isCollapsed = collapsedEvents[event.id];
                         
@@ -423,7 +423,7 @@ const Presupuestos = () => {
                     <td className="px-3 py-2 text-slate-800 sticky left-0 bg-slate-100 border-r border-slate-300 text-xs z-10">
                       SUBTOTAL {section.name}
                     </td>
-                    {events.map(event => {
+                    {(events || []).map(event => {
                       const isCollapsed = collapsedEvents[event.id];
                       const total = calculateSectionEventTotal(section.id, event.id);
                       

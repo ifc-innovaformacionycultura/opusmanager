@@ -31,7 +31,7 @@ const formatApiErrorDetail = (detail) => {
   if (detail == null) return "Algo salió mal. Por favor, inténtalo de nuevo.";
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail))
-    return detail.map((e) => (e && typeof e.msg === "string" ? e.msg : JSON.stringify(e))).filter(Boolean).join(" ");
+    return detail?.map((e) => (e && typeof e.msg === "string" ? e.msg : JSON.stringify(e)))?.filter(Boolean)?.join(" ") || "Error desconocido";
   if (detail && typeof detail.msg === "string") return detail.msg;
   return String(detail);
 };
@@ -208,7 +208,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
   const location = useLocation();
   const [expandedSections, setExpandedSections] = useState({});
 
-  const navItems = [
+  const navItems = Array.isArray(user) ? [] : [
     { 
       id: "dashboard", 
       label: "Dashboard", 
@@ -311,12 +311,22 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
 
   return (
     <aside className={`bg-slate-900 text-slate-200 flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'}`}>
-      {/* Header */}
-      <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-        {!isCollapsed && <h1 className="font-cabinet font-bold text-lg text-white">Convocatorias</h1>}
+      {/* Logo/Brand */}
+      <div className="p-4 border-b border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-bold text-lg">OM</span>
+          </div>
+          {!isCollapsed && (
+            <div>
+              <h1 className="font-cabinet text-lg font-bold text-white">OPUS MANAGER</h1>
+              <p className="font-ibm text-xs text-slate-400">Sistema de Gestión y Control de Plantillas Orquestales</p>
+            </div>
+          )}
+        </div>
         <button 
           onClick={onToggle}
-          className="p-2 hover:bg-slate-800 rounded-md transition-colors"
+          className="mt-3 w-full p-2 hover:bg-slate-800 rounded-md transition-colors flex items-center justify-center"
           data-testid="sidebar-toggle"
         >
           {getIcon("Menu")}
@@ -325,7 +335,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       
       {/* Navigation */}
       <nav className="flex-1 py-4 overflow-y-auto" data-testid="sidebar-nav">
-        {navItems.map(item => (
+        {(navItems || []).map(item => (
           <div key={item.id}>
             <button
               onClick={() => {
@@ -358,7 +368,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
             {/* Children */}
             {item.children && expandedSections[item.id] && !isCollapsed && (
               <div className="bg-slate-950/50">
-                {item.children.map(child => (
+                {(item.children || []).map(child => (
                   <button
                     key={child.id}
                     onClick={() => navigate(child.path)}
@@ -472,14 +482,21 @@ const DashboardPage = () => {
         axios.get(`${API}/contacts`),
         axios.get(`${API}/seasons`)
       ]);
+      
+      const eventsData = Array.isArray(eventsRes?.data) ? eventsRes.data : [];
+      const contactsData = Array.isArray(contactsRes?.data) ? contactsRes.data : [];
+      const seasonsData = Array.isArray(seasonsRes?.data) ? seasonsRes.data : [];
+      
       setStats({
-        events: eventsRes.data.length,
-        contacts: contactsRes.data.length,
-        seasons: seasonsRes.data.length
+        events: eventsData.length,
+        contacts: contactsData.length,
+        seasons: seasonsData.length
       });
-      setRecentEvents(eventsRes.data.slice(0, 5));
+      setRecentEvents(eventsData.slice(0, 5));
     } catch (err) {
       console.error("Error loading dashboard data:", err);
+      setStats({ events: 0, contacts: 0, seasons: 0 });
+      setRecentEvents([]);
     }
   };
 
@@ -541,10 +558,10 @@ const DashboardPage = () => {
           <h2 className="font-cabinet text-lg font-semibold text-slate-900">Próximos eventos</h2>
         </div>
         <div className="divide-y divide-slate-100">
-          {recentEvents.length === 0 ? (
+          {!recentEvents || recentEvents.length === 0 ? (
             <p className="p-4 text-slate-500 text-sm">No hay eventos programados</p>
           ) : (
-            recentEvents.map(event => (
+            (recentEvents || []).map(event => (
               <div key={event.id} className="p-4 hover:bg-slate-50 transition-colors" data-testid={`event-${event.id}`}>
                 <div className="flex items-center justify-between">
                   <div>
