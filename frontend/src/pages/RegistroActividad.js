@@ -307,7 +307,7 @@ const RegistroActividad = () => {
       
       if (format === 'csv') {
         const headers = ['Fecha', 'Usuario', 'Email', 'Acción', 'Entidad', 'Nombre', 'Detalles'];
-        const rows = response.data.logs.map(log => [
+        const rows = (response?.data?.logs || []).map(log => [
           new Date(log.timestamp).toLocaleString('es-ES'),
           log.user_name,
           log.user_email,
@@ -490,7 +490,7 @@ const RegistroActividad = () => {
               data-testid="filter-user"
             >
               <option value="">Todos</option>
-              {users.map(user => (
+              {(users || []).map(user => (
                 <option key={user.id} value={user.id}>{user.name}</option>
               ))}
             </select>

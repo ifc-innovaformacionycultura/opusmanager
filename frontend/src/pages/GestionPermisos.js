@@ -215,7 +215,7 @@ const RoleModal = ({ role, isOpen, onClose, onSave }) => {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Color</label>
             <div className="flex gap-2 flex-wrap">
-              {colors.map(color => (
+              {(colors || []).map(color => (
                 <button
                   key={color}
                   type="button"
@@ -247,7 +247,7 @@ const RoleModal = ({ role, isOpen, onClose, onSave }) => {
 
 // Main Component
 const GestionPermisos = () => {
-  const [roles, setRoles] = useState(DEFAULT_ROLES);
+  const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -346,7 +346,7 @@ const GestionPermisos = () => {
 
   const handleSaveRole = (roleData) => {
     if (editingRole) {
-      setRoles(prev => prev.map(r => r.id === editingRole.id ? { ...r, ...roleData } : r));
+      setRoles(prev => (prev || []).map(r => r.id === editingRole.id ? { ...r, ...roleData } : r));
     } else {
       // New role - add to list and initialize permissions
       setRoles(prev => [...prev, { ...roleData, isSystem: false }]);
@@ -432,7 +432,7 @@ const GestionPermisos = () => {
       <div className="bg-white rounded-lg border border-slate-200 p-4 mb-6">
         <h3 className="font-semibold text-slate-800 mb-3">Roles del sistema</h3>
         <div className="flex flex-wrap gap-3">
-          {roles.map(role => (
+          {(roles || []).map(role => (
             <div key={role.id} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2 pr-3">
               <RoleBadge role={role.id} roles={roles} />
               <span className="text-xs text-slate-500 max-w-[150px] truncate">{role.description}</span>
@@ -472,7 +472,7 @@ const GestionPermisos = () => {
                 <th className="px-4 py-3 text-left text-sm font-medium text-slate-600 sticky left-0 bg-slate-50 min-w-[250px]">
                   Sección / Permiso
                 </th>
-                {roles.map(role => (
+                {(roles || []).map(role => (
                   <th key={role.id} className="px-3 py-3 text-center min-w-[100px]">
                     <div className="flex flex-col items-center gap-1">
                       <RoleBadge role={role.id} roles={roles} />
@@ -532,7 +532,7 @@ const GestionPermisos = () => {
                       <td className="px-4 py-2 pl-10 sticky left-0 bg-white text-sm text-slate-600">
                         {perm.name}
                       </td>
-                      {roles.map(role => (
+                      {(roles || []).map(role => (
                         <td key={role.id} className="px-3 py-2 text-center">
                           <div className="flex justify-center">
                             <PermissionCheckbox
