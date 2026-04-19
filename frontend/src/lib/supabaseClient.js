@@ -15,8 +15,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    storage: window.localStorage,
-    flowType: 'pkce'
+    storage: window.localStorage
+    // flowType: 'implicit' is the default for email/password (no need to specify)
   }
 })
 
