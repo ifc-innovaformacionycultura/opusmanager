@@ -158,31 +158,46 @@ export const SupabaseAuthProvider = ({ children }) => {
     try {
       console.log('🔐 Intentando login con:', email);
       
-      // Importante: No leer ningún response manualmente, dejar que Supabase lo maneje
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) {
-        console.error('❌ Error de Supabase Auth:', {
-          message: error.message,
-          status: error.status,
-          code: error.code
+      let authData, authError;
+      
+      try {
+        // Llamada a Supabase Auth - NO acceder a error.response
+        const result = await supabase.auth.signInWithPassword({
+          email,
+          password
         });
         
-        // Manejar errores específicos sin intentar leer response.json()
+        authData = result.data;
+        authError = result.error;
+      } catch (supabaseException) {
+        // Si Supabase lanza una excepción (no un error en result.error)
+        console.error('❌ Excepción de Supabase:', supabaseException);
+        
+        return {
+          success: false,
+          error: 'Error de conexión con el servicio de autenticación. Por favor, intenta de nuevo.'
+        };
+      }
+
+      if (authError) {
+        console.error('❌ Error de Supabase Auth:', {
+          message: authError.message,
+          // NO acceder a authError.status ni authError.response
+        });
+        
+        // Manejar errores específicos basados solo en el mensaje
         let userMessage = 'Error al iniciar sesión';
         
-        if (error.message?.toLowerCase().includes('invalid') || 
-            error.message?.toLowerCase().includes('credentials')) {
+        const errorMsg = authError.message?.toLowerCase() || '';
+        
+        if (errorMsg.includes('invalid') || errorMsg.includes('credentials') || errorMsg.includes('password')) {
           userMessage = 'Credenciales inválidas. Verifica tu email y contraseña.';
-        } else if (error.message?.toLowerCase().includes('not confirmed')) {
+        } else if (errorMsg.includes('not confirmed') || errorMsg.includes('email')) {
           userMessage = 'Email no confirmado. Revisa tu correo.';
-        } else if (error.message?.toLowerCase().includes('not found')) {
+        } else if (errorMsg.includes('not found')) {
           userMessage = 'Usuario no encontrado.';
-        } else if (error.message) {
-          userMessage = error.message;
+        } else if (authError.message) {
+          userMessage = authError.message;
         }
         
         return { 
@@ -191,25 +206,26 @@ export const SupabaseAuthProvider = ({ children }) => {
         };
       }
 
-      if (data?.session) {
+      if (authData?.session) {
         console.log('✅ Login exitoso para:', email);
         
-        // Cargar perfil del usuario de forma asíncrona
-        // No esperar a que termine para evitar race conditions
-        loadUserProfile(data.user.id).catch(err => {
+        // Cargar perfil de forma asíncrona (no bloqueante)
+        loadUserProfile(authData.user.id).catch(err => {
           console.error('⚠️ Error cargando perfil (no bloqueante):', err);
         });
         
-        return { success: true, user: data.user };
+        return { success: true, user: authData.user };
       }
 
       return { success: false, error: 'No se pudo crear la sesión' };
       
     } catch (error) {
-      console.error('❌ Login error completo:', error);
+      console.error('❌ Error inesperado en signInWithPassword:', error);
       
-      // NO intentar acceder a error.response.json() aquí
-      const errorMessage = error?.message || 'Error al iniciar sesión. Por favor, intenta de nuevo.';
+      // NO intentar acceder a error.response ni error.status
+      const errorMessage = typeof error === 'string' 
+        ? error 
+        : (error?.message || 'Error al iniciar sesión. Por favor, intenta de nuevo.');
       
       return { 
         success: false, 
