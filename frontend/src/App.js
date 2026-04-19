@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import "@/App.css";
 
@@ -421,15 +421,26 @@ const Layout = ({ children }) => {
 const DashboardPage = () => {
   const [stats, setStats] = useState({ events: 0, contacts: 0, seasons: 0 });
   const [recentEvents, setRecentEvents] = useState([]);
-  const { session } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const { session, user } = useAuth();
+  const loadedRef = useRef(false);
 
   useEffect(() => {
-    if (session) {
+    // Solo cargar una vez cuando el usuario esté autenticado
+    if (user && session?.access_token && !loadedRef.current && !isLoading) {
+      loadedRef.current = true;
       loadData();
     }
-  }, [session]);
+  }, [user, session?.access_token]);
 
   const loadData = async () => {
+    if (isLoading) {
+      console.log('⏳ Ya hay una carga en progreso, ignorando...');
+      return;
+    }
+
+    setIsLoading(true);
+    
     try {
       if (!session?.access_token) {
         console.warn('⚠️ No hay sesión activa para cargar datos del dashboard');
@@ -440,6 +451,8 @@ const DashboardPage = () => {
         ? 'http://localhost:8001/api' 
         : `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+      console.log('📊 Cargando datos del dashboard...');
+
       // Cargar eventos desde Supabase
       const eventsResponse = await fetch(`${API_URL}/gestor/eventos`, {
         headers: {
@@ -449,8 +462,15 @@ const DashboardPage = () => {
 
       let eventsData = [];
       if (eventsResponse.ok) {
-        const eventsJson = await eventsResponse.json();
-        eventsData = eventsJson.eventos || [];
+        try {
+          const eventsJson = await eventsResponse.json();
+          eventsData = eventsJson.eventos || [];
+          console.log(`✅ ${eventsData.length} eventos cargados`);
+        } catch (parseError) {
+          console.error('Error parsing events response:', parseError);
+        }
+      } else {
+        console.warn(`⚠️ Error al cargar eventos: HTTP ${eventsResponse.status}`);
       }
       
       setStats({
@@ -463,6 +483,8 @@ const DashboardPage = () => {
       console.error("Error loading dashboard data:", err);
       setStats({ events: 0, contacts: 0, seasons: 0 });
       setRecentEvents([]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
