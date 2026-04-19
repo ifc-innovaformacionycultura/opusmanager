@@ -125,26 +125,7 @@ export const SupabaseAuthProvider = ({ children }) => {
     }
   };
 
-  const signInWithMagicLink = async (email) => {
-    try {
-      // Use REACT_APP_URL for production or fallback to window.location.origin
-      const appUrl = process.env.REACT_APP_URL || window.location.origin;
-      
-      const { data, error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${appUrl}/portal`
-        }
-      });
-
-      if (error) throw error;
-
-      return { success: true };
-    } catch (error) {
-      console.error('❌ Magic link error:', error);
-      return { success: false, error: error.message };
-    }
-  };
+  // REMOVED: Magic Link authentication (replaced with email+password for músicos)
 
   const signOut = async () => {
     try {
@@ -185,7 +166,6 @@ export const SupabaseAuthProvider = ({ children }) => {
     session,
     loading,
     signInWithPassword,
-    signInWithMagicLink,
     signOut,
     refreshSession,
     isAuthenticated: !!session,

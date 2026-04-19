@@ -340,43 +340,52 @@ const EventForm = ({ event, onChange, onSave }) => {
 
 // Main Component
 const ConfiguracionEventos = () => {
+  const { session } = useAuth();
   const [events, setEvents] = useState([]);
-  const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState(null);
+  const [temporadas, setTemporadas] = useState(['2024-2025', '2025-2026', '2026-2027']);
+  const [selectedSeason, setSelectedSeason] = useState('2025-2026');
   const [openAccordions, setOpenAccordions] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    if (selectedSeason) {
-      loadEvents(selectedSeason);
+  // Helper to get auth token
+  const getAuthToken = async () => {
+    if (!session?.access_token) {
+      throw new Error('No hay sesión activa');
     }
-  }, [selectedSeason]);
-
-  const loadData = async () => {
-    try {
-      const seasonsRes = await axios.get(`${API}/seasons`);
-      setSeasons(seasonsRes.data);
-      if (seasonsRes.data.length > 0) {
-        setSelectedSeason(seasonsRes.data[0].id);
-      }
-    } catch (err) {
-      console.error("Error loading data:", err);
-    } finally {
-      setLoading(false);
-    }
+    return session.access_token;
   };
 
-  const loadEvents = async (seasonId) => {
+  useEffect(() => {
+    loadEvents(selectedSeason);
+  }, [selectedSeason]);
+
+  const loadEvents = async (temporada) => {
     try {
-      const eventsRes = await axios.get(`${API}/events?season_id=${seasonId}`);
-      setEvents(eventsRes.data);
+      setLoading(true);
+      const token = await getAuthToken();
+      
+      const url = temporada 
+        ? `${API_URL}/gestor/eventos?temporada=${temporada}`
+        : `${API_URL}/gestor/eventos`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      setEvents(data.eventos || []);
     } catch (err) {
       console.error("Error loading events:", err);
+      setEvents([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -402,13 +411,16 @@ const ConfiguracionEventos = () => {
         body: JSON.stringify(event)
       });
 
-      if (!response.ok) throw new Error('Error al guardar evento');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Error al guardar evento');
+      }
 
-      alert('Evento guardado correctamente');
+      alert('✅ Evento guardado correctamente');
       loadEvents(selectedSeason);
     } catch (err) {
       console.error("Error saving event:", err);
-      alert('Error al guardar el evento');
+      alert(`❌ Error al guardar: ${err.message}`);
     } finally {
       setSaving(false);
     }
@@ -441,15 +453,18 @@ const ConfiguracionEventos = () => {
         body: JSON.stringify(newEvent)
       });
 
-      if (!response.ok) throw new Error('Error al crear evento');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Error al crear evento');
+      }
 
       const data = await response.json();
       await loadEvents(selectedSeason);
       setOpenAccordions({ ...openAccordions, [data.evento.id]: true });
-      alert('Evento creado correctamente');
+      alert('✅ Evento creado correctamente');
     } catch (err) {
       console.error("Error creating event:", err);
-      alert('Error al crear evento');
+      alert(`❌ Error al crear evento: ${err.message}`);
     }
   };
 
@@ -508,8 +523,8 @@ const ConfiguracionEventos = () => {
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
             data-testid="season-selector"
           >
-            {seasons.map(season => (
-              <option key={season.id} value={season.id}>{season.name}</option>
+            {temporadas.map(temp => (
+              <option key={temp} value={temp}>{temp}</option>
             ))}
           </select>
           <button

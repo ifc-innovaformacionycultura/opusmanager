@@ -28,9 +28,6 @@ class AuthResponse(BaseModel):
     refresh_token: str
     user: dict
 
-class MagicLinkRequest(BaseModel):
-    email: EmailStr
-
 # ==================== Endpoints ====================
 
 @router.post("/login", response_model=AuthResponse)
@@ -146,35 +143,6 @@ async def signup(data: SignupRequest):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error al crear cuenta: {error_msg}"
-        )
-
-@router.post("/magic-link")
-async def send_magic_link(data: MagicLinkRequest):
-    """
-    Send magic link for passwordless login (músicos).
-    Email will contain link to /portal with token.
-    """
-    try:
-        # Get app URL from environment or default to localhost
-        app_url = os.environ.get('APP_URL', 'http://localhost:3000')
-        
-        response = supabase.auth.sign_in_with_otp({
-            "email": data.email,
-            "options": {
-                "email_redirect_to": f"{app_url}/portal"
-            }
-        })
-        
-        return {
-            "message": "Enlace mágico enviado",
-            "email": data.email,
-            "check_email": True
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error al enviar enlace: {str(e)}"
         )
 
 @router.get("/me")
