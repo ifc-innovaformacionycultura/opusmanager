@@ -1,13 +1,11 @@
 // Página de Login Unificada - Gestores y Músicos
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { signInWithMagicLink } from '../lib/supabaseClient';
-
-const API = process.env.REACT_APP_BACKEND_URL ? `${process.env.REACT_APP_BACKEND_URL}/api` : '/api';
+import { useAuth } from '../contexts/SupabaseAuthContext';
 
 const LoginUnificado = () => {
   const navigate = useNavigate();
+  const { signInWithPassword, signInWithMagicLink, isAuthenticated, user } = useAuth();
   const [modo, setModo] = useState('gestor'); // 'gestor' o 'musico'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,27 +13,33 @@ const LoginUnificado = () => {
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
 
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.rol === 'gestor') {
+        navigate('/');
+      } else if (user.rol === 'musico') {
+        navigate('/portal');
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
+
   // Login de Gestores (email + password)
   const handleGestorLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    try {
-      const response = await axios.post(`${API}/auth/login`, {
-        email,
-        password
-      });
+    const result = await signInWithPassword(email, password);
 
-      if (response.data.access_token) {
-        localStorage.setItem('auth_token', response.data.access_token);
-        navigate('/');
-      }
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Error al iniciar sesión. Verifica tus credenciales.');
-    } finally {
-      setLoading(false);
+    if (result.success) {
+      // Navigation handled by useEffect above
+      console.log('✅ Login exitoso');
+    } else {
+      setError(result.error || 'Error al iniciar sesión. Verifica tus credenciales.');
     }
+
+    setLoading(false);
   };
 
   // Login de Músicos (magic link)
@@ -51,7 +55,7 @@ const LoginUnificado = () => {
       setMessage('✅ ¡Enlace enviado! Revisa tu email para acceder.');
       setEmail('');
     } else {
-      setError('❌ Error al enviar el enlace. Verifica tu email e inténtalo de nuevo.');
+      setError(result.error || 'Error al enviar el enlace. Verifica tu email e inténtalo de nuevo.');
     }
 
     setLoading(false);

@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import axios from "axios";
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import "@/App.css";
+
+// Supabase Auth Context (replaces legacy AuthContext)
+import { SupabaseAuthProvider, useAuth } from "./contexts/SupabaseAuthContext";
 
 // Import unified login page
 import LoginUnificado from "./pages/LoginUnificado";
@@ -9,97 +11,9 @@ import LoginUnificado from "./pages/LoginUnificado";
 // Import portal pages
 import PortalDashboard from "./pages/portal/PortalDashboard";
 
-// API Configuration
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-const API = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
-
-console.log('🔧 Environment check:', {
-  BACKEND_URL,
-  API,
-  hasBackendUrl: !!process.env.REACT_APP_BACKEND_URL
-});
-
-// Configure axios defaults
-// Note: Not using withCredentials due to CORS restrictions with ingress
-// Using Authorization header instead
-const getAuthToken = () => localStorage.getItem('auth_token');
-
-// Add auth token to all requests
-axios.interceptors.request.use((config) => {
-  const token = getAuthToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Auth Context
-const AuthContext = createContext(null);
-
-export const useAuth = () => useContext(AuthContext);
-
-// Format API Error
-const formatApiErrorDetail = (detail) => {
-  if (detail == null) return "Algo salió mal. Por favor, inténtalo de nuevo.";
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail))
-    return detail?.map((e) => (e && typeof e.msg === "string" ? e.msg : JSON.stringify(e)))?.filter(Boolean)?.join(" ") || "Error desconocido";
-  if (detail && typeof detail.msg === "string") return detail.msg;
-  return String(detail);
-};
-
-// Auth Provider
-const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const checkAuth = async () => {
-    try {
-      const { data } = await axios.get(`${API}/auth/me`);
-      setUser(data);
-    } catch {
-      setUser(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const login = async (email, password) => {
-    const { data } = await axios.post(`${API}/auth/login`, { email, password });
-    // Store token in localStorage
-    if (data.access_token) {
-      localStorage.setItem('auth_token', data.access_token);
-    }
-    // The response now has a "user" object
-    const userData = data.user || data;
-    setUser(userData);
-    return userData;
-  };
-
-  const logout = async () => {
-    try {
-      await axios.post(`${API}/auth/logout`);
-    } catch (err) {
-      // Ignore errors on logout
-    }
-    localStorage.removeItem('auth_token');
-    setUser(false);
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, loading, login, logout, checkAuth }}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
-
 // Protected Route
-const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
+const ProtectedRoute = ({ children, requireRole }) => {
+  const { user, loading, isAuthenticated } = useAuth();
   
   if (loading) {
     return (
@@ -109,14 +23,25 @@ const ProtectedRoute = ({ children }) => {
     );
   }
   
-  if (!user) {
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Check role if required
+  if (requireRole && user?.rol !== requireRole) {
+    // Redirect to appropriate dashboard
+    if (user?.rol === 'gestor') {
+      return <Navigate to="/" replace />;
+    } else if (user?.rol === 'musico') {
+      return <Navigate to="/portal" replace />;
+    }
     return <Navigate to="/login" replace />;
   }
   
   return children;
 };
 
-// Login Page
+// Login Page (Legacy - will be replaced by LoginUnificado)
 const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -632,19 +557,26 @@ function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <AuthProvider>
+        <SupabaseAuthProvider>
           <Routes>
             {/* Login Unificado - Una sola página para todos */}
             <Route path="/login" element={<LoginUnificado />} />
             
             {/* Portal de Músicos (después de magic link) */}
-            <Route path="/portal" element={<PortalDashboard />} />
+            <Route 
+              path="/portal" 
+              element={
+                <ProtectedRoute requireRole="musico">
+                  <PortalDashboard />
+                </ProtectedRoute>
+              } 
+            />
             
             {/* Panel de Gestores */}
             <Route
               path="/*"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireRole="gestor">
                   <Layout>
                     <Routes>
                       <Route path="/" element={<DashboardPage />} />
@@ -671,7 +603,7 @@ function App() {
               }
             />
           </Routes>
-        </AuthProvider>
+        </SupabaseAuthProvider>
       </BrowserRouter>
     </ErrorBoundary>
   );
