@@ -3,6 +3,10 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from
 import axios from "axios";
 import "@/App.css";
 
+// Import portal pages
+import PortalLogin from "./pages/portal/PortalLogin";
+import PortalDashboard from "./pages/portal/PortalDashboard";
+
 // API Configuration
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
@@ -624,42 +628,49 @@ import FeedbackButton from "./components/FeedbackButton";
 
 function App() {
   return (
-    <AuthProvider>
+    <ErrorBoundary>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <Routes>
-                    <Route path="/" element={<DashboardPage />} />
-                    <Route path="/configuracion" element={<Navigate to="/configuracion/eventos" replace />} />
-                    <Route path="/configuracion/eventos" element={<ConfiguracionEventos />} />
-                    <Route path="/configuracion/presupuestos" element={<Presupuestos />} />
-                    <Route path="/configuracion/base-datos" element={<ConfiguracionBaseDatos />} />
-                    <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
-                    <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
-                    <Route path="/plantillas-definitivas" element={<PlantillasDefinitivas />} />
-                    <Route path="/asistencia" element={<Navigate to="/asistencia/pagos" replace />} />
-                    <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
-                    <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
-                    <Route path="/informes" element={<Informes />} />
-                    <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
-                    <Route path="/admin/usuarios" element={<GestionUsuarios />} />
-                    <Route path="/admin/permisos" element={<GestionPermisos />} />
-                    <Route path="/admin/actividad" element={<RegistroActividad />} />
-                    <Route path="/admin/reportes" element={<GestionReportes />} />
-                    <Route path="/ayuda" element={<ManualUsuario />} />
-                  </Routes>
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            {/* Portal de Músicos */}
+            <Route path="/portal/login" element={<PortalLogin />} />
+            <Route path="/portal" element={<PortalDashboard />} />
+            
+            {/* Panel de Gestores */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Routes>
+                      <Route path="/" element={<DashboardPage />} />
+                      <Route path="/configuracion" element={<Navigate to="/configuracion/eventos" replace />} />
+                      <Route path="/configuracion/eventos" element={<ConfiguracionEventos />} />
+                      <Route path="/configuracion/presupuestos" element={<Presupuestos />} />
+                      <Route path="/configuracion/base-datos" element={<ConfiguracionBaseDatos />} />
+                      <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
+                      <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
+                      <Route path="/plantillas-definitivas" element={<PlantillasDefinitivas />} />
+                      <Route path="/asistencia" element={<Navigate to="/asistencia/pagos" replace />} />
+                      <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
+                      <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
+                      <Route path="/informes" element={<Informes />} />
+                      <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
+                      <Route path="/admin/usuarios" element={<GestionUsuarios />} />
+                      <Route path="/admin/permisos" element={<GestionPermisos />} />
+                      <Route path="/admin/actividad" element={<RegistroActividad />} />
+                      <Route path="/admin/reportes" element={<GestionReportes />} />
+                      <Route path="/ayuda" element={<ManualUsuario />} />
+                    </Routes>
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
-    </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
