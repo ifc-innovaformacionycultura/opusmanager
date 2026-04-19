@@ -2,7 +2,7 @@
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, Dict
-from supabase_client import verify_supabase_token, get_user_profile, supabase
+from supabase_client import verify_supabase_token, get_user_profile_sync, supabase
 
 # HTTP Bearer security scheme
 security = HTTPBearer()
@@ -21,7 +21,7 @@ async def get_current_user(
     token = credentials.credentials
     
     # Verify token with Supabase (no JWT Secret needed!)
-    user_data = await verify_supabase_token(token)
+    user_data = verify_supabase_token(token)
     
     if not user_data:
         raise HTTPException(
@@ -30,7 +30,7 @@ async def get_current_user(
         )
     
     # Get user profile from usuarios table
-    profile = await get_user_profile(user_data["id"])
+    profile = get_user_profile_sync(user_data["id"])
     
     if not profile:
         raise HTTPException(
