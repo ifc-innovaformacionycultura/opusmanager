@@ -156,22 +156,48 @@ export const SupabaseAuthProvider = ({ children }) => {
 
   const signInWithPassword = async (email, password) => {
     try {
+      console.log('🔐 Intentando login con:', email);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error de Supabase Auth:', error);
+        
+        // Manejar errores específicos
+        if (error.message?.includes('Invalid login credentials')) {
+          throw new Error('Credenciales inválidas. Verifica tu email y contraseña.');
+        }
+        if (error.message?.includes('Email not confirmed')) {
+          throw new Error('Email no confirmado. Revisa tu correo.');
+        }
+        if (error.message?.includes('User not found')) {
+          throw new Error('Usuario no encontrado.');
+        }
+        
+        throw error;
+      }
 
       if (data.session) {
+        console.log('✅ Login exitoso para:', email);
         await loadUserProfile(data.user.id);
         return { success: true, user: data.user };
       }
 
-      return { success: false, error: 'No session created' };
+      return { success: false, error: 'No se pudo crear la sesión' };
     } catch (error) {
-      console.error('❌ Login error:', error);
-      return { success: false, error: error.message };
+      console.error('❌ Login error completo:', {
+        message: error.message,
+        status: error.status,
+        name: error.name
+      });
+      
+      return { 
+        success: false, 
+        error: error.message || 'Error al iniciar sesión. Por favor, intenta de nuevo.'
+      };
     }
   };
 
