@@ -2,11 +2,19 @@
 // Frontend: Portal de Músicos + Panel de Gestores
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY || ''
+// Fallback values for production/preview environments where env vars might not load
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL 
+  || 'https://fklllpaobtgvjjxgngyi.supabase.co'
+
+const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY 
+  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZrbGxscGFvYnRndmpqeGduZ3lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1OTU3NjQsImV4cCI6MjA5MjE3MTc2NH0.u9GPmGiHGsauhG1sLuqc5JpAEuEe0U_nMMlcRpzCsfs'
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Supabase credentials missing. Check .env file.')
+  console.log('🔍 Debug - supabaseUrl:', supabaseUrl ? '✅ Present' : '❌ Missing')
+  console.log('🔍 Debug - supabaseAnonKey:', supabaseAnonKey ? '✅ Present' : '❌ Missing')
+} else {
+  console.log('✅ Supabase client initialized with URL:', supabaseUrl)
 }
 
 // Create Supabase client
