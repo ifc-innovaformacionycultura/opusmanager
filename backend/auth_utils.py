@@ -47,25 +47,26 @@ async def get_current_user(
         "apellidos": profile.get("apellidos")
     }
 
-async def require_role(required_role: str):
-    """
-    Dependency factory to require specific role.
-    
-    Usage:
-        @app.get("/api/admin/users")
-        async def admin_only(user: Dict = Depends(require_role("gestor"))):
-            return {"message": "Admin access granted"}
-    """
-    async def role_checker(user: Dict = Depends(get_current_user)) -> Dict:
-        if user.get("rol") != required_role:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied. Required role: {required_role}"
-            )
-        return user
-    
-    return role_checker
+async def get_current_gestor(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> Dict:
+    """Dependency for gestor-only endpoints"""
+    user = await get_current_user(credentials)
+    if user.get("rol") != "gestor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado. Se requiere rol de gestor."
+        )
+    return user
 
-# Alias for common roles
-require_gestor = lambda: require_role("gestor")
-require_musico = lambda: require_role("musico")
+async def get_current_musico(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> Dict:
+    """Dependency for musico-only endpoints"""
+    user = await get_current_user(credentials)
+    if user.get("rol") != "musico":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado. Se requiere rol de músico."
+        )
+    return user
