@@ -15,7 +15,16 @@ import PortalDashboard from "./pages/portal/PortalDashboard";
 const ProtectedRoute = ({ children, requireRole }) => {
   const { user, loading, isAuthenticated } = useAuth();
   
+  // Debug logging
+  console.log('🔐 ProtectedRoute Estado:', {
+    loading,
+    isAuthenticated,
+    user: user ? { email: user.email, rol: user.rol } : null,
+    requireRole
+  });
+  
   if (loading) {
+    console.log('⏳ Loading auth...');
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-800"></div>
@@ -24,20 +33,25 @@ const ProtectedRoute = ({ children, requireRole }) => {
   }
   
   if (!isAuthenticated) {
+    console.log('❌ No autenticado, redirigiendo a /login');
     return <Navigate to="/login" replace />;
   }
 
   // Check role if required
   if (requireRole && user?.rol !== requireRole) {
+    console.log(`⚠️ Rol incorrecto. Esperado: ${requireRole}, Actual: ${user?.rol}`);
     // Redirect to appropriate dashboard
     if (user?.rol === 'gestor') {
+      console.log('→ Redirigiendo a dashboard gestor');
       return <Navigate to="/" replace />;
     } else if (user?.rol === 'musico') {
+      console.log('→ Redirigiendo a portal músico');
       return <Navigate to="/portal" replace />;
     }
     return <Navigate to="/login" replace />;
   }
   
+  console.log('✅ Renderizando children protegidos');
   return children;
 };
 
