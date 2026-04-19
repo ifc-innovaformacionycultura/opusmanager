@@ -3,8 +3,10 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from
 import axios from "axios";
 import "@/App.css";
 
+// Import unified login page
+import LoginUnificado from "./pages/LoginUnificado";
+
 // Import portal pages
-import PortalLogin from "./pages/portal/PortalLogin";
 import PortalDashboard from "./pages/portal/PortalDashboard";
 
 // API Configuration
@@ -632,12 +634,13 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            {/* Portal de Músicos */}
-            <Route path="/portal/login" element={<PortalLogin />} />
+            {/* Login Unificado - Una sola página para todos */}
+            <Route path="/login" element={<LoginUnificado />} />
+            
+            {/* Portal de Músicos (después de magic link) */}
             <Route path="/portal" element={<PortalDashboard />} />
             
             {/* Panel de Gestores */}
-            <Route path="/login" element={<LoginPage />} />
             <Route
               path="/*"
               element={
