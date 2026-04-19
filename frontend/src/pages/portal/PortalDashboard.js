@@ -27,7 +27,7 @@ const PortalDashboard = () => {
       
       if (!userProfile) {
         console.error('Perfil no encontrado');
-        navigate('/portal/login');
+        navigate('/login');
         return;
       }
 
@@ -55,7 +55,7 @@ const PortalDashboard = () => {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/portal/login');
+    navigate('/login');
   };
 
   if (loading) {
