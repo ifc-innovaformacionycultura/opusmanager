@@ -160,6 +160,69 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         "profile": current_user.get("profile")
     }
 
+@router.post("/sync-profile")
+async def sync_user_profile(current_user: dict = Depends(get_current_user)):
+    """
+    Sync current user's auth profile with usuarios table.
+    Creates profile if it doesn't exist.
+    Useful when a user exists in Supabase Auth but not in usuarios table.
+    """
+    try:
+        user_id = current_user["id"]
+        email = current_user["email"]
+        
+        # Check if profile exists
+        existing_profile = supabase.table('usuarios').select('*').eq('user_id', user_id).execute()
+        
+        if existing_profile.data and len(existing_profile.data) > 0:
+            return {
+                "message": "Perfil ya existe",
+                "profile": existing_profile.data[0],
+                "synced": False
+            }
+        
+        # Get user metadata from Supabase Auth
+        auth_user = supabase.auth.admin.get_user_by_id(user_id)
+        
+        # Extract metadata
+        user_metadata = auth_user.user.user_metadata or {}
+        app_metadata = auth_user.user.app_metadata or {}
+        
+        # Determine rol from app_metadata or default to 'musico'
+        rol = app_metadata.get('rol', 'musico')
+        
+        # Create profile
+        profile_data = {
+            "user_id": user_id,
+            "email": email,
+            "nombre": user_metadata.get('nombre', email.split('@')[0]),
+            "apellidos": user_metadata.get('apellidos', ''),
+            "rol": rol,
+            "estado": "activo",
+            "instrumento": user_metadata.get('instrumento'),
+            "telefono": user_metadata.get('telefono')
+        }
+        
+        response = supabase.table('usuarios').insert(profile_data).execute()
+        
+        if response.data and len(response.data) > 0:
+            return {
+                "message": "Perfil creado exitosamente",
+                "profile": response.data[0],
+                "synced": True
+            }
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al crear perfil"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al sincronizar perfil: {str(e)}"
+        )
+
 @router.post("/logout")
 async def logout():
     """
@@ -169,7 +232,7 @@ async def logout():
     try:
         supabase.auth.sign_out()
         return {"message": "Sesión cerrada"}
-    except Exception as e:
+    except Exception:
         # Even if Supabase call fails, client should discard token
         return {"message": "Sesión cerrada"}
 
@@ -192,7 +255,7 @@ async def refresh_token(refresh_token: str):
             "refresh_token": response.session.refresh_token
         }
         
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Error al renovar token"

@@ -83,6 +83,44 @@ export const SupabaseAuthProvider = ({ children }) => {
 
       if (!response.ok) {
         console.error('❌ Error loading profile:', response.status);
+        
+        // Si el perfil no existe (404), intentar sincronizar
+        if (response.status === 404) {
+          console.log('🔄 Perfil no encontrado, intentando sincronizar...');
+          const syncResponse = await fetch(`${API_URL}/auth/sync-profile`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${currentSession.access_token}`
+            }
+          });
+          
+          if (syncResponse.ok) {
+            const syncData = await syncResponse.json();
+            console.log('✅ Perfil sincronizado:', syncData);
+            
+            // Retry loading profile
+            const retryResponse = await fetch(`${API_URL}/auth/me`, {
+              headers: {
+                'Authorization': `Bearer ${currentSession.access_token}`
+              }
+            });
+            
+            if (retryResponse.ok) {
+              const data = await retryResponse.json();
+              setProfile(data.profile);
+              setUser({
+                id: userId,
+                email: data.email,
+                nombre: data.nombre,
+                apellidos: data.apellidos,
+                rol: data.rol,
+                profile: data.profile
+              });
+              return;
+            }
+          }
+        }
+        
         return;
       }
 
