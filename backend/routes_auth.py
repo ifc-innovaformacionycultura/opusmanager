@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr
 from supabase_client import supabase, create_user_profile
 from auth_utils import get_current_user
 from typing import Optional
+import os
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -154,10 +155,13 @@ async def send_magic_link(data: MagicLinkRequest):
     Email will contain link to /portal with token.
     """
     try:
+        # Get app URL from environment or default to localhost
+        app_url = os.environ.get('APP_URL', 'http://localhost:3000')
+        
         response = supabase.auth.sign_in_with_otp({
             "email": data.email,
             "options": {
-                "email_redirect_to": f"{data.email}/portal"  # Frontend will handle
+                "email_redirect_to": f"{app_url}/portal"
             }
         })
         

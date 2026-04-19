@@ -127,10 +127,13 @@ export const SupabaseAuthProvider = ({ children }) => {
 
   const signInWithMagicLink = async (email) => {
     try {
+      // Use REACT_APP_URL for production or fallback to window.location.origin
+      const appUrl = process.env.REACT_APP_URL || window.location.origin;
+      
       const { data, error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/portal`
+          emailRedirectTo: `${appUrl}/portal`
         }
       });
 
