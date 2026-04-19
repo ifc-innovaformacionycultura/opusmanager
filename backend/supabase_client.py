@@ -93,6 +93,7 @@ async def get_user_profile(user_id: str) -> Optional[Dict]:
 async def create_user_profile(user_id: str, email: str, nombre: str, apellidos: str, rol: str, **kwargs) -> Optional[Dict]:
     """
     Create a user profile in usuarios table after Supabase Auth signup.
+    Also updates auth.users app_metadata with the rol.
     
     Args:
         user_id: Supabase Auth user ID
@@ -106,6 +107,13 @@ async def create_user_profile(user_id: str, email: str, nombre: str, apellidos: 
         Created profile dict or None
     """
     try:
+        # 1. Update app_metadata in auth.users with rol
+        supabase.auth.admin.update_user_by_id(
+            user_id,
+            {"app_metadata": {"rol": rol}}
+        )
+        
+        # 2. Create profile in usuarios table
         profile_data = {
             "user_id": user_id,
             "email": email,

@@ -77,17 +77,17 @@ async def signup(data: SignupRequest):
     """
     Create new user account (gestores only - músicos use magic link).
     Creates auth user + profile in usuarios table.
+    Updates app_metadata with rol for RLS policies.
     """
     try:
-        # 1. Create Supabase Auth user
+        # 1. Create Supabase Auth user with rol in app_metadata
         auth_response = supabase.auth.sign_up({
             "email": data.email,
             "password": data.password,
             "options": {
                 "data": {
                     "nombre": data.nombre,
-                    "apellidos": data.apellidos,
-                    "rol": data.rol
+                    "apellidos": data.apellidos
                 }
             }
         })
@@ -98,7 +98,16 @@ async def signup(data: SignupRequest):
                 detail="Error al crear cuenta"
             )
         
-        # 2. Create profile in usuarios table
+        # 2. Update app_metadata with rol (critical for RLS)
+        try:
+            supabase.auth.admin.update_user_by_id(
+                auth_response.user.id,
+                {"app_metadata": {"rol": data.rol}}
+            )
+        except Exception as e:
+            print(f"⚠️ Warning: Could not update app_metadata: {e}")
+        
+        # 3. Create profile in usuarios table
         profile = await create_user_profile(
             user_id=auth_response.user.id,
             email=data.email,
@@ -110,8 +119,6 @@ async def signup(data: SignupRequest):
         )
         
         if not profile:
-            # Rollback: delete auth user if profile creation fails
-            # (In production, use database transactions)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error al crear perfil de usuario"
