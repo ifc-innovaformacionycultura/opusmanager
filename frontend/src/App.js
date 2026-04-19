@@ -421,27 +421,42 @@ const Layout = ({ children }) => {
 const DashboardPage = () => {
   const [stats, setStats] = useState({ events: 0, contacts: 0, seasons: 0 });
   const [recentEvents, setRecentEvents] = useState([]);
+  const { session } = useAuth();
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (session) {
+      loadData();
+    }
+  }, [session]);
 
   const loadData = async () => {
     try {
-      const [eventsRes, contactsRes, seasonsRes] = await Promise.all([
-        axios.get(`${API}/events`),
-        axios.get(`${API}/contacts`),
-        axios.get(`${API}/seasons`)
-      ]);
-      
-      const eventsData = Array.isArray(eventsRes?.data) ? eventsRes.data : [];
-      const contactsData = Array.isArray(contactsRes?.data) ? contactsRes.data : [];
-      const seasonsData = Array.isArray(seasonsRes?.data) ? seasonsRes.data : [];
+      if (!session?.access_token) {
+        console.warn('⚠️ No hay sesión activa para cargar datos del dashboard');
+        return;
+      }
+
+      const API_URL = window.location.hostname === 'localhost' 
+        ? 'http://localhost:8001/api' 
+        : `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+      // Cargar eventos desde Supabase
+      const eventsResponse = await fetch(`${API_URL}/gestor/eventos`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      let eventsData = [];
+      if (eventsResponse.ok) {
+        const eventsJson = await eventsResponse.json();
+        eventsData = eventsJson.eventos || [];
+      }
       
       setStats({
         events: eventsData.length,
-        contacts: contactsData.length,
-        seasons: seasonsData.length
+        contacts: 0, // TODO: Implementar endpoint de contactos
+        seasons: 0   // TODO: Implementar endpoint de temporadas
       });
       setRecentEvents(eventsData.slice(0, 5));
     } catch (err) {

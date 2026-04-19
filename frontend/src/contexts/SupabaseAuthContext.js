@@ -95,8 +95,12 @@ export const SupabaseAuthProvider = ({ children }) => {
           });
           
           if (syncResponse.ok) {
-            const syncData = await syncResponse.json();
-            console.log('✅ Perfil sincronizado:', syncData);
+            try {
+              const syncData = await syncResponse.json();
+              console.log('✅ Perfil sincronizado:', syncData);
+            } catch (e) {
+              console.error('Error parsing sync response:', e);
+            }
             
             // Retry loading profile
             const retryResponse = await fetch(`${API_URL}/auth/me`, {
@@ -106,16 +110,20 @@ export const SupabaseAuthProvider = ({ children }) => {
             });
             
             if (retryResponse.ok) {
-              const data = await retryResponse.json();
-              setProfile(data.profile);
-              setUser({
-                id: userId,
-                email: data.email,
-                nombre: data.nombre,
-                apellidos: data.apellidos,
-                rol: data.rol,
-                profile: data.profile
-              });
+              try {
+                const data = await retryResponse.json();
+                setProfile(data.profile);
+                setUser({
+                  id: userId,
+                  email: data.email,
+                  nombre: data.nombre,
+                  apellidos: data.apellidos,
+                  rol: data.rol,
+                  profile: data.profile
+                });
+              } catch (e) {
+                console.error('Error parsing retry response:', e);
+              }
               return;
             }
           }
@@ -124,18 +132,22 @@ export const SupabaseAuthProvider = ({ children }) => {
         return;
       }
 
-      const data = await response.json();
+      try {
+        const data = await response.json();
 
-      if (data) {
-        setProfile(data.profile);
-        setUser({
-          id: userId,
-          email: data.email,
-          nombre: data.nombre,
-          apellidos: data.apellidos,
-          rol: data.rol,
-          profile: data.profile
-        });
+        if (data) {
+          setProfile(data.profile);
+          setUser({
+            id: userId,
+            email: data.email,
+            nombre: data.nombre,
+            apellidos: data.apellidos,
+            rol: data.rol,
+            profile: data.profile
+          });
+        }
+      } catch (e) {
+        console.error('Error parsing profile response:', e);
       }
     } catch (error) {
       console.error('❌ Error loading profile:', error);

@@ -412,8 +412,15 @@ const ConfiguracionEventos = () => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Error al guardar evento');
+        let errorMessage = 'Error al guardar evento';
+        try {
+          const error = await response.json();
+          errorMessage = error.detail || errorMessage;
+        } catch {
+          // Si no hay JSON en la respuesta, usar mensaje genérico
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       alert('✅ Evento guardado correctamente');
@@ -454,8 +461,14 @@ const ConfiguracionEventos = () => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Error al crear evento');
+        let errorMessage = 'Error al crear evento';
+        try {
+          const error = await response.json();
+          errorMessage = error.detail || errorMessage;
+        } catch {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
