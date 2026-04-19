@@ -158,45 +158,62 @@ export const SupabaseAuthProvider = ({ children }) => {
     try {
       console.log('🔐 Intentando login con:', email);
       
+      // Importante: No leer ningún response manualmente, dejar que Supabase lo maneje
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (error) {
-        console.error('❌ Error de Supabase Auth:', error);
+        console.error('❌ Error de Supabase Auth:', {
+          message: error.message,
+          status: error.status,
+          code: error.code
+        });
         
-        // Manejar errores específicos
-        if (error.message?.includes('Invalid login credentials')) {
-          throw new Error('Credenciales inválidas. Verifica tu email y contraseña.');
-        }
-        if (error.message?.includes('Email not confirmed')) {
-          throw new Error('Email no confirmado. Revisa tu correo.');
-        }
-        if (error.message?.includes('User not found')) {
-          throw new Error('Usuario no encontrado.');
+        // Manejar errores específicos sin intentar leer response.json()
+        let userMessage = 'Error al iniciar sesión';
+        
+        if (error.message?.toLowerCase().includes('invalid') || 
+            error.message?.toLowerCase().includes('credentials')) {
+          userMessage = 'Credenciales inválidas. Verifica tu email y contraseña.';
+        } else if (error.message?.toLowerCase().includes('not confirmed')) {
+          userMessage = 'Email no confirmado. Revisa tu correo.';
+        } else if (error.message?.toLowerCase().includes('not found')) {
+          userMessage = 'Usuario no encontrado.';
+        } else if (error.message) {
+          userMessage = error.message;
         }
         
-        throw error;
+        return { 
+          success: false, 
+          error: userMessage
+        };
       }
 
-      if (data.session) {
+      if (data?.session) {
         console.log('✅ Login exitoso para:', email);
-        await loadUserProfile(data.user.id);
+        
+        // Cargar perfil del usuario de forma asíncrona
+        // No esperar a que termine para evitar race conditions
+        loadUserProfile(data.user.id).catch(err => {
+          console.error('⚠️ Error cargando perfil (no bloqueante):', err);
+        });
+        
         return { success: true, user: data.user };
       }
 
       return { success: false, error: 'No se pudo crear la sesión' };
+      
     } catch (error) {
-      console.error('❌ Login error completo:', {
-        message: error.message,
-        status: error.status,
-        name: error.name
-      });
+      console.error('❌ Login error completo:', error);
+      
+      // NO intentar acceder a error.response.json() aquí
+      const errorMessage = error?.message || 'Error al iniciar sesión. Por favor, intenta de nuevo.';
       
       return { 
         success: false, 
-        error: error.message || 'Error al iniciar sesión. Por favor, intenta de nuevo.'
+        error: errorMessage
       };
     }
   };
