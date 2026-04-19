@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import { useAuth } from "../contexts/SupabaseAuthContext";
+import { supabase } from "../lib/supabaseClient";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const API_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:8001/api' 
+  : `${BACKEND_URL}/api`;
 
 // Accordion Component
 const Accordion = ({ title, subtitle, isOpen, onToggle, children }) => (
@@ -388,8 +391,21 @@ const ConfiguracionEventos = () => {
   const saveEvent = async (event) => {
     setSaving(true);
     try {
-      await axios.put(`${API}/events/${event.id}`, event);
+      const token = await getAuthToken();
+      
+      const response = await fetch(`${API_URL}/gestor/eventos/${event.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(event)
+      });
+
+      if (!response.ok) throw new Error('Error al guardar evento');
+
       alert('Evento guardado correctamente');
+      loadEvents(selectedSeason);
     } catch (err) {
       console.error("Error saving event:", err);
       alert('Error al guardar el evento');
@@ -399,31 +415,71 @@ const ConfiguracionEventos = () => {
   };
 
   const createNewEvent = async () => {
-    if (!selectedSeason) return;
+    if (!selectedSeason) {
+      alert('Por favor selecciona una temporada');
+      return;
+    }
+    
     try {
+      const token = await getAuthToken();
+      
       const newEvent = {
-        name: `Evento ${events.length + 1}`,
-        date: new Date().toISOString().split('T')[0],
-        time: '20:00',
-        season_id: selectedSeason,
-        rehearsals: [],
-        instrumentation: {},
-        program: [],
-        form_url: ''
+        nombre: `Nuevo Evento ${events.length + 1}`,
+        temporada: selectedSeason,
+        estado: 'abierto',
+        descripcion: '',
+        fecha_inicio: new Date().toISOString().split('T')[0],
+        tipo: 'concierto'
       };
-      const response = await axios.post(`${API}/events`, newEvent);
-      setEvents([...events, response.data]);
-      setOpenAccordions({ ...openAccordions, [response.data.id]: true });
+      
+      const response = await fetch(`${API_URL}/gestor/eventos`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newEvent)
+      });
+
+      if (!response.ok) throw new Error('Error al crear evento');
+
+      const data = await response.json();
+      await loadEvents(selectedSeason);
+      setOpenAccordions({ ...openAccordions, [data.evento.id]: true });
+      alert('Evento creado correctamente');
     } catch (err) {
       console.error("Error creating event:", err);
+      alert('Error al crear evento');
     }
   };
 
   const duplicateEvent = async (eventId) => {
     try {
-      const response = await axios.post(`${API}/events/${eventId}/duplicate`);
-      setEvents([...events, response.data]);
-      setOpenAccordions({ ...openAccordions, [response.data.id]: true });
+      // Buscar el evento original
+      const originalEvent = events.find(e => e.id === eventId);
+      if (!originalEvent) return;
+
+      const token = await getAuthToken();
+      
+      const duplicatedEvent = {
+        ...originalEvent,
+        nombre: `${originalEvent.nombre} (Copia)`,
+        id: undefined // El backend generará un nuevo ID
+      };
+      
+      const response = await fetch(`${API_URL}/gestor/eventos`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(duplicatedEvent)
+      });
+
+      if (!response.ok) throw new Error('Error al duplicar evento');
+
+      await loadEvents(selectedSeason);
+      alert('Evento duplicado correctamente');
     } catch (err) {
       console.error("Error duplicating event:", err);
       alert("Error al duplicar el evento");
@@ -483,7 +539,7 @@ const ConfiguracionEventos = () => {
             <div key={event.id} className="relative">
               <Accordion
                 title={`Evento ${index + 1}`}
-                subtitle={`${event.name || 'Sin nombre'} — ${event.date || 'Sin fecha'} ${event.time || ''}`}
+                subtitle={`${event.nombre || 'Sin nombre'} — ${event.temporada || 'Sin temporada'} — ${event.estado || 'abierto'}`}
                 isOpen={openAccordions[event.id]}
                 onToggle={() => toggleAccordion(event.id)}
               >
@@ -511,5 +567,6 @@ const ConfiguracionEventos = () => {
     </div>
   );
 };
+
 
 export default ConfiguracionEventos;
