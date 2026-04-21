@@ -30,8 +30,16 @@ export const SupabaseAuthProvider = ({ children }) => {
         setSession(session);
         
         if (session?.user) {
-          console.log('✅ User detected, loading profile...');
-          await loadUserProfile(session.user.id);
+          // BUG 3 FIX: Solo cargar perfil si es músico
+          const rol = session.user?.app_metadata?.rol;
+          if (rol === 'musico') {
+            console.log('✅ User detected (musico), loading profile...');
+            await loadUserProfile(session.user.id);
+          } else {
+            console.log('❌ User detected but NOT musico (rol:', rol, ')');
+            setUser(null);
+            setLoading(false);
+          }
         } else {
           console.log('❌ No user in session');
           setUser(null);
@@ -54,11 +62,18 @@ export const SupabaseAuthProvider = ({ children }) => {
       setSession(session);
       
       if (session?.user) {
-        await loadUserProfile(session.user.id);
+        // BUG 2 FIX: Solo cargar perfil si es músico
+        const rol = session.user?.app_metadata?.rol;
+        if (rol === 'musico') {
+          await loadUserProfile(session.user.id);
+        } else {
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
       }
     } catch (error) {
       console.error('❌ Error checking session:', error);
-    } finally {
       setLoading(false);
     }
   };
@@ -313,7 +328,7 @@ export const SupabaseAuthProvider = ({ children }) => {
     signInWithPassword,
     signOut,
     refreshSession,
-    isAuthenticated: !!session,
+    isAuthenticated: !!user && !!profile, // BUG 1 FIX: Solo autenticado cuando tiene perfil cargado
     isGestor: profile?.rol === 'gestor',
     isMusico: profile?.rol === 'musico'
   };
