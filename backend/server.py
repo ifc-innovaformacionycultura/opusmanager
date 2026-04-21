@@ -26,15 +26,29 @@ app = FastAPI(
 )
 
 # CORS Configuration
-cors_origins = os.environ.get("CORS_ORIGINS", "*").split(",")
+raw_cors = os.environ.get("CORS_ORIGINS", "").strip()
+cors_origins = [o.strip().rstrip("/") for o in raw_cors.split(",") if o.strip()]
+cors_origin_regex = os.environ.get("CORS_ORIGIN_REGEX", "").strip() or r"https://.*\.vercel\.app"
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins if cors_origins != ["*"] else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# When no explicit origins are set, allow any origin safely (no credentials).
+# When origins are set, enable credentials (required by Supabase cookie flows).
+if cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_origin_regex=cors_origin_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=cors_origin_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # ==================== Register Routers ====================
 
@@ -71,7 +85,8 @@ async def startup_event():
     print("=" * 60)
     print("🎵 OPUS MANAGER API - Starting...")
     print("=" * 60)
-    print(f"📡 CORS Origins: {cors_origins}")
+    print(f"📡 CORS allow_origins: {cors_origins or '(none — regex only)'}")
+    print(f"📡 CORS allow_origin_regex: {cors_origin_regex}")
     print(f"🔐 Supabase URL: {os.environ.get('SUPABASE_URL', 'NOT SET')}")
     print(f"✅ Using Supabase Auth + PostgreSQL")
     print("=" * 60)
