@@ -67,16 +67,19 @@ const CambiarPasswordPrimeraVez = ({ onPasswordChanged }) => {
         throw new Error('Error al actualizar el estado de cambio de contraseña');
       }
 
-      // Notificar al componente padre
+      console.log('✅ Password cambiada y campo actualizado en BD');
+
+      // 3. Notificar al componente padre para que actualice el profile
+      // NO recargar la página, solo actualizar el estado
       if (onPasswordChanged) {
         onPasswordChanged();
       }
     } catch (err) {
       console.error('Error al cambiar contraseña:', err);
       setError(err.message || 'Error al cambiar la contraseña. Intenta de nuevo.');
-    } finally {
       setLoading(false);
     }
+    // NO setLoading(false) aquí porque el componente se desmontará
   };
 
   return (

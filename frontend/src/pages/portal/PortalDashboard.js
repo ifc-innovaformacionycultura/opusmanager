@@ -16,13 +16,23 @@ const PortalDashboard = () => {
     profile: profile ? { requiere_cambio_password: profile.requiere_cambio_password } : null
   });
   
+  // Estado local para controlar si se requiere cambio de password
+  const [requiereCambio, setRequiereCambio] = useState(profile?.requiere_cambio_password === true);
+
+  // Actualizar estado cuando el profile cambie
+  useEffect(() => {
+    setRequiereCambio(profile?.requiere_cambio_password === true);
+  }, [profile]);
+
   // Si requiere cambio de contraseña, mostrar pantalla de cambio
-  if (profile?.requiere_cambio_password === true) {
+  if (requiereCambio) {
     return (
       <CambiarPasswordPrimeraVez 
         onPasswordChanged={() => {
-          // Recargar la página para obtener el perfil actualizado
-          window.location.reload();
+          console.log('✅ Password cambiada, actualizando estado local');
+          // Actualizar estado local para ocultar el componente de cambio
+          setRequiereCambio(false);
+          // El profile se actualizará en el próximo loadUserProfile automático
         }}
       />
     );
