@@ -260,10 +260,8 @@ export const SupabaseAuthProvider = ({ children }) => {
       if (authData?.session) {
         console.log('✅ Login exitoso para:', email);
         
-        // Cargar perfil de forma asíncrona (no bloqueante)
-        loadUserProfile(authData.user.id).catch(err => {
-          console.error('⚠️ Error cargando perfil (no bloqueante):', err);
-        });
+        // Cargar perfil de forma bloqueante para garantizar que isAuthenticated sea true
+        await loadUserProfile(authData.user.id);
         
         return { success: true, user: authData.user };
       }
