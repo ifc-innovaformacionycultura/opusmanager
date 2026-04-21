@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { supabase } from '../../lib/supabaseClient';
+import { computeProfileCompleteness } from '../../lib/profileCompleteness';
 
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:8001/api'
@@ -213,6 +214,59 @@ const MiPerfil = () => {
         <h2 className="text-2xl font-bold text-slate-900">Mi Perfil</h2>
         <p className="text-sm text-slate-600 mt-1">Mantén tus datos al día para que el equipo gestor tenga siempre tu información correcta.</p>
       </div>
+
+      {/* Barra de completitud del perfil */}
+      {(() => {
+        const { percentage, missingRequired, complete } = computeProfileCompleteness(profile);
+        const barColor = complete ? 'bg-green-500' : percentage >= 60 ? 'bg-amber-500' : 'bg-red-500';
+        const pillColor = complete
+          ? 'bg-green-100 text-green-800'
+          : percentage >= 60
+            ? 'bg-amber-100 text-amber-800'
+            : 'bg-red-100 text-red-800';
+        return (
+          <div
+            className="bg-white border border-slate-200 rounded-lg p-5"
+            data-testid="perfil-completitud"
+          >
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Completitud del perfil</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {complete
+                    ? 'Tu perfil está completo con los datos obligatorios.'
+                    : `Te faltan ${missingRequired.length} ${missingRequired.length === 1 ? 'campo obligatorio' : 'campos obligatorios'}.`}
+                </p>
+              </div>
+              <span
+                data-testid="perfil-completitud-pct"
+                className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${pillColor}`}
+              >
+                {percentage}%
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+              <div
+                className={`h-full ${barColor} transition-all duration-500`}
+                style={{ width: `${percentage}%` }}
+                data-testid="perfil-completitud-bar"
+              />
+            </div>
+            {missingRequired.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5" data-testid="perfil-missing-required">
+                {missingRequired.map((f) => (
+                  <span
+                    key={f.key}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 border border-red-200 text-red-800 rounded text-[11px]"
+                  >
+                    <span>•</span>{f.label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {message && (
         <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-800 text-sm" data-testid="perfil-msg">{message}</div>

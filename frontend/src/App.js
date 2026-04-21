@@ -236,6 +236,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
         { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
         { id: "recordatorios", label: "Recordatorios auto.", path: "/admin/recordatorios" },
         { id: "emails", label: "Historial de emails", path: "/admin/emails" },
+        { id: "config-email", label: "Configuración de email", path: "/admin/emails/configuracion" },
         { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
         { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
         { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" },
@@ -436,6 +437,8 @@ const Layout = ({ children }) => {
       return { page: "Administración", section: "Base de datos músicos" };
     } else if (path.startsWith("/admin/recordatorios")) {
       return { page: "Administración", section: "Recordatorios automáticos" };
+    } else if (path.startsWith("/admin/emails/configuracion")) {
+      return { page: "Administración", section: "Configuración de email" };
     } else if (path.startsWith("/admin/emails")) {
       return { page: "Administración", section: "Historial de emails" };
     } else if (path.startsWith("/admin/reclamaciones")) {
@@ -458,7 +461,8 @@ const Layout = ({ children }) => {
   return (
     <div className="min-h-screen flex bg-slate-100">
       <Sidebar isCollapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto relative">
+        <NotificacionesBell />
         {children}
         {/* Botón flotante de feedback - visible en todas las páginas */}
         <FeedbackButton currentPage={pageInfo.page} currentSection={pageInfo.section} />
@@ -689,7 +693,9 @@ import GestorMusicoDetalle from "./pages/GestorMusicoDetalle";
 import GestorRecordatorios from "./pages/GestorRecordatorios";
 import GestorEmailLog from "./pages/GestorEmailLog";
 import GestorReclamaciones from "./pages/GestorReclamaciones";
+import ConfiguracionEmail from "./pages/ConfiguracionEmail";
 import FeedbackButton from "./components/FeedbackButton";
+import NotificacionesBell from "./components/NotificacionesBell";
 
 function App() {
   return (
@@ -740,6 +746,7 @@ function App() {
                         <Route path="/admin/musicos/:id" element={<GestorMusicoDetalle />} />
                         <Route path="/admin/recordatorios" element={<GestorRecordatorios />} />
                         <Route path="/admin/emails" element={<GestorEmailLog />} />
+                        <Route path="/admin/emails/configuracion" element={<ConfiguracionEmail />} />
                         <Route path="/admin/reclamaciones" element={<GestorReclamaciones />} />
                         <Route path="/admin/permisos" element={<GestionPermisos />} />
                         <Route path="/admin/actividad" element={<RegistroActividad />} />

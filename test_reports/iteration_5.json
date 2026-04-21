@@ -1,0 +1,67 @@
+{
+  "summary": "Testing completo del Bloque 3 (comunicación interna), configuración de email y completitud del perfil del músico. 8/8 tests backend PASS (comentarios reclamacion+evento, notificaciones listar/leer-todas, emails status/preview/test). Frontend smoke tests verificados: campana de notificaciones con panel, página /admin/emails/configuracion con testids, ComentariosPanel en EventForm con testid dinámico por UUID, banner inteligente y barra de completitud en portal músico funcionando al 64% con 3 campos faltantes detectados correctamente.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Layout gestor (fixed top-right)",
+        "issues": [
+          "NotificacionesBell y FeedbackButton están ambos con position fixed. El bell queda en top-4 right-4 y el FeedbackButton (Made with Emergent) en bottom-right — no hay solape. OK visualmente."
+        ]
+      }
+    ]
+  },
+  "passed_tests": [
+    "POST /api/gestor/comentarios tipo=reclamacion -> 200, comentario persistido con gestor_id/gestor_nombre/contenido",
+    "POST /api/gestor/comentarios tipo=evento -> 200",
+    "GET /api/gestor/comentarios?tipo=reclamacion&entidad_id=... -> comentario creado visible en lista",
+    "GET /api/gestor/notificaciones -> {notificaciones:[], no_leidas:int>=0} con estructura correcta",
+    "POST /api/gestor/notificaciones/leer-todas -> 200, no_leidas=0 verificado tras la llamada",
+    "GET /api/gestor/emails/status -> 200 {conectado,sender,mensaje}",
+    "GET /api/gestor/emails/preview?tipo=prueba -> 200 con asunto+html",
+    "GET /api/gestor/emails/preview?tipo=nueva_convocatoria -> 200",
+    "POST /api/gestor/emails/test destinatario=admin@convocatorias.com -> 200, respuesta con sent/reason/id",
+    "Frontend: login gestor, btn-notificaciones visible, click abre notificaciones-panel",
+    "Frontend: sidebar-nav-config-email EXISTE en DOM bajo grupo Administración (visible cuando se expande el grupo)",
+    "Frontend: /admin/emails/configuracion renderiza config-email-page + resend-status + btn-verificar-resend + panel-prueba",
+    "Frontend: /configuracion/eventos — click en fila 'Evento 1' expande EventForm y aparece comentarios-panel-evento-<uuid> al final con textarea + botón 'Publicar nota'",
+    "Frontend: login músico, /portal muestra perfil-banner con 64% y banner-link-perfil",
+    "Frontend: tab Mi Perfil muestra perfil-completitud, perfil-completitud-pct='64%', perfil-completitud-bar (color ámbar 60-99%), perfil-missing-required con 3 chips (Teléfono, Instrumento principal, Fotografía)"
+  ],
+  "not_fully_tested": [
+    "Modal Gestionar de reclamación con ComentariosPanel: la tabla de reclamaciones estaba vacía en el entorno de prueba, no hubo ninguna reclamación para abrir su modal. No obstante, el endpoint POST /api/gestor/comentarios tipo=reclamacion funciona 100% (test backend) y el componente ComentariosPanel es el mismo que sí se verificó montado en EventForm.",
+    "Polling de 60s en el bell: validado que carga inicial llama al endpoint; el intervalo de 60s no se esperó por duración del test.",
+    "Re-cálculo del porcentaje tras guardar un campo: no se guardó realmente el teléfono (el campo es un input vacío) para evitar modificar datos del músico seed. El cálculo inicial 64% con 3 faltantes confirma que computeProfileCompleteness funciona correctamente (5 de 7 obligatorios + optionals → (14-3-2)/14? aprox)."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_bloque3.py",
+    "/app/test_reports/pytest/bloque3_results.xml"
+  ],
+  "action_items": [
+    "Opcional: añadir un seed/fixture de reclamación de prueba para facilitar QA futuro del modal Gestionar.",
+    "Opcional: considerar exponer también el porcentaje de completitud desde el backend (endpoint /api/portal/perfil/completitud) para que sea consistente si hay cálculos más complejos en el futuro. Hoy se calcula 100% en cliente."
+  ],
+  "critical_code_review_comments": [
+    "routes_gestor.py L1163: gestor_nombre concatena nombre+apellidos pero si ambos están vacíos usa email — OK. Considerar trim en el nombre antes de guardar.",
+    "routes_gestor.py L1183: la detección de menciones con regex @([\\w]+) y el match por nombre+apellidos concatenados en minúsculas es frágil (no maneja tildes, espacios dentro del nombre). Útil para MVP pero revisar en fase de pulido.",
+    "NotificacionesBell.js L47: catch silencioso en cargar() oculta errores — podría añadirse un log en modo dev.",
+    "profileCompleteness.js: El cálculo incluye campos opcionales en el denominador. El banner inteligente muestra 64% cuando hay 3 obligatorios faltantes; si el usuario completa los 3 obligatorios pero no los opcionales, verá 100% según el label 'obligatorios completos' pero la barra mostrará ~50%. El criterio 'complete' usa solo missingRequired, así que banner desaparecerá a los 7/7 obligatorios incluso con porcentaje < 100 — comportamiento correcto según spec pero confuso para el usuario."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bloque3.py (nuevo archivo con 8 tests)"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (6/6 flujos críticos verificados)"},
+  "test_credentials": {
+    "gestor": {"email": "admin@convocatorias.com", "password": "Admin123!"},
+    "musico": {"email": "jesusalonsodirector@gmail.com", "password": "Musico123!"}
+  },
+  "seed_data_creation": "Cada test crea comentarios dummy con entidad_id=uuid4 (no FK a reclamaciones/eventos reales). No se eliminan en cleanup — son filas huérfanas en comentarios_internos (acumulación baja). Considerar cleanup por TEST_* prefix o entidad_id inexistente en un job de mantenimiento.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bloque 3 funcional end-to-end. Tablas comentarios_internos + notificaciones_gestor + registro_actividad creadas en Supabase (confirmado por el usuario antes del run). Backend usa cliente supabase (service_role) para todas las queries -> RLS bypass correcto. Para probar el modal Gestionar de reclamaciones en frontend hace falta primero crear una reclamación desde /portal como músico (endpoint POST /api/portal/reclamaciones) y luego desde el gestor abrir /admin/reclamaciones. El ComentariosPanel es el mismo componente reutilizable verificado en EventForm. La campana funciona con polling 60s (no esperado en el test). Para reproducir los tests backend: cd /app/backend && REACT_APP_BACKEND_URL=https://contact-conductor.preview.emergentagent.com python -m pytest tests/test_bloque3.py -v"
+}

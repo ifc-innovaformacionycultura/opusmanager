@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
+import ComentariosPanel from "../components/ComentariosPanel";
 
 // Accordion Component
 const Accordion = ({ title, subtitle, isOpen, onToggle, children }) => (
@@ -317,6 +318,14 @@ const EventForm = ({ event, onChange, onSave }) => {
         onChange={(v) => onChange({ ...event, form_url: v })}
         placeholder="https://docs.google.com/forms/..."
       />
+
+      {/* Notas internas del equipo */}
+      {event.id && !String(event.id).startsWith('temp-') && (
+        <div className="pt-2">
+          <SectionTitle color="slate">Notas internas del equipo</SectionTitle>
+          <ComentariosPanel tipo="evento" entidadId={event.id} title="Notas internas del evento" />
+        </div>
+      )}
 
       {/* Save Button */}
       <div className="flex justify-end pt-4">

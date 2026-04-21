@@ -7,6 +7,7 @@ import CambiarPasswordPrimeraVez from './CambiarPasswordPrimeraVez';
 import PortalCalendar from './PortalCalendar';
 import MiPerfil from './MiPerfil';
 import MiHistorial from './MiHistorial';
+import { computeProfileCompleteness } from '../../lib/profileCompleteness';
 
 const PortalDashboard = () => {
   const navigate = useNavigate();
@@ -227,33 +228,47 @@ const PortalDashboard = () => {
         </div>
       </header>
 
-      {/* Banner recordatorio de actualización de perfil */}
-      {showBanner && (
-        <div className="bg-amber-50 border-b border-amber-200" data-testid="perfil-banner">
-          <div className="max-w-7xl mx-auto px-6 py-3 flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <svg className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p className="text-sm text-amber-900">
-                <strong>Recuerda mantener tu perfil actualizado.</strong> Si has cambiado algún dato (teléfono, dirección, titulaciones...) actualízalo en{' '}
-                <button onClick={() => setShowBanner(false) || setVista('perfil')} className="underline font-medium hover:text-amber-700" data-testid="banner-link-perfil">Mi Perfil</button>
-                {' '}para que el equipo gestor tenga siempre tu información correcta.
-              </p>
+      {/* Banner inteligente: sólo se muestra si faltan datos obligatorios */}
+      {showBanner && (() => {
+        const { missingRequired, percentage } = computeProfileCompleteness(profile);
+        if (missingRequired.length === 0) return null;
+        const preview = missingRequired.slice(0, 3).map((f) => f.label).join(', ');
+        const extra = missingRequired.length - 3;
+        return (
+          <div className="bg-amber-50 border-b border-amber-200" data-testid="perfil-banner">
+            <div className="max-w-7xl mx-auto px-6 py-3 flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="text-sm text-amber-900">
+                  <strong>Tu perfil está al {percentage}%.</strong> Faltan datos obligatorios:{' '}
+                  <span className="font-medium">{preview}{extra > 0 ? ` y ${extra} más` : ''}</span>.{' '}
+                  Completa tu ficha en{' '}
+                  <button
+                    onClick={() => { setVista('perfil'); }}
+                    className="underline font-medium hover:text-amber-700"
+                    data-testid="banner-link-perfil"
+                  >
+                    Mi Perfil
+                  </button>
+                  {' '}para que el equipo gestor tenga siempre tu información correcta.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowBanner(false)}
+                data-testid="banner-close"
+                className="text-amber-700 hover:text-amber-900 p-1 flex-shrink-0"
+                aria-label="Cerrar aviso"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
             </div>
-            <button
-              onClick={() => setShowBanner(false)}
-              data-testid="banner-close"
-              className="text-amber-700 hover:text-amber-900 p-1 flex-shrink-0"
-              aria-label="Cerrar aviso"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
-              </svg>
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {error && (
