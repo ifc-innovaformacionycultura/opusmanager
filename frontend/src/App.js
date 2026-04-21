@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import "@/App.css";
 
-// Supabase Auth Context (replaces legacy AuthContext)
-import { SupabaseAuthProvider, useAuth } from "./contexts/SupabaseAuthContext";
+// Dual Auth System
+import { AuthProvider, useAuth as useGestorAuth } from "./contexts/AuthContext";
+import { SupabaseAuthProvider, useAuth as useMusicoAuth } from "./contexts/SupabaseAuthContext";
 
 // Import unified login page
 import LoginUnificado from "./pages/LoginUnificado";
@@ -11,20 +12,11 @@ import LoginUnificado from "./pages/LoginUnificado";
 // Import portal pages
 import PortalDashboard from "./pages/portal/PortalDashboard";
 
-// Protected Route
-const ProtectedRoute = ({ children, requireRole }) => {
-  const { user, loading, isAuthenticated } = useAuth();
-  
-  // Debug logging
-  console.log('🔐 ProtectedRoute Estado:', {
-    loading,
-    isAuthenticated,
-    user: user ? { email: user.email, rol: user.rol } : null,
-    requireRole
-  });
+// Protected Route for Gestores (uses AuthContext)
+const ProtectedGestorRoute = ({ children }) => {
+  const { user, loading, isAuthenticated } = useGestorAuth();
   
   if (loading) {
-    console.log('⏳ Loading auth...');
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-800"></div>
@@ -33,25 +25,28 @@ const ProtectedRoute = ({ children, requireRole }) => {
   }
   
   if (!isAuthenticated) {
-    console.log('❌ No autenticado, redirigiendo a /login');
-    return <Navigate to="/login" replace />;
-  }
-
-  // Check role if required
-  if (requireRole && user?.rol !== requireRole) {
-    console.log(`⚠️ Rol incorrecto. Esperado: ${requireRole}, Actual: ${user?.rol}`);
-    // Redirect to appropriate dashboard
-    if (user?.rol === 'gestor') {
-      console.log('→ Redirigiendo a dashboard gestor');
-      return <Navigate to="/" replace />;
-    } else if (user?.rol === 'musico') {
-      console.log('→ Redirigiendo a portal músico');
-      return <Navigate to="/portal" replace />;
-    }
     return <Navigate to="/login" replace />;
   }
   
-  console.log('✅ Renderizando children protegidos');
+  return children;
+};
+
+// Protected Route for Músicos (uses SupabaseAuthContext)
+const ProtectedMusicoRoute = ({ children }) => {
+  const { user, loading, isAuthenticated } = useMusicoAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-800"></div>
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
   return children;
 };
 
@@ -154,7 +149,7 @@ const LoginPage = () => {
 
 // Sidebar Navigation
 const Sidebar = ({ isCollapsed, onToggle }) => {
-  const { logout, user } = useAuth();
+  const { logout, user } = useGestorAuth(); // Use AuthContext for gestores
   const navigate = useNavigate();
   const location = useLocation();
   const [expandedSections, setExpandedSections] = useState({});
@@ -422,55 +417,31 @@ const DashboardPage = () => {
   const [stats, setStats] = useState({ events: 0, contacts: 0, seasons: 0 });
   const [recentEvents, setRecentEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const { session, user } = useAuth();
+  const { api } = useGestorAuth(); // Use axios instance from AuthContext
   const loadedRef = useRef(false);
 
   useEffect(() => {
-    // Solo cargar una vez cuando el usuario esté autenticado
-    if (user && session?.access_token && !loadedRef.current && !isLoading) {
+    if (!loadedRef.current && !isLoading) {
       loadedRef.current = true;
       loadData();
     }
-  }, [user, session?.access_token]);
+  }, []);
 
   const loadData = async () => {
-    if (isLoading) {
-      console.log('⏳ Ya hay una carga en progreso, ignorando...');
-      return;
-    }
+    if (isLoading) return;
 
     setIsLoading(true);
     
     try {
-      if (!session?.access_token) {
-        console.warn('⚠️ No hay sesión activa para cargar datos del dashboard');
-        return;
-      }
-
-      const API_URL = window.location.hostname === 'localhost' 
-        ? 'http://localhost:8001/api' 
-        : `${process.env.REACT_APP_BACKEND_URL}/api`;
-
       console.log('📊 Cargando datos del dashboard...');
 
-      // Cargar eventos desde Supabase
-      const eventsResponse = await fetch(`${API_URL}/gestor/eventos`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
+      // Cargar eventos desde Supabase usando axios con token
+      const eventsResponse = await api.get('/api/gestor/eventos');
 
       let eventsData = [];
-      if (eventsResponse.ok) {
-        try {
-          const eventsJson = await eventsResponse.json();
-          eventsData = eventsJson.eventos || [];
-          console.log(`✅ ${eventsData.length} eventos cargados`);
-        } catch (parseError) {
-          console.error('Error parsing events response:', parseError);
-        }
-      } else {
-        console.warn(`⚠️ Error al cargar eventos: HTTP ${eventsResponse.status}`);
+      if (eventsResponse.data?.eventos) {
+        eventsData = eventsResponse.data.eventos;
+        console.log(`✅ ${eventsData.length} eventos cargados`);
       }
       
       setStats({
@@ -608,53 +579,56 @@ function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <SupabaseAuthProvider>
-          <Routes>
-            {/* Login Unificado - Una sola página para todos */}
-            <Route path="/login" element={<LoginUnificado />} />
-            
-            {/* Portal de Músicos (después de magic link) */}
-            <Route 
-              path="/portal" 
-              element={
-                <ProtectedRoute requireRole="musico">
-                  <PortalDashboard />
-                </ProtectedRoute>
-              } 
-            />
-            
-            {/* Panel de Gestores */}
-            <Route
-              path="/*"
-              element={
-                <ProtectedRoute requireRole="gestor">
-                  <Layout>
-                    <Routes>
-                      <Route path="/" element={<DashboardPage />} />
-                      <Route path="/configuracion" element={<Navigate to="/configuracion/eventos" replace />} />
-                      <Route path="/configuracion/eventos" element={<ConfiguracionEventos />} />
-                      <Route path="/configuracion/presupuestos" element={<Presupuestos />} />
-                      <Route path="/configuracion/base-datos" element={<ConfiguracionBaseDatos />} />
-                      <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
-                      <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
-                      <Route path="/plantillas-definitivas" element={<PlantillasDefinitivas />} />
-                      <Route path="/asistencia" element={<Navigate to="/asistencia/pagos" replace />} />
-                      <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
-                      <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
-                      <Route path="/informes" element={<Informes />} />
-                      <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
-                      <Route path="/admin/usuarios" element={<GestionUsuarios />} />
-                      <Route path="/admin/permisos" element={<GestionPermisos />} />
-                      <Route path="/admin/actividad" element={<RegistroActividad />} />
-                      <Route path="/admin/reportes" element={<GestionReportes />} />
-                      <Route path="/ayuda" element={<ManualUsuario />} />
-                    </Routes>
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </SupabaseAuthProvider>
+        {/* Dual Auth System: AuthProvider for Gestores, SupabaseAuthProvider for Músicos */}
+        <AuthProvider>
+          <SupabaseAuthProvider>
+            <Routes>
+              {/* Login Unificado - Una sola página para todos */}
+              <Route path="/login" element={<LoginUnificado />} />
+              
+              {/* Portal de Músicos - usa SupabaseAuthContext */}
+              <Route 
+                path="/portal" 
+                element={
+                  <ProtectedMusicoRoute>
+                    <PortalDashboard />
+                  </ProtectedMusicoRoute>
+                } 
+              />
+              
+              {/* Panel de Gestores - usa AuthContext */}
+              <Route
+                path="/*"
+                element={
+                  <ProtectedGestorRoute>
+                    <Layout>
+                      <Routes>
+                        <Route path="/" element={<DashboardPage />} />
+                        <Route path="/configuracion" element={<Navigate to="/configuracion/eventos" replace />} />
+                        <Route path="/configuracion/eventos" element={<ConfiguracionEventos />} />
+                        <Route path="/configuracion/presupuestos" element={<Presupuestos />} />
+                        <Route path="/configuracion/base-datos" element={<ConfiguracionBaseDatos />} />
+                        <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
+                        <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
+                        <Route path="/plantillas-definitivas" element={<PlantillasDefinitivas />} />
+                        <Route path="/asistencia" element={<Navigate to="/asistencia/pagos" replace />} />
+                        <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
+                        <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
+                        <Route path="/informes" element={<Informes />} />
+                        <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
+                        <Route path="/admin/usuarios" element={<GestionUsuarios />} />
+                        <Route path="/admin/permisos" element={<GestionPermisos />} />
+                        <Route path="/admin/actividad" element={<RegistroActividad />} />
+                        <Route path="/admin/reportes" element={<GestionReportes />} />
+                        <Route path="/ayuda" element={<ManualUsuario />} />
+                      </Routes>
+                    </Layout>
+                  </ProtectedGestorRoute>
+                }
+              />
+            </Routes>
+          </SupabaseAuthProvider>
+        </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>
   );

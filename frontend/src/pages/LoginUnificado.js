@@ -1,11 +1,14 @@
 // Página de Login Unificada - Gestores y Músicos
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/SupabaseAuthContext';
+import { useAuth as useGestorAuth } from '../contexts/AuthContext';
+import { useAuth as useMusicoAuth } from '../contexts/SupabaseAuthContext';
 
 const LoginUnificado = () => {
   const navigate = useNavigate();
-  const { signInWithPassword, isAuthenticated, user } = useAuth();
+  const gestorAuth = useGestorAuth();
+  const musicoAuth = useMusicoAuth();
+  
   const [modo, setModo] = useState('gestor'); // 'gestor' o 'musico'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,27 +17,36 @@ const LoginUnificado = () => {
 
   // Redirect if already logged in
   useEffect(() => {
-    if (isAuthenticated && user) {
-      if (user.rol === 'gestor') {
-        navigate('/');
-      } else if (user.rol === 'musico') {
-        navigate('/portal');
-      }
+    if (modo === 'gestor' && gestorAuth.isAuthenticated) {
+      navigate('/');
+    } else if (modo === 'musico' && musicoAuth.isAuthenticated && musicoAuth.user) {
+      navigate('/portal');
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [modo, gestorAuth.isAuthenticated, musicoAuth.isAuthenticated, musicoAuth.user, navigate]);
 
-  // Login para Gestores y Músicos (ambos usan email + password)
+  // Login handler - usa el contexto apropiado según el modo
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const result = await signInWithPassword(email, password);
-
-    if (result.success) {
-      // Navigation handled by useEffect above
-      console.log('✅ Login exitoso');
+    let result;
+    
+    if (modo === 'gestor') {
+      // Gestores: usar AuthContext (axios + backend propio)
+      result = await gestorAuth.login(email, password);
+      if (result.success) {
+        navigate('/');
+      }
     } else {
+      // Músicos: usar SupabaseAuthContext
+      result = await musicoAuth.signInWithPassword(email, password);
+      if (result.success) {
+        navigate('/portal');
+      }
+    }
+
+    if (!result.success) {
       setError(result.error || 'Error al iniciar sesión. Verifica tus credenciales.');
     }
 
