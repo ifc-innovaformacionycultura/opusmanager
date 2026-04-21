@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useAuth } from "../contexts/SupabaseAuthContext";
-import { supabase } from "../lib/supabaseClient";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:8001/api' 
-  : `${BACKEND_URL}/api`;
+import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 
 // Accordion Component
 const Accordion = ({ title, subtitle, isOpen, onToggle, children }) => (
@@ -340,7 +334,7 @@ const EventForm = ({ event, onChange, onSave }) => {
 
 // Main Component
 const ConfiguracionEventos = () => {
-  const { session } = useAuth();
+  const { api } = useGestorAuth();
   const [events, setEvents] = useState([]);
   const [temporadas, setTemporadas] = useState(['2024-2025', '2025-2026', '2026-2027']);
   const [selectedSeason, setSelectedSeason] = useState('2025-2026');
@@ -348,39 +342,19 @@ const ConfiguracionEventos = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Helper to get auth token
-  const getAuthToken = async () => {
-    if (!session?.access_token) {
-      throw new Error('No hay sesión activa');
-    }
-    return session.access_token;
-  };
-
   useEffect(() => {
     loadEvents(selectedSeason);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSeason]);
 
   const loadEvents = async (temporada) => {
     try {
       setLoading(true);
-      const token = await getAuthToken();
-      
-      const url = temporada 
-        ? `${API_URL}/gestor/eventos?temporada=${temporada}`
-        : `${API_URL}/gestor/eventos`;
-      
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      setEvents(data.eventos || []);
+      const url = temporada
+        ? `/api/gestor/eventos?temporada=${encodeURIComponent(temporada)}`
+        : '/api/gestor/eventos';
+      const response = await api.get(url);
+      setEvents(response.data?.eventos || []);
     } catch (err) {
       console.error("Error loading events:", err);
       setEvents([]);
@@ -400,34 +374,12 @@ const ConfiguracionEventos = () => {
   const saveEvent = async (event) => {
     setSaving(true);
     try {
-      const token = await getAuthToken();
-      
-      const response = await fetch(`${API_URL}/gestor/eventos/${event.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(event)
-      });
-
-      if (!response.ok) {
-        let errorMessage = 'Error al guardar evento';
-        try {
-          const error = await response.json();
-          errorMessage = error.detail || errorMessage;
-        } catch {
-          // Si no hay JSON en la respuesta, usar mensaje genérico
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
-      }
-
+      await api.put(`/api/gestor/eventos/${event.id}`, event);
       alert('✅ Evento guardado correctamente');
       loadEvents(selectedSeason);
     } catch (err) {
       console.error("Error saving event:", err);
-      alert(`❌ Error al guardar: ${err.message}`);
+      alert(`❌ Error al guardar: ${err.response?.data?.detail || err.message}`);
     } finally {
       setSaving(false);
     }
@@ -438,10 +390,8 @@ const ConfiguracionEventos = () => {
       alert('Por favor selecciona una temporada');
       return;
     }
-    
+
     try {
-      const token = await getAuthToken();
-      
       const newEvent = {
         nombre: `Nuevo Evento ${events.length + 1}`,
         temporada: selectedSeason,
@@ -450,67 +400,35 @@ const ConfiguracionEventos = () => {
         fecha_inicio: new Date().toISOString().split('T')[0],
         tipo: 'concierto'
       };
-      
-      const response = await fetch(`${API_URL}/gestor/eventos`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(newEvent)
-      });
 
-      if (!response.ok) {
-        let errorMessage = 'Error al crear evento';
-        try {
-          const error = await response.json();
-          errorMessage = error.detail || errorMessage;
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
+      const response = await api.post('/api/gestor/eventos', newEvent);
       await loadEvents(selectedSeason);
-      setOpenAccordions({ ...openAccordions, [data.evento.id]: true });
+      const createdId = response.data?.evento?.id;
+      if (createdId) setOpenAccordions(prev => ({ ...prev, [createdId]: true }));
       alert('✅ Evento creado correctamente');
     } catch (err) {
       console.error("Error creating event:", err);
-      alert(`❌ Error al crear evento: ${err.message}`);
+      alert(`❌ Error al crear evento: ${err.response?.data?.detail || err.message}`);
     }
   };
 
   const duplicateEvent = async (eventId) => {
     try {
-      // Buscar el evento original
       const originalEvent = events.find(e => e.id === eventId);
       if (!originalEvent) return;
 
-      const token = await getAuthToken();
-      
       const duplicatedEvent = {
         ...originalEvent,
         nombre: `${originalEvent.nombre} (Copia)`,
-        id: undefined // El backend generará un nuevo ID
+        id: undefined
       };
-      
-      const response = await fetch(`${API_URL}/gestor/eventos`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(duplicatedEvent)
-      });
 
-      if (!response.ok) throw new Error('Error al duplicar evento');
-
+      await api.post('/api/gestor/eventos', duplicatedEvent);
       await loadEvents(selectedSeason);
       alert('Evento duplicado correctamente');
     } catch (err) {
       console.error("Error duplicating event:", err);
-      alert("Error al duplicar el evento");
+      alert(`Error al duplicar el evento: ${err.response?.data?.detail || err.message}`);
     }
   };
 

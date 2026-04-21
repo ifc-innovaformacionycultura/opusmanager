@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import axios from "axios";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 
 // Availability color helper
 const getAvailabilityColor = (percentage) => {
@@ -165,6 +162,7 @@ const ManualEntryPanel = ({ isOpen, onClose, onSave }) => {
 
 // Main Component
 const SeguimientoConvocatorias = () => {
+  const { api } = useGestorAuth();
   const [contacts, setContacts] = useState([]);
   const [events, setEvents] = useState([]);
   const [eventResponses, setEventResponses] = useState({});
@@ -190,25 +188,36 @@ const SeguimientoConvocatorias = () => {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadData = async () => {
     try {
-      const [contactsRes, eventsRes, templatesRes] = await Promise.all([
-        axios.get(`${API}/contacts`),
-        axios.get(`${API}/events`),
-        axios.get(`${API}/email-templates`)
+      // Endpoints nuevos (Supabase). email-templates no existe aún, silenciado.
+      const [musicosRes, eventsRes, templatesRes] = await Promise.all([
+        api.get('/api/gestor/musicos').catch(() => ({ data: { musicos: [] } })),
+        api.get('/api/gestor/eventos').catch(() => ({ data: { eventos: [] } })),
+        api.get('/api/email-templates').catch(() => ({ data: [] }))
       ]);
-      
-      setContacts(contactsRes.data);
-      setEvents(eventsRes.data);
-      setTemplates(templatesRes.data);
 
-      // Load responses for each event
+      const musicos = musicosRes.data?.musicos || [];
+      const eventsList = eventsRes.data?.eventos || [];
+      setContacts(musicos);
+      setEvents(eventsList);
+      setTemplates(templatesRes.data || []);
+
+      // Cargar asignaciones de cada evento (reemplaza event-responses legacy)
       const responsesMap = {};
-      for (const event of eventsRes.data) {
-        const responsesRes = await axios.get(`${API}/event-responses/${event.id}`);
-        responsesMap[event.id] = responsesRes.data;
+      for (const event of eventsList) {
+        try {
+          const asigRes = await api.get(`/api/gestor/asignaciones/evento/${event.id}`);
+          // Adaptar formato al esperado: { contact_id, responses: {}, observaciones }
+          responsesMap[event.id] = (asigRes.data?.asignaciones || []).map(a => ({
+            contact_id: a.usuario_id,
+            responses: { [event.id]: a.estado === 'confirmado' ? 'si' : (a.estado === 'rechazado' ? 'no' : '') },
+            observaciones: a.comentarios || ''
+          }));
+        } catch { responsesMap[event.id] = []; }
       }
       setEventResponses(responsesMap);
     } catch (err) {
@@ -257,10 +266,10 @@ const SeguimientoConvocatorias = () => {
 
   const saveManualContact = async (contact) => {
     try {
-      const response = await axios.post(`${API}/contacts`, contact);
-      setContacts([...contacts, response.data]);
+      // /api/contacts (legacy) reemplazado por /api/gestor/musicos/crear.
+      // Aquí sólo creamos el registro local: la creación real se hace desde "Base de datos de músicos".
+      alert('Para añadir músicos, usa "Administración → Base de datos músicos".');
       setShowManualEntry(false);
-      alert('Contacto guardado correctamente');
     } catch (err) {
       console.error("Error saving contact:", err);
       alert('Error al guardar el contacto');

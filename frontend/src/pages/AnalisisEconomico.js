@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import axios from "axios";
+import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 // Colors for charts
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
@@ -360,25 +357,38 @@ const AnalisisEconomico = () => {
   const [contactsData, setContactsData] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState('all');
+  const { api } = useGestorAuth();
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadData = async () => {
     try {
       const [eventsRes, contactsRes] = await Promise.all([
-        axios.get(`${API}/events`),
-        axios.get(`${API}/contacts`)
+        api.get('/api/gestor/eventos').catch(() => ({ data: { eventos: [] } })),
+        api.get('/api/gestor/musicos').catch(() => ({ data: { musicos: [] } }))
       ]);
-      
-      setEvents(eventsRes.data);
-      setContacts(contactsRes.data);
+
+      const eventsList = eventsRes.data?.eventos || [];
+      const contactsList = contactsRes.data?.musicos || [];
+
+      setEvents(eventsList);
+      setContacts(contactsList);
 
       const responsesMap = {};
-      for (const event of eventsRes.data) {
-        const responsesRes = await axios.get(`${API}/event-responses/${event.id}`);
-        responsesMap[event.id] = responsesRes.data;
+      for (const event of eventsList) {
+        try {
+          const asigRes = await api.get(`/api/gestor/asignaciones/evento/${event.id}`);
+          responsesMap[event.id] = (asigRes.data?.asignaciones || []).map(a => ({
+            contact_id: a.usuario_id,
+            responses: { [event.id]: a.estado === 'confirmado' ? 'si' : (a.estado === 'rechazado' ? 'no' : '') },
+            observaciones: a.comentarios || '',
+            importe: a.importe,
+            estado_pago: a.estado_pago
+          }));
+        } catch { responsesMap[event.id] = []; }
       }
       setEventResponses(responsesMap);
     } catch (err) {

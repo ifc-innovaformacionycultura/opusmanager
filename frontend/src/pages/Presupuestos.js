@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 
 // Orchestra sections and study levels
 const SECTIONS = [
@@ -22,30 +19,37 @@ const STUDY_LEVELS = [
 ];
 
 const Presupuestos = () => {
+  const { api } = useGestorAuth();
   const [events, setEvents] = useState([]);
   const [seasons, setSeasons] = useState([]);
   const [selectedSeason, setSelectedSeason] = useState(null);
   const [budgetData, setBudgetData] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [collapsedEvents, setCollapsedEvents] = useState({}); // Track which events are collapsed
+  const [collapsedEvents, setCollapsedEvents] = useState({});
 
   useEffect(() => {
     fetchSeasons();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (selectedSeason) {
       fetchEvents();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSeason]);
 
   const fetchSeasons = async () => {
     try {
-      const response = await axios.get(`${API}/seasons`);
-      setSeasons(response.data);
-      if (response.data.length > 0) {
-        setSelectedSeason(response.data[0].id);
+      // Las temporadas se derivan de los eventos (campo `temporada` TEXT en Supabase)
+      const response = await api.get('/api/gestor/eventos');
+      const allEvents = response.data?.eventos || [];
+      const temporadas = Array.from(new Set(allEvents.map(e => e.temporada).filter(Boolean)));
+      const seasonList = temporadas.map(t => ({ id: t, nombre: t }));
+      setSeasons(seasonList);
+      if (seasonList.length > 0) {
+        setSelectedSeason(seasonList[0].id);
       }
     } catch (err) {
       console.error("Error loading seasons:", err);
@@ -55,21 +59,11 @@ const Presupuestos = () => {
   const fetchEvents = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API}/events?season_id=${selectedSeason}`);
-      setEvents(response.data);
-      
-      // Fetch existing budget or initialize
-      try {
-        const budgetResponse = await axios.get(`${API}/budgets/${selectedSeason}`);
-        if (budgetResponse.data.budget_data && Object.keys(budgetResponse.data.budget_data).length > 0) {
-          setBudgetData(budgetResponse.data.budget_data);
-        } else {
-          initializeBudgetData(response.data);
-        }
-      } catch (err) {
-        // If no budget exists, initialize
-        initializeBudgetData(response.data);
-      }
+      const response = await api.get(`/api/gestor/eventos?temporada=${encodeURIComponent(selectedSeason)}`);
+      const eventsList = response.data?.eventos || [];
+      setEvents(eventsList);
+      // /api/budgets no existe aún; inicializamos siempre un presupuesto vacío
+      initializeBudgetData(eventsList);
     } catch (err) {
       console.error("Error loading events:", err);
     } finally {
@@ -162,19 +156,9 @@ const Presupuestos = () => {
   };
 
   const saveBudget = async () => {
-    try {
-      setSaving(true);
-      await axios.post(`${API}/budgets`, {
-        season_id: selectedSeason,
-        budget_data: budgetData
-      });
-      alert('✅ Presupuesto guardado correctamente');
-    } catch (err) {
-      console.error("Error saving budget:", err);
-      alert('❌ Error al guardar el presupuesto');
-    } finally {
-      setSaving(false);
-    }
+    // /api/budgets no está implementado aún en el backend Supabase.
+    // Lo dejamos como no-op con aviso para no romper la UI.
+    alert('ℹ️ El guardado de presupuestos se conectará en la próxima iteración. Por ahora el cálculo es solo visual.');
   };
 
   const toggleEventCollapse = (eventId) => {

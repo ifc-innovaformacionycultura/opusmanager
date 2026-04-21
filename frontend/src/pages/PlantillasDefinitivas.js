@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import axios from "axios";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 
 // Availability color helper
 const getAvailabilityColor = (percentage) => {
@@ -460,48 +457,53 @@ const PlantillasDefinitivas = () => {
   const [loading, setLoading] = useState(true);
   const [budgetData, setBudgetData] = useState(null);
   const [seasons, setSeasons] = useState([]);
+  const { api } = useGestorAuth();
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadData = async () => {
     try {
-      const [eventsRes, contactsRes, templatesRes, seasonsRes] = await Promise.all([
-        axios.get(`${API}/events`),
-        axios.get(`${API}/contacts`),
-        axios.get(`${API}/email-templates`),
-        axios.get(`${API}/seasons`)
+      const [eventsRes, contactsRes, templatesRes] = await Promise.all([
+        api.get('/api/gestor/eventos').catch(() => ({ data: { eventos: [] } })),
+        api.get('/api/gestor/musicos').catch(() => ({ data: { musicos: [] } })),
+        api.get('/api/email-templates').catch(() => ({ data: [] }))
       ]);
-      
-      setEvents(eventsRes.data);
-      setContacts(contactsRes.data);
-      setTemplates(templatesRes.data);
-      setSeasons(seasonsRes.data);
 
-      // Load budget for current season
-      if (seasonsRes.data.length > 0) {
-        const currentSeasonId = seasonsRes.data[0].id;
-        try {
-          const budgetRes = await axios.get(`${API}/budgets/${currentSeasonId}`);
-          setBudgetData(budgetRes.data.budget_data || {});
-        } catch (err) {
-          console.warn("No budget data found for season");
-          setBudgetData({});
-        }
-      }
+      const eventsList = eventsRes.data?.eventos || [];
+      const contactsList = contactsRes.data?.musicos || [];
 
-      // Load responses for each event
+      setEvents(eventsList);
+      setContacts(contactsList);
+      setTemplates(templatesRes.data || []);
+
+      // Temporadas derivadas de eventos
+      const temporadas = Array.from(new Set(eventsList.map(e => e.temporada).filter(Boolean)));
+      setSeasons(temporadas.map(t => ({ id: t, nombre: t })));
+
+      // Budget endpoint no implementado
+      setBudgetData({});
+
+      // Asignaciones por evento (reemplaza event-responses)
       const responsesMap = {};
-      for (const event of eventsRes.data) {
-        const responsesRes = await axios.get(`${API}/event-responses/${event.id}`);
-        responsesMap[event.id] = responsesRes.data;
+      for (const event of eventsList) {
+        try {
+          const asigRes = await api.get(`/api/gestor/asignaciones/evento/${event.id}`);
+          responsesMap[event.id] = (asigRes.data?.asignaciones || []).map(a => ({
+            contact_id: a.usuario_id,
+            responses: { [event.id]: a.estado === 'confirmado' ? 'si' : (a.estado === 'rechazado' ? 'no' : '') },
+            observaciones: a.comentarios || '',
+            importe: a.importe,
+            estado_pago: a.estado_pago
+          }));
+        } catch { responsesMap[event.id] = []; }
       }
       setEventResponses(responsesMap);
 
-      // Expand first event by default
-      if (eventsRes.data.length > 0) {
-        setExpandedEvents({ [eventsRes.data[0].id]: true });
+      if (eventsList.length > 0) {
+        setExpandedEvents({ [eventsList[0].id]: true });
       }
     } catch (err) {
       console.error("Error loading data:", err);

@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 
 // Color helper
 const getAvailabilityColor = (percentage) => {
@@ -429,6 +426,7 @@ const EventAccordionEconomic = ({ event, index, contacts, eventResponses, contac
 
 // Main Component
 const AsistenciaPagos = () => {
+  const { api } = useGestorAuth();
   const [events, setEvents] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [eventResponses, setEventResponses] = useState({});
@@ -440,41 +438,47 @@ const AsistenciaPagos = () => {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadData = async () => {
     try {
-      const [eventsRes, contactsRes, seasonsRes] = await Promise.all([
-        axios.get(`${API}/events`),
-        axios.get(`${API}/contacts`),
-        axios.get(`${API}/seasons`)
+      const [eventsRes, contactsRes] = await Promise.all([
+        api.get('/api/gestor/eventos').catch(() => ({ data: { eventos: [] } })),
+        api.get('/api/gestor/musicos').catch(() => ({ data: { musicos: [] } }))
       ]);
-      
-      setEvents(eventsRes.data);
-      setContacts(contactsRes.data);
-      setSeasons(seasonsRes.data);
 
-      // Load budget for current season
-      if (seasonsRes.data.length > 0) {
-        const currentSeasonId = seasonsRes.data[0].id;
-        try {
-          const budgetRes = await axios.get(`${API}/budgets/${currentSeasonId}`);
-          setBudgetData(budgetRes.data.budget_data || {});
-        } catch (err) {
-          console.warn("No budget data found for season");
-          setBudgetData({});
-        }
-      }
+      const eventsList = eventsRes.data?.eventos || [];
+      const contactsList = contactsRes.data?.musicos || [];
 
+      setEvents(eventsList);
+      setContacts(contactsList);
+
+      // Temporadas derivadas de eventos (no hay endpoint /seasons)
+      const temporadas = Array.from(new Set(eventsList.map(e => e.temporada).filter(Boolean)));
+      setSeasons(temporadas.map(t => ({ id: t, nombre: t })));
+
+      // Budget no implementado: estado vacío
+      setBudgetData({});
+
+      // Asignaciones por evento (reemplaza event-responses)
       const responsesMap = {};
-      for (const event of eventsRes.data) {
-        const responsesRes = await axios.get(`${API}/event-responses/${event.id}`);
-        responsesMap[event.id] = responsesRes.data;
+      for (const event of eventsList) {
+        try {
+          const asigRes = await api.get(`/api/gestor/asignaciones/evento/${event.id}`);
+          responsesMap[event.id] = (asigRes.data?.asignaciones || []).map(a => ({
+            contact_id: a.usuario_id,
+            responses: { [event.id]: a.estado === 'confirmado' ? 'si' : (a.estado === 'rechazado' ? 'no' : '') },
+            observaciones: a.comentarios || '',
+            importe: a.importe,
+            estado_pago: a.estado_pago
+          }));
+        } catch { responsesMap[event.id] = []; }
       }
       setEventResponses(responsesMap);
 
-      if (eventsRes.data.length > 0) {
-        setExpandedEvents({ [eventsRes.data[0].id]: true });
+      if (eventsList.length > 0) {
+        setExpandedEvents({ [eventsList[0].id]: true });
       }
     } catch (err) {
       console.error("Error loading data:", err);
