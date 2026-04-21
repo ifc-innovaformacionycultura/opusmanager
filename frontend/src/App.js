@@ -11,6 +11,7 @@ import LoginUnificado from "./pages/LoginUnificado";
 
 // Import portal pages
 import PortalDashboard from "./pages/portal/PortalDashboard";
+import ResetPassword from "./pages/ResetPassword";
 
 // Protected Route for Gestores (uses AuthContext)
 const ProtectedGestorRoute = ({ children }) => {
@@ -585,6 +586,9 @@ function App() {
             <Routes>
               {/* Login Unificado - Una sola página para todos */}
               <Route path="/login" element={<LoginUnificado />} />
+              
+              {/* Reset Password - Recuperación de contraseña */}
+              <Route path="/reset-password" element={<ResetPassword />} />
               
               {/* Portal de Músicos - usa SupabaseAuthContext */}
               <Route 

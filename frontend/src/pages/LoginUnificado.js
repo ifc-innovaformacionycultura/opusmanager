@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth as useGestorAuth } from '../contexts/AuthContext';
 import { useAuth as useMusicoAuth } from '../contexts/SupabaseAuthContext';
+import supabase from '../lib/supabaseClient';
 
 const LoginUnificado = () => {
   const navigate = useNavigate();
@@ -14,6 +15,12 @@ const LoginUnificado = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // Estado para recuperación de contraseña
+  const [mostrarRecuperacion, setMostrarRecuperacion] = useState(false);
+  const [emailRecuperacion, setEmailRecuperacion] = useState('');
+  const [loadingRecuperacion, setLoadingRecuperacion] = useState(false);
+  const [mensajeRecuperacion, setMensajeRecuperacion] = useState(null);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -51,6 +58,28 @@ const LoginUnificado = () => {
     }
 
     setLoading(false);
+  };
+
+  // Handler para recuperación de contraseña
+  const handleRecuperarPassword = async (e) => {
+    e.preventDefault();
+    setLoadingRecuperacion(true);
+    setMensajeRecuperacion(null);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(emailRecuperacion, {
+        redirectTo: `${window.location.origin}/reset-password`
+      });
+
+      if (error) throw error;
+
+      setMensajeRecuperacion('✅ Te hemos enviado un email con instrucciones para recuperar tu contraseña.');
+      setEmailRecuperacion('');
+    } catch (err) {
+      setMensajeRecuperacion('❌ Error al enviar email. Verifica que el correo sea correcto.');
+    } finally {
+      setLoadingRecuperacion(false);
+    }
   };
 
   return (
@@ -201,7 +230,11 @@ const LoginUnificado = () => {
 
             {/* Footer */}
             <div className="mt-6 text-center">
-              <button className="text-sm text-slate-600 hover:text-slate-900 underline transition-colors">
+              <button 
+                type="button"
+                onClick={() => setMostrarRecuperacion(true)}
+                className="text-sm text-slate-600 hover:text-slate-900 underline transition-colors"
+              >
                 ¿Olvidaste tu contraseña?
               </button>
             </div>
@@ -213,6 +246,72 @@ const LoginUnificado = () => {
           </p>
         </div>
       </div>
+
+      {/* Modal de Recuperación de Contraseña */}
+      {mostrarRecuperacion && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold text-slate-800">
+                Recuperar Contraseña
+              </h3>
+              <button
+                onClick={() => {
+                  setMostrarRecuperacion(false);
+                  setMensajeRecuperacion(null);
+                }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {mensajeRecuperacion ? (
+              <div className={`p-4 rounded-lg mb-6 ${
+                mensajeRecuperacion.startsWith('✅') 
+                  ? 'bg-green-50 text-green-800' 
+                  : 'bg-red-50 text-red-800'
+              }`}>
+                {mensajeRecuperacion}
+              </div>
+            ) : (
+              <>
+                <p className="text-slate-600 mb-6">
+                  Ingresa tu email y te enviaremos instrucciones para recuperar tu contraseña.
+                </p>
+
+                <form onSubmit={handleRecuperarPassword} className="space-y-6">
+                  <div>
+                    <label htmlFor="email-recuperacion" className="block text-sm font-semibold text-slate-700 mb-2">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      id="email-recuperacion"
+                      value={emailRecuperacion}
+                      onChange={(e) => setEmailRecuperacion(e.target.value)}
+                      required
+                      disabled={loadingRecuperacion}
+                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-100"
+                      placeholder="tu-email@ejemplo.com"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loadingRecuperacion}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold transition-all disabled:opacity-50"
+                  >
+                    {loadingRecuperacion ? 'Enviando...' : 'Enviar Instrucciones'}
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { supabase } from '../../lib/supabaseClient';
+import CambiarPasswordPrimeraVez from './CambiarPasswordPrimeraVez';
 
 const PortalDashboard = () => {
   const navigate = useNavigate();
@@ -11,8 +12,21 @@ const PortalDashboard = () => {
   console.log('🔵 PortalDashboard rendered, auth state:', {
     isAuthenticated, 
     loading: authLoading, 
-    user: user ? { email: user.email, rol: user.rol } : null
+    user: user ? { email: user.email, rol: user.rol } : null,
+    profile: profile ? { requiere_cambio_password: profile.requiere_cambio_password } : null
   });
+  
+  // Si requiere cambio de contraseña, mostrar pantalla de cambio
+  if (profile?.requiere_cambio_password === true) {
+    return (
+      <CambiarPasswordPrimeraVez 
+        onPasswordChanged={() => {
+          // Recargar la página para obtener el perfil actualizado
+          window.location.reload();
+        }}
+      />
+    );
+  }
   
   const [eventos, setEventos] = useState([]);
   const [eventoSeleccionado, setEventoSeleccionado] = useState(null);

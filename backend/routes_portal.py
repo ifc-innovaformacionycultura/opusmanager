@@ -17,6 +17,39 @@ class ConfirmarAsistenciaRequest(BaseModel):
 
 # ==================== Endpoints ====================
 
+@router.post("/cambiar-password-primera-vez")
+async def cambiar_password_primera_vez(current_user: dict = Depends(get_current_user)):
+    """
+    Marca que el usuario ya cambió su contraseña en el primer acceso.
+    Solo actualiza el campo requiere_cambio_password a false.
+    """
+    try:
+        user_profile = current_user.get("profile", {})
+        usuario_id = user_profile.get("id")
+        
+        if not usuario_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Perfil de usuario no encontrado"
+            )
+        
+        # Actualizar campo requiere_cambio_password
+        supabase.table('usuarios') \
+            .update({"requiere_cambio_password": False}) \
+            .eq('id', usuario_id) \
+            .execute()
+        
+        return {
+            "message": "Password cambiada exitosamente",
+            "requiere_cambio_password": False
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al actualizar estado: {str(e)}"
+        )
+
 @router.get("/mis-eventos")
 async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
     """
