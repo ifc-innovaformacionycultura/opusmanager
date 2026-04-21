@@ -6,7 +6,13 @@ import { supabase } from '../../lib/supabaseClient';
 
 const PortalDashboard = () => {
   const navigate = useNavigate();
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, loading: authLoading, isAuthenticated } = useAuth();
+  
+  console.log('🔵 PortalDashboard rendered, auth state:', {
+    isAuthenticated, 
+    loading: authLoading, 
+    user: user ? { email: user.email, rol: user.rol } : null
+  });
   
   const [eventos, setEventos] = useState([]);
   const [eventoSeleccionado, setEventoSeleccionado] = useState(null);

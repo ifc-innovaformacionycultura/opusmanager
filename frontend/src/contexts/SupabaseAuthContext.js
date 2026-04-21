@@ -25,14 +25,19 @@ export const SupabaseAuthProvider = ({ children }) => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('🔵 Auth event:', event, 'user:', session?.user?.email);
         console.log('🔐 Auth state changed:', event, session?.user?.email);
         setSession(session);
         
         if (session?.user) {
+          console.log('✅ User detected, loading profile...');
           await loadUserProfile(session.user.id);
         } else {
+          console.log('❌ No user in session');
           setUser(null);
           setProfile(null);
+          console.log('🔵 setLoading(false) called at point: 7 (No user)');
+          setLoading(false);
         }
       }
     );
@@ -59,31 +64,34 @@ export const SupabaseAuthProvider = ({ children }) => {
   };
 
   const loadUserProfile = async (userId) => {
-    console.log('📊 loadUserProfile START - userId:', userId);
+    console.log('🔵 loadUserProfile START - userId:', userId);
     
     try {
       // Get access token from current session
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       
+      console.log('🔵 Session token:', currentSession?.access_token ? 'EXISTS' : 'NULL');
+      
       if (!currentSession?.access_token) {
         console.error('❌ No access token available');
-        console.log('🔓 setLoading(false) - No token');
+        console.log('🔵 setLoading(false) called at point: 1 (No token)');
         setLoading(false);
         return;
       }
 
       // IMPORTANT: Always use REACT_APP_BACKEND_URL for músicos
       const API_URL = process.env.REACT_APP_BACKEND_URL || 'https://contact-conductor.preview.emergentagent.com';
+      const profileUrl = `${API_URL}/api/auth/me`;
       
-      console.log(`🔍 Fetching profile from: ${API_URL}/api/auth/me`);
+      console.log('🔵 Fetching:', profileUrl);
       
-      const response = await fetch(`${API_URL}/api/auth/me`, {
+      const response = await fetch(profileUrl, {
         headers: {
           'Authorization': `Bearer ${currentSession.access_token}`
         }
       });
 
-      console.log(`📡 Response status: ${response.status}`);
+      console.log('🔵 Response status:', response.status, response.ok);
 
       if (!response.ok) {
         console.error('❌ Error loading profile:', response.status);
@@ -91,12 +99,18 @@ export const SupabaseAuthProvider = ({ children }) => {
         // Si el perfil no existe (404), intentar sincronizar
         if (response.status === 404) {
           console.log('🔄 Perfil no encontrado, intentando sincronizar...');
-          const syncResponse = await fetch(`${API_URL}/api/auth/sync-profile`, {
+          
+          const syncUrl = `${API_URL}/api/auth/sync-profile`;
+          console.log('🔵 Fetching:', syncUrl);
+          
+          const syncResponse = await fetch(syncUrl, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${currentSession.access_token}`
             }
           });
+          
+          console.log('🔵 Response status (sync):', syncResponse.status, syncResponse.ok);
           
           if (syncResponse.ok) {
             try {
@@ -107,11 +121,15 @@ export const SupabaseAuthProvider = ({ children }) => {
             }
             
             // Retry loading profile
-            const retryResponse = await fetch(`${API_URL}/api/auth/me`, {
+            console.log('🔵 Fetching (retry):', profileUrl);
+            
+            const retryResponse = await fetch(profileUrl, {
               headers: {
                 'Authorization': `Bearer ${currentSession.access_token}`
               }
             });
+            
+            console.log('🔵 Response status (retry):', retryResponse.status, retryResponse.ok);
             
             if (retryResponse.ok) {
               try {
@@ -126,11 +144,11 @@ export const SupabaseAuthProvider = ({ children }) => {
                   rol: data.rol,
                   profile: data.profile
                 });
-                console.log('🔓 setLoading(false) - After sync success');
+                console.log('🔵 setLoading(false) called at point: 2 (After sync success)');
                 setLoading(false);
               } catch (e) {
                 console.error('Error parsing retry response:', e);
-                console.log('🔓 setLoading(false) - Parse error after sync');
+                console.log('🔵 setLoading(false) called at point: 3 (Parse error after sync)');
                 setLoading(false);
               }
               return;
@@ -138,7 +156,7 @@ export const SupabaseAuthProvider = ({ children }) => {
           }
         }
         
-        console.log('🔓 setLoading(false) - Profile load failed');
+        console.log('🔵 setLoading(false) called at point: 4 (Profile load failed)');
         setLoading(false);
         return;
       }
@@ -163,11 +181,11 @@ export const SupabaseAuthProvider = ({ children }) => {
         console.error('Error parsing profile response:', e);
       }
       
-      console.log('🔓 setLoading(false) - Normal completion');
+      console.log('🔵 setLoading(false) called at point: 5 (Normal completion)');
       setLoading(false);
     } catch (error) {
       console.error('❌ Error loading profile (catch):', error);
-      console.log('🔓 setLoading(false) - Error caught');
+      console.log('🔵 setLoading(false) called at point: 6 (Error caught)');
       setLoading(false);
     }
   };
