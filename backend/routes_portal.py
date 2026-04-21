@@ -1,10 +1,11 @@
 # Portal Routes - Músicos Dashboard
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from pydantic import BaseModel
 from supabase_client import supabase
 from auth_utils import get_current_user, get_current_musico
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
+import uuid
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
@@ -14,6 +15,32 @@ class ConfirmarAsistenciaRequest(BaseModel):
     asignacion_id: str
     estado: str  # 'confirmado' or 'rechazado'
     comentarios: Optional[str] = None
+
+class TitulacionItem(BaseModel):
+    titulo: str
+    institucion: Optional[str] = None
+    anio: Optional[int] = None
+    descripcion: Optional[str] = None
+
+class MiPerfilUpdate(BaseModel):
+    nombre: Optional[str] = None
+    apellidos: Optional[str] = None
+    telefono: Optional[str] = None
+    direccion: Optional[str] = None
+    dni: Optional[str] = None
+    fecha_nacimiento: Optional[str] = None  # 'YYYY-MM-DD'
+    nacionalidad: Optional[str] = None
+    instrumento: Optional[str] = None
+    otros_instrumentos: Optional[str] = None
+    especialidad: Optional[str] = None
+    anos_experiencia: Optional[int] = None
+    bio: Optional[str] = None
+    titulaciones: Optional[List[TitulacionItem]] = None
+
+class NuevaReclamacionRequest(BaseModel):
+    evento_id: Optional[str] = None
+    tipo: str  # 'pago_incorrecto' | 'pago_no_recibido' | 'error_asistencia' | 'otro'
+    descripcion: str
 
 # ==================== Endpoints ====================
 
@@ -375,3 +402,215 @@ async def marcar_disponibilidad(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar disponibilidad: {str(e)}"
         )
+
+
+# ==================== MI PERFIL (Bloque 1) ====================
+
+@router.get("/mi-perfil")
+async def get_mi_perfil(current_user: dict = Depends(get_current_user)):
+    """Return full profile of current musician."""
+    profile = current_user.get("profile") or {}
+    return {"profile": profile}
+
+
+@router.put("/mi-perfil")
+async def update_mi_perfil(
+    data: MiPerfilUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update profile fields of the current musician (no file uploads)."""
+    user_profile = current_user.get("profile") or {}
+    usuario_id = user_profile.get("id")
+    if not usuario_id:
+        raise HTTPException(status_code=400, detail="Perfil no encontrado")
+
+    payload = data.model_dump(exclude_none=True)
+    # Convert titulaciones to list of dicts for JSONB
+    if "titulaciones" in payload:
+        payload["titulaciones"] = [t.model_dump() if hasattr(t, "model_dump") else t for t in payload["titulaciones"]]
+    payload["updated_at"] = datetime.utcnow().isoformat()
+
+    try:
+        res = supabase.table('usuarios').update(payload).eq('id', usuario_id).execute()
+        return {"message": "Perfil actualizado", "profile": res.data[0] if res.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar perfil: {str(e)}")
+
+
+@router.post("/mi-perfil/foto")
+async def upload_foto(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload profile photo (JPG/PNG, max 2MB) to Supabase Storage."""
+    user_profile = current_user.get("profile") or {}
+    usuario_id = user_profile.get("id")
+    user_id = user_profile.get("user_id") or usuario_id
+
+    if file.content_type not in ("image/jpeg", "image/png", "image/jpg", "image/webp"):
+        raise HTTPException(status_code=400, detail="Solo se admiten imágenes JPG, PNG o WebP")
+    contents = await file.read()
+    if len(contents) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="La foto no puede exceder 2MB")
+
+    ext = (file.filename or "photo.jpg").split(".")[-1].lower()
+    if ext not in ("jpg", "jpeg", "png", "webp"):
+        ext = "jpg"
+    path = f"{user_id}/{uuid.uuid4().hex}.{ext}"
+
+    try:
+        supabase.storage.from_('profile-photos').upload(
+            path=path,
+            file=contents,
+            file_options={"content-type": file.content_type, "upsert": "true"}
+        )
+        public_url = supabase.storage.from_('profile-photos').get_public_url(path)
+        supabase.table('usuarios').update({"foto_url": public_url, "updated_at": datetime.utcnow().isoformat()}).eq('id', usuario_id).execute()
+        return {"message": "Foto subida correctamente", "foto_url": public_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al subir foto: {str(e)}")
+
+
+@router.post("/mi-perfil/cv")
+async def upload_cv(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload CV (PDF, max 5MB) to Supabase Storage."""
+    user_profile = current_user.get("profile") or {}
+    usuario_id = user_profile.get("id")
+    user_id = user_profile.get("user_id") or usuario_id
+
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Solo se admiten archivos PDF")
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="El CV no puede exceder 5MB")
+
+    path = f"{user_id}/{uuid.uuid4().hex}.pdf"
+    try:
+        supabase.storage.from_('cv-files').upload(
+            path=path,
+            file=contents,
+            file_options={"content-type": "application/pdf", "upsert": "true"}
+        )
+        public_url = supabase.storage.from_('cv-files').get_public_url(path)
+        supabase.table('usuarios').update({"cv_url": public_url, "updated_at": datetime.utcnow().isoformat()}).eq('id', usuario_id).execute()
+        return {"message": "CV subido correctamente", "cv_url": public_url, "filename": file.filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al subir CV: {str(e)}")
+
+
+@router.delete("/mi-perfil/cv")
+async def delete_cv(current_user: dict = Depends(get_current_user)):
+    """Remove CV URL from profile."""
+    usuario_id = (current_user.get("profile") or {}).get("id")
+    if not usuario_id:
+        raise HTTPException(status_code=400, detail="Perfil no encontrado")
+    supabase.table('usuarios').update({"cv_url": None, "updated_at": datetime.utcnow().isoformat()}).eq('id', usuario_id).execute()
+    return {"message": "CV eliminado"}
+
+
+# ==================== MI HISTORIAL (Bloque 2) ====================
+
+@router.get("/mi-historial/eventos")
+async def get_historial_eventos(current_user: dict = Depends(get_current_user)):
+    """Historial de eventos: lista todas las asignaciones del músico con info de ensayos."""
+    usuario_id = (current_user.get("profile") or {}).get("id")
+    if not usuario_id:
+        raise HTTPException(status_code=400, detail="Perfil no encontrado")
+
+    asigs_res = supabase.table('asignaciones') \
+        .select('*, evento:eventos(*)') \
+        .eq('usuario_id', usuario_id) \
+        .order('created_at', desc=True) \
+        .execute()
+    asignaciones = asigs_res.data or []
+
+    # Para cada asignación, contar ensayos del evento
+    for a in asignaciones:
+        eid = a.get('evento_id')
+        if not eid:
+            a['ensayos_total'] = 0
+            a['ensayos_confirmados'] = 0
+            continue
+        ens_res = supabase.table('ensayos').select('id', count='exact').eq('evento_id', eid).execute()
+        a['ensayos_total'] = ens_res.count or 0
+        dis_res = supabase.table('disponibilidad').select('id', count='exact') \
+            .eq('usuario_id', usuario_id).eq('asiste', True).execute()
+        # Note: disponibilidad no filtra por evento, contamos solo total confirmados del músico
+        a['ensayos_confirmados'] = dis_res.count or 0
+
+    return {"asignaciones": asignaciones}
+
+
+@router.get("/mi-historial/pagos")
+async def get_historial_pagos(current_user: dict = Depends(get_current_user)):
+    """Historial de pagos del músico derivado del campo estado_pago + importe de asignaciones."""
+    usuario_id = (current_user.get("profile") or {}).get("id")
+    if not usuario_id:
+        raise HTTPException(status_code=400, detail="Perfil no encontrado")
+
+    res = supabase.table('asignaciones') \
+        .select('id, evento_id, importe, estado, estado_pago, updated_at, evento:eventos(nombre, temporada)') \
+        .eq('usuario_id', usuario_id) \
+        .order('created_at', desc=True) \
+        .execute()
+    pagos = res.data or []
+
+    total_cobrado = 0.0
+    total_pendiente = 0.0
+    for p in pagos:
+        try:
+            imp = float(p.get('importe') or 0)
+        except Exception:
+            imp = 0
+        if p.get('estado_pago') == 'pagado':
+            total_cobrado += imp
+        else:
+            total_pendiente += imp
+
+    return {
+        "pagos": pagos,
+        "total_cobrado": round(total_cobrado, 2),
+        "total_pendiente": round(total_pendiente, 2),
+    }
+
+
+@router.get("/mi-historial/reclamaciones")
+async def get_reclamaciones(current_user: dict = Depends(get_current_user)):
+    """Lista de reclamaciones del músico."""
+    usuario_id = (current_user.get("profile") or {}).get("id")
+    if not usuario_id:
+        raise HTTPException(status_code=400, detail="Perfil no encontrado")
+    res = supabase.table('reclamaciones') \
+        .select('*, evento:eventos(nombre, temporada)') \
+        .eq('usuario_id', usuario_id) \
+        .order('fecha_creacion', desc=True) \
+        .execute()
+    return {"reclamaciones": res.data or []}
+
+
+@router.post("/mi-historial/reclamaciones")
+async def crear_reclamacion(
+    data: NuevaReclamacionRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Crea una reclamación desde el portal del músico."""
+    usuario_id = (current_user.get("profile") or {}).get("id")
+    if not usuario_id:
+        raise HTTPException(status_code=400, detail="Perfil no encontrado")
+
+    payload = {
+        "usuario_id": usuario_id,
+        "evento_id": data.evento_id,
+        "tipo": data.tipo,
+        "descripcion": data.descripcion,
+        "estado": "pendiente"
+    }
+    payload = {k: v for k, v in payload.items() if v is not None}
+    try:
+        res = supabase.table('reclamaciones').insert(payload).execute()
+        return {"message": "Reclamación enviada", "reclamacion": res.data[0] if res.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al enviar reclamación: {str(e)}")

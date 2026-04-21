@@ -210,6 +210,9 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       children: [
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
         { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
+        { id: "recordatorios", label: "Recordatorios auto.", path: "/admin/recordatorios" },
+        { id: "emails", label: "Historial de emails", path: "/admin/emails" },
+        { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
         { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
         { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" },
         { id: "reportes", label: "Reportes del equipo", path: "/admin/reportes" }
@@ -389,6 +392,12 @@ const Layout = ({ children }) => {
       return { page: "Administración", section: "Gestión de usuarios" };
     } else if (path.startsWith("/admin/musicos")) {
       return { page: "Administración", section: "Base de datos músicos" };
+    } else if (path.startsWith("/admin/recordatorios")) {
+      return { page: "Administración", section: "Recordatorios automáticos" };
+    } else if (path.startsWith("/admin/emails")) {
+      return { page: "Administración", section: "Historial de emails" };
+    } else if (path.startsWith("/admin/reclamaciones")) {
+      return { page: "Administración", section: "Reclamaciones" };
     } else if (path.startsWith("/admin/permisos")) {
       return { page: "Administración", section: "Gestión de permisos" };
     } else if (path.startsWith("/admin/actividad")) {
@@ -578,6 +587,9 @@ import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
 import GestionReportes from "./pages/GestionReportes";
 import GestorMusicos from "./pages/GestorMusicos";
+import GestorRecordatorios from "./pages/GestorRecordatorios";
+import GestorEmailLog from "./pages/GestorEmailLog";
+import GestorReclamaciones from "./pages/GestorReclamaciones";
 import FeedbackButton from "./components/FeedbackButton";
 
 function App() {
@@ -626,6 +638,9 @@ function App() {
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
                         <Route path="/admin/usuarios" element={<GestionUsuarios />} />
                         <Route path="/admin/musicos" element={<GestorMusicos />} />
+                        <Route path="/admin/recordatorios" element={<GestorRecordatorios />} />
+                        <Route path="/admin/emails" element={<GestorEmailLog />} />
+                        <Route path="/admin/reclamaciones" element={<GestorReclamaciones />} />
                         <Route path="/admin/permisos" element={<GestionPermisos />} />
                         <Route path="/admin/actividad" element={<RegistroActividad />} />
                         <Route path="/admin/reportes" element={<GestionReportes />} />

@@ -87,7 +87,7 @@ def build_credentials_email_html(nombre: str, email: str, password_temporal: str
 """.strip()
 
 
-async def send_musico_credentials_email(to_email: str, nombre: str, password_temporal: str) -> dict:
+async def send_musico_credentials_email(to_email: str, nombre: str, password_temporal: str, usuario_id: str = None) -> dict:
     """
     Send welcome email with temporary credentials. Returns dict:
       - sent: bool
@@ -95,9 +95,36 @@ async def send_musico_credentials_email(to_email: str, nombre: str, password_tem
       - reason: str (when not sent)
     Does NOT raise — the musician creation should succeed even if the email fails.
     """
+    return await _send_email(
+        to_email=to_email,
+        subject="Bienvenido/a a OPUS MANAGER — credenciales de acceso",
+        html=build_credentials_email_html(nombre, to_email, password_temporal),
+        tipo="bienvenida",
+        usuario_id=usuario_id
+    )
+
+
+async def _send_email(
+    to_email: str,
+    subject: str,
+    html: str,
+    tipo: str = "generico",
+    usuario_id: str = None,
+    evento_id: str = None,
+) -> dict:
+    """Generic email send via Resend with email_log entry."""
     api_key = _get_api_key()
+    log_entry = {
+        "destinatario": to_email,
+        "asunto": subject,
+        "tipo": tipo,
+        "usuario_id": usuario_id,
+        "evento_id": evento_id,
+    }
+
     if not api_key:
         logger.warning("RESEND_API_KEY not configured — skipping email send")
+        _log_email({**log_entry, "estado": "error", "error_mensaje": "RESEND_API_KEY not configured"})
         return {"sent": False, "reason": "RESEND_API_KEY not configured"}
 
     try:
@@ -106,11 +133,29 @@ async def send_musico_credentials_email(to_email: str, nombre: str, password_tem
         params = {
             "from": _get_sender(),
             "to": [to_email],
-            "subject": "Bienvenido/a a OPUS MANAGER — credenciales de acceso",
-            "html": build_credentials_email_html(nombre, to_email, password_temporal),
+            "subject": subject,
+            "html": html,
         }
         result = await asyncio.to_thread(resend.Emails.send, params)
-        return {"sent": True, "email_id": result.get("id") if isinstance(result, dict) else None}
+        email_id = result.get("id") if isinstance(result, dict) else None
+        _log_email({**log_entry, "estado": "enviado", "resend_id": email_id})
+        return {"sent": True, "email_id": email_id}
     except Exception as e:
         logger.error(f"Resend email failed: {e}")
+        _log_email({**log_entry, "estado": "error", "error_mensaje": str(e)[:500]})
         return {"sent": False, "reason": str(e)}
+
+
+def _log_email(payload: dict):
+    """Persist email attempt to email_log table (best-effort)."""
+    try:
+        from supabase_client import supabase
+        clean = {k: v for k, v in payload.items() if v is not None}
+        supabase.table('email_log').insert(clean).execute()
+    except Exception as e:
+        logger.error(f"Failed to log email: {e}")
+
+
+async def send_reminder_email(to_email: str, subject: str, html: str, tipo: str, usuario_id: str = None, evento_id: str = None) -> dict:
+    """Send a reminder-style email (used by recordatorios)."""
+    return await _send_email(to_email=to_email, subject=subject, html=html, tipo=tipo, usuario_id=usuario_id, evento_id=evento_id)

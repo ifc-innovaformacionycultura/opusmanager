@@ -5,6 +5,8 @@ import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import CambiarPasswordPrimeraVez from './CambiarPasswordPrimeraVez';
 import PortalCalendar from './PortalCalendar';
+import MiPerfil from './MiPerfil';
+import MiHistorial from './MiHistorial';
 
 const PortalDashboard = () => {
   const navigate = useNavigate();
@@ -13,7 +15,8 @@ const PortalDashboard = () => {
   // Estado local para controlar si se requiere cambio de password
   const [requiereCambio, setRequiereCambio] = useState(profile?.requiere_cambio_password === true);
 
-  const [vista, setVista] = useState('eventos'); // 'eventos' | 'calendario'
+  const [vista, setVista] = useState('eventos'); // 'eventos' | 'calendario' | 'perfil' | 'historial'
+  const [showBanner, setShowBanner] = useState(true);
   const [eventos, setEventos] = useState([]);
   const [eventoSeleccionado, setEventoSeleccionado] = useState(null);
   const [ensayos, setEnsayos] = useState([]);
@@ -42,12 +45,14 @@ const PortalDashboard = () => {
       return;
     }
 
-    // Solo cargar eventos si no requiere cambio de password
-    if (!requiereCambio) {
+    // Solo cargar eventos si no requiere cambio de password y estamos en pestaña eventos
+    if (!requiereCambio && vista === 'eventos') {
       cargarMisEventos();
+    } else if (!requiereCambio) {
+      setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, navigate, requiereCambio]);
+  }, [user, navigate, requiereCambio, vista]);
 
   const cargarMisEventos = async () => {
     try {
@@ -173,11 +178,11 @@ const PortalDashboard = () => {
 
         {/* Tabs */}
         <div className="max-w-7xl mx-auto px-6">
-          <nav className="flex gap-6 -mb-px">
+          <nav className="flex gap-6 -mb-px overflow-x-auto">
             <button
               onClick={() => setVista('eventos')}
               data-testid="tab-eventos"
-              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 vista === 'eventos'
                   ? 'border-slate-900 text-slate-900'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -188,7 +193,7 @@ const PortalDashboard = () => {
             <button
               onClick={() => setVista('calendario')}
               data-testid="tab-calendario"
-              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 vista === 'calendario'
                   ? 'border-slate-900 text-slate-900'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -196,9 +201,59 @@ const PortalDashboard = () => {
             >
               📅 Calendario
             </button>
+            <button
+              onClick={() => setVista('perfil')}
+              data-testid="tab-perfil"
+              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                vista === 'perfil'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              👤 Mi Perfil
+            </button>
+            <button
+              onClick={() => setVista('historial')}
+              data-testid="tab-historial"
+              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                vista === 'historial'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              📋 Mi Historial
+            </button>
           </nav>
         </div>
       </header>
+
+      {/* Banner recordatorio de actualización de perfil */}
+      {showBanner && (
+        <div className="bg-amber-50 border-b border-amber-200" data-testid="perfil-banner">
+          <div className="max-w-7xl mx-auto px-6 py-3 flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm text-amber-900">
+                <strong>Recuerda mantener tu perfil actualizado.</strong> Si has cambiado algún dato (teléfono, dirección, titulaciones...) actualízalo en{' '}
+                <button onClick={() => setShowBanner(false) || setVista('perfil')} className="underline font-medium hover:text-amber-700" data-testid="banner-link-perfil">Mi Perfil</button>
+                {' '}para que el equipo gestor tenga siempre tu información correcta.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowBanner(false)}
+              data-testid="banner-close"
+              className="text-amber-700 hover:text-amber-900 p-1 flex-shrink-0"
+              aria-label="Cerrar aviso"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {error && (
@@ -209,6 +264,10 @@ const PortalDashboard = () => {
 
         {vista === 'calendario' ? (
           <PortalCalendar />
+        ) : vista === 'perfil' ? (
+          <MiPerfil />
+        ) : vista === 'historial' ? (
+          <MiHistorial />
         ) : eventos.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-6xl mb-4">🎵</div>

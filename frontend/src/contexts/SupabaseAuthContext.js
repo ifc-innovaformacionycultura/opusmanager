@@ -325,6 +325,12 @@ export const SupabaseAuthProvider = ({ children }) => {
     }
   };
 
+  const reloadProfile = async () => {
+    if (user?.id) {
+      await loadUserProfile(user.id);
+    }
+  };
+
   const value = {
     user,
     profile,
@@ -333,6 +339,7 @@ export const SupabaseAuthProvider = ({ children }) => {
     signInWithPassword,
     signOut,
     refreshSession,
+    reloadProfile,
     isAuthenticated: !!user && !!profile, // BUG 1 FIX: Solo autenticado cuando tiene perfil cargado
     isGestor: profile?.rol === 'gestor',
     isMusico: profile?.rol === 'musico'

@@ -463,7 +463,8 @@ async def crear_musico(
         email_result = await send_musico_credentials_email(
             to_email=email_str,
             nombre=data.nombre,
-            password_temporal=temp_password
+            password_temporal=temp_password,
+            usuario_id=created_user_id
         )
 
         return {
@@ -645,3 +646,173 @@ async def export_excel(current_user: dict = Depends(get_current_gestor)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al exportar Excel: {str(e)}"
         )
+
+
+# ==================== RECORDATORIOS (Bloque 3) ====================
+
+# Catálogo de los 10 recordatorios predefinidos
+RECORDATORIOS_PREDEFINIDOS = [
+    {"tipo": "nueva_asignacion", "nombre": "Nueva asignación", "descripcion": "Email al músico al ser asignado a un evento", "destinatario_default": "musico", "dias_default": None},
+    {"tipo": "respuesta_7d", "nombre": "Recordatorio respuesta 7 días antes del límite", "descripcion": "Solo a músicos sin responder", "destinatario_default": "musico", "dias_default": 7},
+    {"tipo": "respuesta_3d", "nombre": "Recordatorio respuesta 3 días antes", "descripcion": "Solo a músicos sin responder", "destinatario_default": "musico", "dias_default": 3},
+    {"tipo": "respuesta_24h", "nombre": "Último aviso 24h", "descripcion": "Solo a músicos sin responder", "destinatario_default": "musico", "dias_default": 1},
+    {"tipo": "aviso_ensayo_24h", "nombre": "Aviso ensayo 24h antes", "descripcion": "Solo a músicos confirmados", "destinatario_default": "musico", "dias_default": 1},
+    {"tipo": "aviso_funcion_48h", "nombre": "Aviso función 48h antes", "descripcion": "Solo a músicos confirmados", "destinatario_default": "musico", "dias_default": 2},
+    {"tipo": "alerta_baja_respuesta", "nombre": "Alerta baja respuesta <50% a 5 días", "descripcion": "Aviso al gestor si menos del 50% ha respondido", "destinatario_default": "gestor", "dias_default": 5},
+    {"tipo": "pago_pendiente_3d", "nombre": "Recordatorio pago pendiente 3 días antes", "descripcion": "Aviso al gestor para pagos pendientes", "destinatario_default": "gestor", "dias_default": 3},
+    {"tipo": "confirmacion_cobro", "nombre": "Confirmación de cobro al pagar", "descripcion": "Email al músico al marcarse como pagado", "destinatario_default": "musico", "dias_default": None},
+    {"tipo": "resumen_diario", "nombre": "Resumen diario 8:00 con eventos activos", "descripcion": "Resumen diario para el gestor", "destinatario_default": "gestor", "dias_default": None},
+]
+
+
+class RecordatorioConfigPayload(BaseModel):
+    tipo: str
+    activo: Optional[bool] = None
+    dias_antes: Optional[int] = None
+    mensaje_personalizado: Optional[str] = None
+    destinatario: Optional[str] = None
+
+
+@router.get("/eventos/{evento_id}/recordatorios")
+async def get_recordatorios(evento_id: str, current_user: dict = Depends(get_current_gestor)):
+    """Devuelve la lista de 10 recordatorios con su config actual (o defaults)."""
+    try:
+        cfgs_res = supabase.table('recordatorios_config') \
+            .select('*') \
+            .eq('evento_id', evento_id) \
+            .execute()
+        cfgs_by_tipo = {c['tipo']: c for c in (cfgs_res.data or [])}
+
+        resultado = []
+        for predef in RECORDATORIOS_PREDEFINIDOS:
+            cfg = cfgs_by_tipo.get(predef['tipo'], {})
+            resultado.append({
+                **predef,
+                "activo": cfg.get('activo', False),
+                "dias_antes": cfg.get('dias_antes', predef['dias_default']),
+                "mensaje_personalizado": cfg.get('mensaje_personalizado', ''),
+                "destinatario": cfg.get('destinatario', predef['destinatario_default']),
+                "config_id": cfg.get('id')
+            })
+        return {"recordatorios": resultado}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.put("/eventos/{evento_id}/recordatorios")
+async def upsert_recordatorio(
+    evento_id: str,
+    payload: RecordatorioConfigPayload,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Activa/desactiva/edita un recordatorio (upsert por tipo+evento)."""
+    try:
+        data = payload.model_dump(exclude_none=True)
+        data['evento_id'] = evento_id
+        data['updated_at'] = datetime.utcnow().isoformat()
+
+        # Upsert: intento update, si no existe inserto
+        existing = supabase.table('recordatorios_config') \
+            .select('id') \
+            .eq('evento_id', evento_id) \
+            .eq('tipo', payload.tipo) \
+            .execute()
+        if existing.data:
+            supabase.table('recordatorios_config') \
+                .update(data) \
+                .eq('id', existing.data[0]['id']) \
+                .execute()
+        else:
+            supabase.table('recordatorios_config').insert(data).execute()
+        return {"message": "Recordatorio actualizado"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+# ==================== EMAIL LOG ====================
+
+@router.get("/emails/log")
+async def get_email_log(
+    limit: int = 100,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Historial de emails enviados."""
+    try:
+        res = supabase.table('email_log') \
+            .select('*') \
+            .order('created_at', desc=True) \
+            .limit(min(limit, 500)) \
+            .execute()
+        return {"emails": res.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+class ReenviarEmailRequest(BaseModel):
+    email_log_id: str
+
+
+@router.post("/emails/reenviar")
+async def reenviar_email(
+    payload: ReenviarEmailRequest,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Reenvía un email a partir de un log entry."""
+    from email_service import _send_email
+    try:
+        res = supabase.table('email_log').select('*').eq('id', payload.email_log_id).single().execute()
+        item = res.data
+        if not item:
+            raise HTTPException(status_code=404, detail="Email no encontrado")
+        # Cuerpo simple si no tenemos el HTML original
+        html = f"<p>Reenvío del email: {item.get('asunto')}</p>"
+        r = await _send_email(
+            to_email=item['destinatario'],
+            subject=f"[Reenvío] {item.get('asunto','')}",
+            html=html,
+            tipo=f"reenvio_{item.get('tipo','')}",
+            usuario_id=item.get('usuario_id'),
+            evento_id=item.get('evento_id')
+        )
+        return r
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+# ==================== RECLAMACIONES (Gestor) ====================
+
+@router.get("/reclamaciones")
+async def get_reclamaciones_gestor(current_user: dict = Depends(get_current_gestor)):
+    """Todas las reclamaciones para el panel del gestor."""
+    try:
+        res = supabase.table('reclamaciones') \
+            .select('*, usuario:usuarios(nombre,apellidos,email), evento:eventos(nombre,temporada)') \
+            .order('fecha_creacion', desc=True) \
+            .execute()
+        return {"reclamaciones": res.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+class ReclamacionUpdatePayload(BaseModel):
+    estado: Optional[str] = None
+    respuesta_gestor: Optional[str] = None
+
+
+@router.put("/reclamaciones/{reclamacion_id}")
+async def update_reclamacion(
+    reclamacion_id: str,
+    payload: ReclamacionUpdatePayload,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """El gestor actualiza el estado/respuesta de una reclamación."""
+    try:
+        data = payload.model_dump(exclude_none=True)
+        if data.get('estado') in ('resuelta', 'rechazada'):
+            data['fecha_resolucion'] = datetime.utcnow().isoformat()
+        res = supabase.table('reclamaciones').update(data).eq('id', reclamacion_id).execute()
+        return {"message": "Reclamación actualizada", "reclamacion": res.data[0] if res.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
