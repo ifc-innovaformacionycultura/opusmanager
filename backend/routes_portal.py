@@ -21,6 +21,8 @@ class TitulacionItem(BaseModel):
     institucion: Optional[str] = None
     anio: Optional[int] = None
     descripcion: Optional[str] = None
+    archivo_url: Optional[str] = None
+    archivo_nombre: Optional[str] = None
 
 class MiPerfilUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -428,13 +430,43 @@ async def update_mi_perfil(
     # Convert titulaciones to list of dicts for JSONB
     if "titulaciones" in payload:
         payload["titulaciones"] = [t.model_dump() if hasattr(t, "model_dump") else t for t in payload["titulaciones"]]
-    payload["updated_at"] = datetime.utcnow().isoformat()
+    now_iso = datetime.utcnow().isoformat()
+    payload["updated_at"] = now_iso
+    payload["ultima_actualizacion_perfil"] = now_iso
 
     try:
         res = supabase.table('usuarios').update(payload).eq('id', usuario_id).execute()
         return {"message": "Perfil actualizado", "profile": res.data[0] if res.data else None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al actualizar perfil: {str(e)}")
+
+
+@router.post("/mi-perfil/titulacion-archivo")
+async def upload_titulacion_archivo(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload a PDF file for a titulación. Returns the public URL to be assigned in the titulación item."""
+    user_profile = current_user.get("profile") or {}
+    user_id = user_profile.get("user_id") or user_profile.get("id")
+
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Solo se admiten archivos PDF")
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="El archivo no puede exceder 5MB")
+
+    path = f"{user_id}/titulaciones/{uuid.uuid4().hex}.pdf"
+    try:
+        supabase.storage.from_('cv-files').upload(
+            path=path,
+            file=contents,
+            file_options={"content-type": "application/pdf", "upsert": "true"}
+        )
+        public_url = supabase.storage.from_('cv-files').get_public_url(path)
+        return {"archivo_url": public_url, "filename": file.filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al subir archivo: {str(e)}")
 
 
 @router.post("/mi-perfil/foto")

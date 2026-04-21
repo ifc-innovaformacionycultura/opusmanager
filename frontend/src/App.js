@@ -150,10 +150,34 @@ const LoginPage = () => {
 
 // Sidebar Navigation
 const Sidebar = ({ isCollapsed, onToggle }) => {
-  const { logout, user } = useGestorAuth(); // Use AuthContext for gestores
+  const { logout, user, api } = useGestorAuth(); // Use AuthContext for gestores
   const navigate = useNavigate();
   const location = useLocation();
   const [expandedSections, setExpandedSections] = useState({});
+  const [pendientes, setPendientes] = useState({ reclamaciones_pendientes: 0, perfiles_actualizados: 0, respuestas_nuevas: 0, tareas_proximas: 0 });
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const fetchPendientes = async () => {
+      try {
+        const r = await api.get('/api/gestor/pendientes');
+        if (!cancelled) setPendientes(r.data || {});
+      } catch (e) { /* noop */ }
+    };
+    fetchPendientes();
+    const t = setInterval(fetchPendientes, 60000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [api, user]);
+
+  // Map child id -> badge count
+  const badgeFor = (id) => {
+    if (id === 'reclamaciones') return { count: pendientes.reclamaciones_pendientes, color: 'bg-red-500' };
+    if (id === 'musicos') return { count: pendientes.perfiles_actualizados, color: 'bg-amber-500' };
+    if (id === 'seguimiento') return { count: pendientes.respuestas_nuevas, color: 'bg-orange-500' };
+    return null;
+  };
+  const adminTotal = (pendientes.reclamaciones_pendientes || 0) + (pendientes.perfiles_actualizados || 0);
 
   const navItems = Array.isArray(user) ? [] : [
     { 
@@ -307,6 +331,16 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
               {!isCollapsed && (
                 <>
                   <span className="ml-3 font-ibm text-sm flex-1">{item.label}</span>
+                  {item.id === 'seguimiento' && (pendientes.respuestas_nuevas || 0) > 0 && (
+                    <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-orange-500 text-white text-[10px] font-bold" data-testid="badge-respuestas">
+                      {pendientes.respuestas_nuevas}
+                    </span>
+                  )}
+                  {item.id === 'administracion' && adminTotal > 0 && (
+                    <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold" data-testid="badge-admin">
+                      {adminTotal}
+                    </span>
+                  )}
                   {item.children && (
                     <span className="ml-auto">
                       {expandedSections[item.id] ? getIcon("ChevronDown") : getIcon("ChevronRight")}
@@ -319,7 +353,9 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
             {/* Children */}
             {item.children && expandedSections[item.id] && !isCollapsed && (
               <div className="bg-slate-950/50">
-                {(item.children || []).map(child => (
+                {(item.children || []).map(child => {
+                  const b = badgeFor(child.id);
+                  return (
                   <button
                     key={child.id}
                     onClick={() => navigate(child.path)}
@@ -331,9 +367,15 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
                     data-testid={`sidebar-nav-${child.id}`}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-current mr-3"></span>
-                    {child.label}
+                    <span className="flex-1">{child.label}</span>
+                    {b && b.count > 0 && (
+                      <span className={`ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full ${b.color} text-white text-[10px] font-bold`} data-testid={`badge-${child.id}`}>
+                        {b.count}
+                      </span>
+                    )}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -430,7 +472,9 @@ const DashboardPage = () => {
   const [stats, setStats] = useState({ events: 0, contacts: 0, seasons: 0 });
   const [recentEvents, setRecentEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendientes, setPendientes] = useState(null);
   const { api } = useGestorAuth(); // Use axios instance from AuthContext
+  const navigate = useNavigate();
   const loadedRef = useRef(false);
 
   useEffect(() => {
@@ -439,6 +483,17 @@ const DashboardPage = () => {
       loadData();
     }
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get('/api/gestor/pendientes');
+        setPendientes(r.data);
+        // Marcar acceso actual (después de cargar contadores)
+        await api.post('/api/gestor/marcar-acceso');
+      } catch (e) { /* noop */ }
+    })();
+  }, [api]);
 
   const loadData = async () => {
     if (isLoading) return;
@@ -478,6 +533,49 @@ const DashboardPage = () => {
         <h1 className="font-cabinet text-3xl font-bold text-slate-900">Dashboard</h1>
         <p className="font-ibm text-slate-600 mt-1">Visión general de la temporada actual</p>
       </header>
+
+      {/* Pendientes de atención */}
+      {pendientes && (pendientes.reclamaciones_pendientes + pendientes.perfiles_actualizados + pendientes.respuestas_nuevas + pendientes.tareas_proximas) > 0 && (
+        <section className="mb-8" data-testid="pendientes-section">
+          <h2 className="font-cabinet text-xl font-semibold text-slate-900 mb-3">Pendientes de atención</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <button onClick={() => navigate('/admin/reclamaciones')}
+              data-testid="tile-reclamaciones"
+              className="p-4 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg text-left transition-colors">
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">🔴</span>
+                <span className="text-3xl font-bold text-red-900">{pendientes.reclamaciones_pendientes}</span>
+              </div>
+              <p className="text-xs font-medium text-red-800 mt-2 uppercase">Reclamaciones sin atender</p>
+            </button>
+            <button onClick={() => navigate('/admin/musicos')}
+              data-testid="tile-perfiles"
+              className="p-4 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg text-left transition-colors">
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">🟡</span>
+                <span className="text-3xl font-bold text-amber-900">{pendientes.perfiles_actualizados}</span>
+              </div>
+              <p className="text-xs font-medium text-amber-800 mt-2 uppercase">Perfiles actualizados 24h</p>
+            </button>
+            <button onClick={() => navigate('/seguimiento')}
+              data-testid="tile-respuestas"
+              className="p-4 bg-orange-50 border border-orange-200 hover:bg-orange-100 rounded-lg text-left transition-colors">
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">🟠</span>
+                <span className="text-3xl font-bold text-orange-900">{pendientes.respuestas_nuevas}</span>
+              </div>
+              <p className="text-xs font-medium text-orange-800 mt-2 uppercase">Respuestas nuevas</p>
+            </button>
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-left" data-testid="tile-tareas">
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">🔵</span>
+                <span className="text-3xl font-bold text-blue-900">{pendientes.tareas_proximas}</span>
+              </div>
+              <p className="text-xs font-medium text-blue-800 mt-2 uppercase">Tareas en 24h</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -587,6 +685,7 @@ import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
 import GestionReportes from "./pages/GestionReportes";
 import GestorMusicos from "./pages/GestorMusicos";
+import GestorMusicoDetalle from "./pages/GestorMusicoDetalle";
 import GestorRecordatorios from "./pages/GestorRecordatorios";
 import GestorEmailLog from "./pages/GestorEmailLog";
 import GestorReclamaciones from "./pages/GestorReclamaciones";
@@ -638,6 +737,7 @@ function App() {
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
                         <Route path="/admin/usuarios" element={<GestionUsuarios />} />
                         <Route path="/admin/musicos" element={<GestorMusicos />} />
+                        <Route path="/admin/musicos/:id" element={<GestorMusicoDetalle />} />
                         <Route path="/admin/recordatorios" element={<GestorRecordatorios />} />
                         <Route path="/admin/emails" element={<GestorEmailLog />} />
                         <Route path="/admin/reclamaciones" element={<GestorReclamaciones />} />

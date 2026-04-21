@@ -351,6 +351,127 @@ async def get_musicos(
             detail=f"Error al cargar músicos: {str(e)}"
         )
 
+
+@router.get("/musicos/{musico_id}")
+async def get_musico_detalle(
+    musico_id: str,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Ficha completa de un músico: perfil + historial de eventos + pagos + reclamaciones."""
+    try:
+        # Perfil
+        u_res = supabase.table('usuarios').select('*').eq('id', musico_id).eq('rol', 'musico').single().execute()
+        musico = u_res.data
+        if not musico:
+            raise HTTPException(status_code=404, detail="Músico no encontrado")
+        
+        # Historial eventos
+        asigs_res = supabase.table('asignaciones') \
+            .select('*, evento:eventos(id,nombre,temporada,fecha_inicio,fecha_fin,estado)') \
+            .eq('usuario_id', musico_id) \
+            .order('created_at', desc=True) \
+            .execute()
+        asignaciones = asigs_res.data or []
+        
+        # Totales de pago
+        total_cobrado = 0.0
+        total_pendiente = 0.0
+        for a in asignaciones:
+            try: imp = float(a.get('importe') or 0)
+            except: imp = 0
+            if a.get('estado_pago') == 'pagado': total_cobrado += imp
+            else: total_pendiente += imp
+        
+        # Reclamaciones
+        recl_res = supabase.table('reclamaciones') \
+            .select('*, evento:eventos(nombre,temporada)') \
+            .eq('usuario_id', musico_id) \
+            .order('fecha_creacion', desc=True) \
+            .execute()
+        
+        return {
+            "musico": musico,
+            "asignaciones": asignaciones,
+            "total_cobrado": round(total_cobrado, 2),
+            "total_pendiente": round(total_pendiente, 2),
+            "reclamaciones": recl_res.data or []
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/pendientes")
+async def get_pendientes(current_user: dict = Depends(get_current_gestor)):
+    """Contadores de pendientes para el sidebar y el dashboard del gestor."""
+    try:
+        # Reclamaciones pendientes
+        r_res = supabase.table('reclamaciones').select('id', count='exact') \
+            .in_('estado', ['pendiente', 'en_gestion']).execute()
+        reclamaciones_pendientes = r_res.count or 0
+        
+        # Perfiles actualizados en últimas 24h (si la migración está aplicada)
+        perfiles_actualizados = 0
+        try:
+            from datetime import timezone, timedelta
+            cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            p_res = supabase.table('usuarios').select('id', count='exact') \
+                .eq('rol', 'musico') \
+                .gte('ultima_actualizacion_perfil', cutoff_24h) \
+                .execute()
+            perfiles_actualizados = p_res.count or 0
+        except Exception:
+            perfiles_actualizados = 0
+        
+        # Respuestas nuevas desde el último acceso del gestor
+        from datetime import timezone, timedelta
+        gestor_profile = current_user.get('profile') or {}
+        ultimo_acceso = gestor_profile.get('ultimo_acceso_gestor') or (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        a_res = supabase.table('asignaciones').select('id', count='exact') \
+            .in_('estado', ['confirmado', 'rechazado']) \
+            .gte('fecha_respuesta', ultimo_acceso) \
+            .execute()
+        respuestas_nuevas = a_res.count or 0
+        
+        # Tareas próximas (24h) - si existe la tabla tareas
+        tareas_proximas = 0
+        try:
+            cutoff_24h_fw = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+            t_res = supabase.table('tareas').select('id', count='exact') \
+                .lte('fecha_limite', cutoff_24h_fw) \
+                .neq('estado', 'completada') \
+                .execute()
+            tareas_proximas = t_res.count or 0
+        except Exception:
+            tareas_proximas = 0
+        
+        return {
+            "reclamaciones_pendientes": reclamaciones_pendientes,
+            "perfiles_actualizados": perfiles_actualizados,
+            "respuestas_nuevas": respuestas_nuevas,
+            "tareas_proximas": tareas_proximas,
+            "ultimo_acceso_gestor": ultimo_acceso
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/marcar-acceso")
+async def marcar_acceso_gestor(current_user: dict = Depends(get_current_gestor)):
+    """Marca el acceso actual del gestor (para tracking de 'respuestas desde último acceso')."""
+    try:
+        gestor_id = (current_user.get('profile') or {}).get('id')
+        if not gestor_id:
+            raise HTTPException(status_code=400, detail="Perfil no encontrado")
+        now = datetime.now().isoformat()
+        supabase.table('usuarios').update({'ultimo_acceso_gestor': now}).eq('id', gestor_id).execute()
+        return {"ultimo_acceso": now}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 @router.get("/instrumentos")
 async def get_instrumentos_disponibles(current_user: dict = Depends(get_current_gestor)):
     """Return distinct list of instrumentos for filter dropdown"""

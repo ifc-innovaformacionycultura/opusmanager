@@ -1,5 +1,6 @@
 // Gestor: Base de datos de Músicos con búsqueda, filtros y export Excel
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const CrearMusicoModal = ({ isOpen, onClose, onCreated, api }) => {
@@ -165,6 +166,7 @@ const CrearMusicoModal = ({ isOpen, onClose, onCreated, api }) => {
 
 const GestorMusicos = () => {
   const { api } = useAuth();
+  const navigate = useNavigate();
   const [musicos, setMusicos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -381,10 +383,18 @@ const GestorMusicos = () => {
                   </td>
                 </tr>
               ) : (
-                musicos.map(m => (
-                  <tr key={m.id} className="hover:bg-slate-50" data-testid={`musico-row-${m.id}`}>
+                musicos.map(m => {
+                  const recientemente = m.ultima_actualizacion_perfil &&
+                    (new Date() - new Date(m.ultima_actualizacion_perfil)) < 24 * 60 * 60 * 1000;
+                  return (
+                  <tr key={m.id}
+                    onClick={() => navigate(`/admin/musicos/${m.id}`)}
+                    className="hover:bg-slate-50 cursor-pointer" data-testid={`musico-row-${m.id}`}>
                     <td className="px-4 py-3 font-medium text-slate-900">
-                      {m.nombre} {m.apellidos}
+                      <div className="flex items-center gap-2">
+                        {m.nombre} {m.apellidos}
+                        {recientemente && <span className="inline-flex px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-medium" data-testid={`badge-actualizado-${m.id}`}>Actualizado</span>}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-slate-700">{m.email}</td>
                     <td className="px-4 py-3 text-slate-700">{m.instrumento || '—'}</td>
@@ -402,7 +412,8 @@ const GestorMusicos = () => {
                       {m.fecha_alta ? new Date(m.fecha_alta).toLocaleDateString('es-ES') : (m.created_at ? new Date(m.created_at).toLocaleDateString('es-ES') : '—')}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

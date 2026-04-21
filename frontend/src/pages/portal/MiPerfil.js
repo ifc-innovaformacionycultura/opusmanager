@@ -72,7 +72,7 @@ const MiPerfil = () => {
   const addTitulacion = () => {
     setForm(prev => ({
       ...prev,
-      titulaciones: [...(prev.titulaciones || []), { titulo: '', institucion: '', anio: '', descripcion: '' }]
+      titulaciones: [...(prev.titulaciones || []), { titulo: '', institucion: '', anio: '', descripcion: '', archivo_url: '', archivo_nombre: '' }]
     }));
   };
   const removeTitulacion = (idx) => {
@@ -86,6 +86,26 @@ const MiPerfil = () => {
     });
   };
 
+  const uploadTitulacionArchivo = async (idx, file) => {
+    if (!file) return;
+    setMessage(null); setError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await authedFetch('/portal/mi-perfil/titulacion-archivo', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || 'Error al subir archivo');
+      }
+      const data = await res.json();
+      setTitulacionField(idx, 'archivo_url', data.archivo_url);
+      setTitulacionField(idx, 'archivo_nombre', data.filename || 'archivo.pdf');
+      setMessage('Archivo de titulación subido. Recuerda pulsar "Guardar cambios".');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setMessage(null); setError(null); setSaving(true);
@@ -96,7 +116,9 @@ const MiPerfil = () => {
         titulo: t.titulo || '',
         institucion: t.institucion || null,
         anio: t.anio ? parseInt(t.anio, 10) : null,
-        descripcion: t.descripcion || null
+        descripcion: t.descripcion || null,
+        archivo_url: t.archivo_url || null,
+        archivo_nombre: t.archivo_nombre || null
       })).filter(t => t.titulo);
       if (payload.anos_experiencia === '') delete payload.anos_experiencia;
       else if (payload.anos_experiencia != null) payload.anos_experiencia = parseInt(payload.anos_experiencia, 10);
@@ -310,6 +332,29 @@ const MiPerfil = () => {
                     <input type="text" value={t.descripcion || ''} onChange={(e) => setTitulacionField(idx, 'descripcion', e.target.value)}
                       placeholder="Descripción (opcional)"
                       className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white" />
+                  </div>
+                  <div className="md:col-span-12 flex items-center gap-3 flex-wrap">
+                    {t.archivo_url ? (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span>📎</span>
+                        <a href={t.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                          {t.archivo_nombre || 'Ver archivo'}
+                        </a>
+                        <button type="button"
+                          onClick={() => { setTitulacionField(idx, 'archivo_url', ''); setTitulacionField(idx, 'archivo_nombre', ''); }}
+                          className="text-xs text-red-600 hover:underline ml-2">
+                          Quitar
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="text-xs px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded cursor-pointer inline-flex items-center gap-1"
+                        data-testid={`btn-upload-titulacion-${idx}`}>
+                        📎 Adjuntar PDF
+                        <input type="file" accept="application/pdf"
+                          onChange={(e) => uploadTitulacionArchivo(idx, e.target.files?.[0])}
+                          className="hidden" />
+                      </label>
+                    )}
                   </div>
                 </div>
               </div>
