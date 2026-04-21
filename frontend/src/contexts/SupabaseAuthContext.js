@@ -59,27 +59,31 @@ export const SupabaseAuthProvider = ({ children }) => {
   };
 
   const loadUserProfile = async (userId) => {
+    console.log('📊 loadUserProfile START - userId:', userId);
+    
     try {
       // Get access token from current session
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       
       if (!currentSession?.access_token) {
         console.error('❌ No access token available');
+        console.log('🔓 setLoading(false) - No token');
+        setLoading(false);
         return;
       }
 
-      // Call backend API to get profile (backend uses service_role key)
-      // IMPORTANT: Use local backend for development
-      const isDevelopment = window.location.hostname === 'localhost';
-      const API_URL = isDevelopment ? 'http://localhost:8001/api' : `${process.env.REACT_APP_BACKEND_URL}/api`;
+      // IMPORTANT: Always use REACT_APP_BACKEND_URL for músicos
+      const API_URL = process.env.REACT_APP_BACKEND_URL || 'https://contact-conductor.preview.emergentagent.com';
       
-      console.log(`🔍 Fetching profile from: ${API_URL}/auth/me`);
+      console.log(`🔍 Fetching profile from: ${API_URL}/api/auth/me`);
       
-      const response = await fetch(`${API_URL}/auth/me`, {
+      const response = await fetch(`${API_URL}/api/auth/me`, {
         headers: {
           'Authorization': `Bearer ${currentSession.access_token}`
         }
       });
+
+      console.log(`📡 Response status: ${response.status}`);
 
       if (!response.ok) {
         console.error('❌ Error loading profile:', response.status);
@@ -87,7 +91,7 @@ export const SupabaseAuthProvider = ({ children }) => {
         // Si el perfil no existe (404), intentar sincronizar
         if (response.status === 404) {
           console.log('🔄 Perfil no encontrado, intentando sincronizar...');
-          const syncResponse = await fetch(`${API_URL}/auth/sync-profile`, {
+          const syncResponse = await fetch(`${API_URL}/api/auth/sync-profile`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${currentSession.access_token}`
@@ -103,7 +107,7 @@ export const SupabaseAuthProvider = ({ children }) => {
             }
             
             // Retry loading profile
-            const retryResponse = await fetch(`${API_URL}/auth/me`, {
+            const retryResponse = await fetch(`${API_URL}/api/auth/me`, {
               headers: {
                 'Authorization': `Bearer ${currentSession.access_token}`
               }
@@ -112,6 +116,7 @@ export const SupabaseAuthProvider = ({ children }) => {
             if (retryResponse.ok) {
               try {
                 const data = await retryResponse.json();
+                console.log('✅ Perfil cargado después de sync:', data);
                 setProfile(data.profile);
                 setUser({
                   id: userId,
@@ -121,19 +126,26 @@ export const SupabaseAuthProvider = ({ children }) => {
                   rol: data.rol,
                   profile: data.profile
                 });
+                console.log('🔓 setLoading(false) - After sync success');
+                setLoading(false);
               } catch (e) {
                 console.error('Error parsing retry response:', e);
+                console.log('🔓 setLoading(false) - Parse error after sync');
+                setLoading(false);
               }
               return;
             }
           }
         }
         
+        console.log('🔓 setLoading(false) - Profile load failed');
+        setLoading(false);
         return;
       }
 
       try {
         const data = await response.json();
+        console.log('✅ Profile data received:', data);
 
         if (data) {
           setProfile(data.profile);
@@ -145,12 +157,18 @@ export const SupabaseAuthProvider = ({ children }) => {
             rol: data.rol,
             profile: data.profile
           });
+          console.log('✅ User state updated successfully');
         }
       } catch (e) {
         console.error('Error parsing profile response:', e);
       }
+      
+      console.log('🔓 setLoading(false) - Normal completion');
+      setLoading(false);
     } catch (error) {
-      console.error('❌ Error loading profile:', error);
+      console.error('❌ Error loading profile (catch):', error);
+      console.log('🔓 setLoading(false) - Error caught');
+      setLoading(false);
     }
   };
 
