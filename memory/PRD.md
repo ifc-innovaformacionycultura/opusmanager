@@ -31,7 +31,17 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
-### Abril 2026 (iteración actual)
+### Abril 2026 — iteración Bloque 3 (comunicación interna + UX Portal)
+- ✅ **SQL Bloque 3 aplicado** (`/app/MIGRATION_BLOQUE3.sql`): tablas `comentarios_internos`, `notificaciones_gestor`, `registro_actividad`; columnas `usuarios.ultima_actualizacion_perfil`/`ultimo_acceso_gestor`, `asignaciones.fecha_respuesta`, `reclamaciones.gestor_id`/`gestor_nombre`; RLS bloqueado (backend usa service role).
+- ✅ **Campana de notificaciones** (`/app/frontend/src/components/NotificacionesBell.js`): icono fijo top-right del Layout gestor con badge de no leídas; panel desplegable con historial; polling 60s a `/api/gestor/notificaciones`; acción "marcar todas como leídas"; click individual marca como leída.
+- ✅ **Comentarios internos** (`/app/frontend/src/components/ComentariosPanel.js`): componente reutilizable — montado en modal de reclamaciones y en `EventForm` (Configuración de eventos). Endpoints `GET/POST /api/gestor/comentarios?tipo=reclamacion|evento&entidad_id=...`. Menciones con `@` notifican al gestor mencionado.
+- ✅ **Configuración de email**: ruta `/admin/emails/configuracion` + entrada `Configuración de email` bajo Administración. Página con estado Resend (GET `/emails/status`), botón "Verificar conexión", previsualización HTML (GET `/emails/preview?tipo=...`) y formulario de prueba (POST `/emails/test`).
+- ✅ **Completitud del perfil** (`/app/frontend/src/lib/profileCompleteness.js`): fuente única de verdad con 7 campos obligatorios + 7 opcionales.
+  - Banner inteligente en Portal Músico: se muestra sólo si faltan campos obligatorios, con % y top-3 faltantes.
+  - Barra de progreso en "Mi Perfil": pill con color (verde ≥100% obligatorios, ámbar ≥60%, rojo <60%) + chips con los obligatorios pendientes.
+- ✅ Testing: 8/8 backend PASS + 6/6 frontend PASS (`/app/test_reports/iteration_5.json`, `/app/backend/tests/test_bloque3.py`).
+
+### Abril 2026 (iteraciones previas, compactadas)
 - ✅ **Bloque 1 — Mi Perfil (Portal Músico)**:
   - Migración SQL: añadidas columnas `direccion`, `dni`, `fecha_nacimiento`, `nacionalidad`, `otros_instrumentos`, `especialidad`, `anos_experiencia`, `bio`, `cv_url`, `titulaciones` (JSONB) a `usuarios`.
   - Supabase Storage buckets públicos: `profile-photos`, `cv-files`.
@@ -101,24 +111,17 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 ## Prioritized Backlog
 
 ### P0 - Próximo
-- [ ] **Verificar dominio en Resend** para poder enviar emails a cualquier destinatario (actualmente limitado al owner). El usuario debe:
-  1. Ir a resend.com/domains, añadir su dominio (e.g. opusmanager.es)
-  2. Configurar DNS (SPF, DKIM)
-  3. Actualizar `SENDER_EMAIL` en `/app/backend/.env` a `noreply@sudominio.com`
+- [ ] **Verificar dominio en Resend** para poder enviar emails a cualquier destinatario (actualmente limitado al owner).
 
 ### P1
 - [ ] **Fase 3: Google OAuth** (Emergent-managed) para ambos roles
-- [ ] **Ejecutor de recordatorios**: actualmente solo se configuran (activo/inactivo). Falta un job scheduler (cron) que lea `recordatorios_config` y envíe emails en las fechas correctas. Propuesta: APScheduler dentro de FastAPI + tarea diaria que:
-  - Para cada recordatorio activo calcula si hoy corresponde enviarlo
-  - Obtiene lista de destinatarios (solo músicos sin responder / confirmados / etc.)
-  - Personaliza mensaje con variables
-  - Llama a `send_reminder_email` y loggea
+- [ ] **Ejecutor de recordatorios**: job scheduler (APScheduler) que lea `recordatorios_config` y envíe emails en fechas correctas.
+- [ ] **Seed fixture de reclamaciones** para facilitar QA de modal Gestionar.
 
 ### P2
-- [ ] Refactor legacy `AsistenciaPagos.js`, `Presupuestos.js` hacia Supabase
-- [ ] Optimizar N+1 en mi-historial/eventos
-- [ ] Notificaciones push navegador músicos
-- [ ] Tab "Pagos" en portal con fecha de pago correcta (ahora usa updated_at genérico)
+- [ ] Exponer porcentaje de completitud desde backend `/api/portal/perfil/completitud`.
+- [ ] Mencionar por email (además de notificación interna) al gestor referenciado con `@`.
+- [ ] Optimizar N+1 en mi-historial/eventos.
 
 ### P3
 - [ ] Google Drive justificantes, Gmail
