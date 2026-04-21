@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/SupabaseAuthContext';
 import supabase from '../../lib/supabaseClient';
 
 const CambiarPasswordPrimeraVez = ({ onPasswordChanged }) => {
-  const { user } = useAuth();
+  const { session } = useAuth();
   const [nuevaPassword, setNuevaPassword] = useState('');
   const [confirmarPassword, setConfirmarPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,33 +44,37 @@ const CambiarPasswordPrimeraVez = ({ onPasswordChanged }) => {
     setLoading(true);
 
     try {
-      // 1. Actualizar contraseña en Supabase Auth
+      // 1. Primero: Actualizar el flag en BD con el token actual
+      //    (antes de updateUser, que re-emitirá USER_UPDATED y ocasionará reload del perfil)
+      const API_URL = process.env.REACT_APP_BACKEND_URL || 'https://contact-conductor.preview.emergentagent.com';
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error('No hay sesión activa. Vuelve a iniciar sesión.');
+      }
+
+      const flagResponse = await fetch(`${API_URL}/api/portal/cambiar-password-primera-vez`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!flagResponse.ok) {
+        throw new Error('Error al actualizar el estado de cambio de contraseña');
+      }
+
+      // 2. Luego: Actualizar contraseña en Supabase Auth
+      //    USER_UPDATED disparará un reload del perfil que ya tiene requiere_cambio_password=false
       const { error: authError } = await supabase.auth.updateUser({
         password: nuevaPassword
       });
 
       if (authError) throw authError;
 
-      // 2. Actualizar campo requiere_cambio_password en tabla usuarios
-      const API_URL = process.env.REACT_APP_BACKEND_URL || 'https://contact-conductor.preview.emergentagent.com';
-      const { data: { session } } = await supabase.auth.getSession();
-
-      const response = await fetch(`${API_URL}/api/portal/cambiar-password-primera-vez`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Error al actualizar el estado de cambio de contraseña');
-      }
-
       console.log('✅ Password cambiada y campo actualizado en BD');
 
-      // 3. Notificar al componente padre para que actualice el profile
-      // NO recargar la página, solo actualizar el estado
+      // 3. Notificar al componente padre para que actualice el estado local inmediatamente
       if (onPasswordChanged) {
         onPasswordChanged();
       }
@@ -79,7 +83,6 @@ const CambiarPasswordPrimeraVez = ({ onPasswordChanged }) => {
       setError(err.message || 'Error al cambiar la contraseña. Intenta de nuevo.');
       setLoading(false);
     }
-    // NO setLoading(false) aquí porque el componente se desmontará
   };
 
   return (

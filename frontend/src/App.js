@@ -209,6 +209,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       path: "/admin",
       children: [
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
+        { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
         { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
         { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" },
         { id: "reportes", label: "Reportes del equipo", path: "/admin/reportes" }
@@ -386,6 +387,8 @@ const Layout = ({ children }) => {
       return { page: "Informes", section: null };
     } else if (path.startsWith("/admin/usuarios")) {
       return { page: "Administración", section: "Gestión de usuarios" };
+    } else if (path.startsWith("/admin/musicos")) {
+      return { page: "Administración", section: "Base de datos músicos" };
     } else if (path.startsWith("/admin/permisos")) {
       return { page: "Administración", section: "Gestión de permisos" };
     } else if (path.startsWith("/admin/actividad")) {
@@ -574,6 +577,7 @@ import RegistroActividad from "./pages/RegistroActividad";
 import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
 import GestionReportes from "./pages/GestionReportes";
+import GestorMusicos from "./pages/GestorMusicos";
 import FeedbackButton from "./components/FeedbackButton";
 
 function App() {
@@ -621,6 +625,7 @@ function App() {
                         <Route path="/informes" element={<Informes />} />
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
                         <Route path="/admin/usuarios" element={<GestionUsuarios />} />
+                        <Route path="/admin/musicos" element={<GestorMusicos />} />
                         <Route path="/admin/permisos" element={<GestionPermisos />} />
                         <Route path="/admin/actividad" element={<RegistroActividad />} />
                         <Route path="/admin/reportes" element={<GestionReportes />} />

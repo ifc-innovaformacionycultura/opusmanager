@@ -28,6 +28,13 @@ export const SupabaseAuthProvider = ({ children }) => {
         console.log('🔵 Auth event:', event, 'user:', session?.user?.email);
         console.log('🔐 Auth state changed:', event, session?.user?.email);
         setSession(session);
+
+        // USER_UPDATED and TOKEN_REFRESHED don't need profile reload
+        // (profile from backend doesn't change on password update or token refresh)
+        if (event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED') {
+          console.log('ℹ️ Skipping profile reload on', event);
+          return;
+        }
         
         if (session?.user) {
           // BUG 3 FIX: Solo cargar perfil si es músico

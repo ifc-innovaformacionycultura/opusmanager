@@ -1,0 +1,66 @@
+{
+  "summary": "Tested OPUS MANAGER (Supabase + FastAPI + React). All 14 backend tests pass (100%) covering Auth, crear/listar/filtrar músicos, instrumentos, export XLSX (3 hojas), portal/mis-eventos (companeros_confirmados/total), portal/calendario, y cambiar-password-primera-vez. Frontend verificado: login gestor, sidebar con entrada 'Base de datos músicos', página /admin/musicos con buscador + filtros + tabla (5 músicos), botón 'Exportar a Excel', modal 'Crear músico' con campos correctos. Integración backend↔frontend OK para las 5 nuevas funcionalidades. Se detectó 1 bug CRÍTICO de concurrencia en backend (RLS leak por cliente Supabase compartido).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/gestor/* (todos los endpoints de gestor)",
+        "issue": "CONCURRENCY/SESSION BUG: El cliente Supabase módulo-level en supabase_client.py es compartido entre peticiones. routes_auth.login llama supabase.auth.sign_in_with_password(...) sobre ese mismo cliente, lo cual fija la sesión (JWT del usuario) sobre el PostgREST client. Peticiones posteriores a supabase.table('usuarios').select(...) se ejecutan con ESA sesión (no con service_role) y quedan filtradas por RLS, devolviendo 0 filas para otros user_id. Resultado: /api/gestor/musicos y todos los demás devuelven 404 'User profile not found' de forma intermitente cuando otro usuario inicia sesión justo antes. Reproducible 100%: hacer login gestor → login con credenciales inválidas o login de otro usuario → llamar /api/gestor/musicos con token del gestor => 404.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Login", "issues": ["Fuente Cabinet Grotesk de fonts.cdnfonts.com falla al decodificar (OTS parsing error). Navegador usa fallback. No bloqueante pero ruidoso en consola."]}
+    ]
+  },
+  "passed_tests": [
+    "GET /api/health -> 200",
+    "POST /api/auth/login gestor -> 200 con access_token",
+    "POST /api/auth/login músico -> 200",
+    "POST /api/auth/login credenciales inválidas -> 401",
+    "GET /api/gestor/musicos -> 200 (con token fresco)",
+    "GET /api/gestor/musicos?q=zzzz -> 0 resultados (filtro funcional)",
+    "GET /api/gestor/musicos?estado=activo -> solo estado=activo",
+    "GET /api/gestor/instrumentos -> lista única ordenada",
+    "POST /api/gestor/musicos/crear -> 200: musico creado, password_temporal devuelto, email_enviado=false (RESEND_API_KEY vacío), requiere_cambio_password=true",
+    "POST /api/gestor/musicos/crear email duplicado -> 409",
+    "GET /api/gestor/export/xlsx -> 200, Content-Type xlsx, Content-Disposition attachment, zip válido con sheets 'Usuarios','Eventos','Asignaciones'",
+    "GET /api/portal/mis-eventos -> companeros_confirmados y companeros_total (int) presentes en cada asignación; confirmados<=total",
+    "GET /api/portal/calendario -> array con {id,tipo,titulo,fecha,hora,color,evento_id,evento_nombre}; colores blue/green/orange; tipos ensayo/concierto/fecha_limite",
+    "POST /api/portal/cambiar-password-primera-vez -> 200, flag DB pasa a false",
+    "Frontend Login gestor -> redirige a /",
+    "Frontend sidebar contiene 'Base de datos músicos' bajo Administración",
+    "Frontend /admin/musicos renderiza tabla con 5 músicos, buscador, 2 filtros (Instrumento/Estado), botones Crear músico + Exportar a Excel",
+    "Frontend modal 'Crear nuevo músico' abre con campos Nombre*, Apellidos*, Email*, Instrumento, Teléfono"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_opus_manager.py",
+    "/app/test_reports/pytest/opus_manager_results.xml"
+  ],
+  "action_items": [
+    "CRÍTICO: Arreglar el bug de sesión compartida en supabase_client.py. Opciones: (a) crear un cliente fresco por petición para login, (b) llamar supabase.auth.sign_out() tras sign_in_with_password, o mejor (c) usar httpx/requests directo contra /auth/v1/token en vez de supabase.auth.sign_in_with_password sobre el cliente global. También get_user_profile_sync debería usar un cliente service-role que nunca haya visto una sesión de usuario. Este bug hace que el panel del gestor quede roto en producción en cuanto otro usuario logee simultáneamente.",
+    "Considerar reemplazar la fuente de fonts.cdnfonts.com que genera OTS parsing error."
+  ],
+  "critical_code_review_comments": [
+    "supabase_client.py línea 16: el cliente `supabase` (service_role) es global y es el mismo que usa routes_auth.login para sign_in_with_password. El SDK supabase-py mantiene la sesión en el PostgREST client del mismo objeto, por lo tanto TODAS las queries subsiguientes a supabase.table() se filtran por RLS con el JWT del último login. Esto es la causa raíz del 404 intermitente en endpoints /api/gestor/*. Fix recomendado: mantener un cliente dedicado service-role que NUNCA llame a auth.sign_in_with_password, y otro cliente exclusivo para operaciones de login (o usar httpx directo contra /auth/v1/token).",
+    "routes_gestor.py crear_musico ya aplica la mitigación correcta (crea un admin_client fresco localmente) — mismo patrón debería aplicarse en routes_auth.login o, mejor, separar los clientes de una vez por todas.",
+    "routes_portal.py get_mis_eventos: hace 2 queries count por cada asignación (N+1). Para un músico con muchos eventos puede ser lento. Considerar agrupar con un único query + group_by."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_opus_manager.py (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14 con tokens frescos); bug de sesión compartida reproducible", "frontend": "100% smoke tests pasan"},
+  "test_credentials": {
+    "gestor": {"email": "admin@convocatorias.com", "password": "Admin123!"},
+    "musico": {"email": "jesusalonsodirector@gmail.com", "password": "Musico123!"}
+  },
+  "seed_data_creation": "Se creó y eliminó 1 usuario de prueba TEST_musico_* por cada ejecución del test test_crear_musico_resend_unconfigured (cleanup automático con admin_supa.auth.admin.delete_user + DELETE FROM usuarios).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "BUG CRÍTICO: endpoints /api/gestor/* devuelven 404 'User profile not found' de forma intermitente porque el cliente Supabase módulo-level es compartido y routes_auth.login muta su sesión. Para pruebas, USAR TOKEN FRESCO POR TEST (no scope=session) como en test_opus_manager.py. Las 14 pruebas backend pasan así. Fase 5 endpoint POST /api/portal/cambiar-password-primera-vez funciona; el test UI del bucle infinito en la pantalla de cambio de contraseña NO se ejecutó (requiere setear requiere_cambio_password=true, loguear como músico, y observar el flujo React Supabase). La cobertura hasta aquí valida que el endpoint backend actualiza el flag correctamente, que es la parte que podría causar el bucle. No se eliminó la arquitectura dual de auth. Tests ejecutables con: cd /app/backend && REACT_APP_BACKEND_URL=... python -m pytest tests/test_opus_manager.py -v",
+  "rca_of_the_issue": "Root cause del 404 en /api/gestor/*: supabase-py mantiene la sesión HTTP (JWT) sobre el PostgREST client compartido. Cuando routes_auth.login llama supabase.auth.sign_in_with_password(...) sobre el cliente service_role global, éste pasa a usar el JWT del usuario logueado para TODAS las queries siguientes. Las policies RLS de la tabla 'usuarios' devuelven 0 filas para user_id que no coincide con el JWT activo. Así, cuando un segundo login ocurre entre dos peticiones del gestor, la query get_user_profile_sync(admin_user_id) devuelve 0 registros y se lanza HTTP 404. Mitigación temporal: reiniciar backend o que el gestor sea el último en iniciar sesión. Fix real: separar cliente service_role (solo DB, nunca auth) del cliente de auth (solo login)."
+}

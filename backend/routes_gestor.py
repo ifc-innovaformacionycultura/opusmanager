@@ -1,10 +1,17 @@
 # Gestor Routes - Admin/Manager endpoints
 from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from supabase_client import supabase, create_user_profile
 from auth_utils import get_current_user, get_current_gestor
 from typing import List, Optional
 from datetime import datetime
+from io import BytesIO
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+import secrets
+import string
+from email_service import send_musico_credentials_email
 
 router = APIRouter(prefix="/api/gestor", tags=["gestor"])
 
@@ -307,14 +314,34 @@ async def delete_ensayo(
 # ==================== Músicos ====================
 
 @router.get("/musicos")
-async def get_musicos(current_user: dict = Depends(get_current_gestor)):
-    """Get all musicians"""
+async def get_musicos(
+    q: Optional[str] = None,
+    instrumento: Optional[str] = None,
+    estado: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Get all musicians with optional filters.
+    
+    Query params:
+    - q: search by nombre, apellidos or email (ilike)
+    - instrumento: filter by instrumento
+    - estado: 'activo' | 'inactivo'
+    """
     try:
-        response = supabase.table('usuarios') \
-            .select('*') \
-            .eq('rol', 'musico') \
-            .order('apellidos', desc=False) \
-            .execute()
+        query = supabase.table('usuarios').select('*').eq('rol', 'musico')
+        
+        if instrumento:
+            query = query.eq('instrumento', instrumento)
+        
+        if estado:
+            query = query.eq('estado', estado)
+        
+        if q:
+            # Supabase OR filter: search on nombre, apellidos, email
+            safe = q.replace(',', ' ').strip()
+            query = query.or_(f"nombre.ilike.%{safe}%,apellidos.ilike.%{safe}%,email.ilike.%{safe}%")
+        
+        response = query.order('apellidos', desc=False).execute()
         
         return {"musicos": response.data or []}
         
@@ -324,13 +351,152 @@ async def get_musicos(current_user: dict = Depends(get_current_gestor)):
             detail=f"Error al cargar músicos: {str(e)}"
         )
 
+@router.get("/instrumentos")
+async def get_instrumentos_disponibles(current_user: dict = Depends(get_current_gestor)):
+    """Return distinct list of instrumentos for filter dropdown"""
+    try:
+        response = supabase.table('usuarios') \
+            .select('instrumento') \
+            .eq('rol', 'musico') \
+            .execute()
+        
+        instrumentos = sorted({u.get('instrumento') for u in (response.data or []) if u.get('instrumento')})
+        return {"instrumentos": instrumentos}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al cargar instrumentos: {str(e)}"
+        )
+
+def _generate_temp_password(length: int = 12) -> str:
+    """Generate a secure temp password: letters + digits (meets 8+ upper + digit rule)."""
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
+        if any(c.isupper() for c in pwd) and any(c.isdigit() for c in pwd) and any(c.islower() for c in pwd):
+            return pwd
+
+
+@router.post("/musicos/crear")
+async def crear_musico(
+    data: MusicoCreate,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """
+    Crea un nuevo músico:
+    - Genera contraseña temporal
+    - Crea usuario en Supabase Auth (email + password, confirmado)
+    - Asigna rol 'musico' en app_metadata
+    - Crea perfil en tabla usuarios con requiere_cambio_password=True
+    - Envía email con credenciales vía Resend (si está configurado)
+    """
+    import os
+    from supabase import create_client
+    # Fresh admin client to avoid any session interference from auth verification flow
+    admin_client = create_client(
+        os.environ['SUPABASE_URL'],
+        os.environ['SUPABASE_KEY']  # service role
+    )
+
+    temp_password = _generate_temp_password(12)
+    email_str = data.email
+    created_user_id = None
+
+    try:
+        # 1. Crear usuario en Supabase Auth (email confirmed)
+        try:
+            auth_resp = admin_client.auth.admin.create_user({
+                "email": email_str,
+                "password": temp_password,
+                "email_confirm": True,
+                "app_metadata": {"rol": "musico"}
+            })
+            created_user = auth_resp.user if hasattr(auth_resp, 'user') else None
+            if not created_user:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="No se pudo crear el usuario en Supabase Auth"
+                )
+            created_user_id = created_user.id
+        except HTTPException:
+            raise
+        except Exception as e:
+            msg = str(e).lower()
+            if "already" in msg or "exists" in msg or "duplicate" in msg or "registered" in msg:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Este email ya está registrado"
+                )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error al crear usuario: {str(e)}"
+            )
+
+        # 2. Crear perfil en tabla usuarios
+        profile_payload = {
+            "user_id": created_user_id,
+            "email": email_str,
+            "nombre": data.nombre,
+            "apellidos": data.apellidos,
+            "instrumento": data.instrumento,
+            "telefono": data.telefono,
+            "rol": "musico",
+            "estado": "activo",
+            "requiere_cambio_password": True
+        }
+        profile_payload = {k: v for k, v in profile_payload.items() if v is not None}
+
+        try:
+            insert_res = admin_client.table('usuarios').insert(profile_payload).execute()
+            profile = insert_res.data[0] if insert_res.data else None
+        except Exception as e:
+            try:
+                admin_client.auth.admin.delete_user(created_user_id)
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error al crear perfil: {str(e)}"
+            )
+
+        # 3. Enviar email con credenciales (no bloqueante de errores)
+        email_result = await send_musico_credentials_email(
+            to_email=email_str,
+            nombre=data.nombre,
+            password_temporal=temp_password
+        )
+
+        return {
+            "message": "Músico creado correctamente" + (
+                " y email de credenciales enviado" if email_result.get("sent") else ". Email NO enviado (configurar RESEND_API_KEY)"
+            ),
+            "musico": profile,
+            "password_temporal": temp_password,
+            "email_enviado": email_result.get("sent", False),
+            "email_error": email_result.get("reason") if not email_result.get("sent") else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        if created_user_id:
+            try:
+                admin_client.auth.admin.delete_user(created_user_id)
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al crear músico: {str(e)}"
+        )
+
+
 @router.post("/musicos/invite")
 async def invite_musico(
     data: MusicoCreate,
     current_user: dict = Depends(get_current_gestor)
 ):
     """
-    Invite musician - sends magic link for first login.
+    (Legacy) Invite musician - sends magic link for first login.
     Creates profile without auth account (created on first magic link login).
     """
     try:
@@ -367,4 +533,115 @@ async def invite_musico(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al invitar músico: {error_msg}"
+        )
+
+
+# ==================== Export Excel ====================
+
+@router.get("/export/xlsx")
+async def export_excel(current_user: dict = Depends(get_current_gestor)):
+    """
+    Export Usuarios, Eventos y Asignaciones en un fichero .xlsx con 3 hojas.
+    """
+    try:
+        usuarios_res = supabase.table('usuarios').select('*').order('apellidos', desc=False).execute()
+        eventos_res = supabase.table('eventos').select('*').order('created_at', desc=True).execute()
+        asignaciones_res = supabase.table('asignaciones') \
+            .select('*, usuario:usuarios(nombre,apellidos,email,instrumento), evento:eventos(nombre,temporada)') \
+            .execute()
+
+        wb = Workbook()
+
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        header_align = Alignment(horizontal="center", vertical="center")
+
+        def write_sheet(ws, headers, rows):
+            for col_idx, h in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_align
+            for r_idx, row in enumerate(rows, start=2):
+                for c_idx, value in enumerate(row, start=1):
+                    ws.cell(row=r_idx, column=c_idx, value=value)
+            # Auto width (aprox)
+            for col_idx, h in enumerate(headers, start=1):
+                max_len = len(str(h))
+                for row in rows:
+                    val = row[col_idx - 1] if col_idx - 1 < len(row) else ""
+                    max_len = max(max_len, len(str(val)) if val is not None else 0)
+                ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = min(max_len + 2, 40)
+
+        # Hoja 1: Usuarios
+        ws_u = wb.active
+        ws_u.title = "Usuarios"
+        u_headers = ["Nombre", "Apellidos", "Email", "Rol", "Instrumento", "Teléfono", "Estado", "Fecha Alta"]
+        u_rows = []
+        for u in (usuarios_res.data or []):
+            u_rows.append([
+                u.get('nombre', ''),
+                u.get('apellidos', ''),
+                u.get('email', ''),
+                u.get('rol', ''),
+                u.get('instrumento', '') or '',
+                u.get('telefono', '') or '',
+                u.get('estado', ''),
+                u.get('fecha_alta', '') or u.get('created_at', '') or ''
+            ])
+        write_sheet(ws_u, u_headers, u_rows)
+
+        # Hoja 2: Eventos
+        ws_e = wb.create_sheet("Eventos")
+        e_headers = ["Nombre", "Temporada", "Tipo", "Estado", "Fecha Inicio", "Fecha Fin", "Lugar", "Descripción"]
+        e_rows = []
+        for e in (eventos_res.data or []):
+            e_rows.append([
+                e.get('nombre', ''),
+                e.get('temporada', '') or '',
+                e.get('tipo', '') or '',
+                e.get('estado', '') or '',
+                e.get('fecha_inicio', '') or '',
+                e.get('fecha_fin', '') or '',
+                e.get('lugar', '') or '',
+                e.get('descripcion', '') or ''
+            ])
+        write_sheet(ws_e, e_headers, e_rows)
+
+        # Hoja 3: Asignaciones
+        ws_a = wb.create_sheet("Asignaciones")
+        a_headers = ["Evento", "Temporada", "Músico", "Email", "Instrumento", "Estado", "Estado Pago", "Importe"]
+        a_rows = []
+        for a in (asignaciones_res.data or []):
+            ev = a.get('evento') or {}
+            us = a.get('usuario') or {}
+            nombre_completo = f"{us.get('nombre', '')} {us.get('apellidos', '')}".strip()
+            a_rows.append([
+                ev.get('nombre', ''),
+                ev.get('temporada', '') or '',
+                nombre_completo,
+                us.get('email', '') or '',
+                us.get('instrumento', '') or '',
+                a.get('estado', '') or '',
+                a.get('estado_pago', '') or '',
+                a.get('importe', 0) or 0
+            ])
+        write_sheet(ws_a, a_headers, a_rows)
+
+        # Guardar en memoria
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        filename = f"opus_manager_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al exportar Excel: {str(e)}"
         )

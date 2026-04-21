@@ -4,40 +4,16 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import CambiarPasswordPrimeraVez from './CambiarPasswordPrimeraVez';
+import PortalCalendar from './PortalCalendar';
 
 const PortalDashboard = () => {
   const navigate = useNavigate();
-  const { user, profile, signOut, loading: authLoading, isAuthenticated } = useAuth();
-  
-  console.log('🔵 PortalDashboard rendered, auth state:', {
-    isAuthenticated, 
-    loading: authLoading, 
-    user: user ? { email: user.email, rol: user.rol } : null,
-    profile: profile ? { requiere_cambio_password: profile.requiere_cambio_password } : null
-  });
-  
+  const { user, profile, signOut } = useAuth();
+
   // Estado local para controlar si se requiere cambio de password
   const [requiereCambio, setRequiereCambio] = useState(profile?.requiere_cambio_password === true);
 
-  // Actualizar estado cuando el profile cambie
-  useEffect(() => {
-    setRequiereCambio(profile?.requiere_cambio_password === true);
-  }, [profile]);
-
-  // Si requiere cambio de contraseña, mostrar pantalla de cambio
-  if (requiereCambio) {
-    return (
-      <CambiarPasswordPrimeraVez 
-        onPasswordChanged={() => {
-          console.log('✅ Password cambiada, actualizando estado local');
-          // Actualizar estado local para ocultar el componente de cambio
-          setRequiereCambio(false);
-          // El profile se actualizará en el próximo loadUserProfile automático
-        }}
-      />
-    );
-  }
-  
+  const [vista, setVista] = useState('eventos'); // 'eventos' | 'calendario'
   const [eventos, setEventos] = useState([]);
   const [eventoSeleccionado, setEventoSeleccionado] = useState(null);
   const [ensayos, setEnsayos] = useState([]);
@@ -46,30 +22,39 @@ const PortalDashboard = () => {
   const [error, setError] = useState(null);
 
   // API URL
-  const API_URL = window.location.hostname === 'localhost' 
-    ? 'http://localhost:8001/api' 
+  const API_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:8001/api'
     : `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+  // Actualizar estado cuando el profile cambie
+  useEffect(() => {
+    setRequiereCambio(profile?.requiere_cambio_password === true);
+  }, [profile]);
 
   useEffect(() => {
     if (!user) {
       navigate('/login');
       return;
     }
-    
+
     if (user.rol !== 'musico') {
       navigate('/');
       return;
     }
 
-    cargarMisEventos();
-  }, [user, navigate]);
+    // Solo cargar eventos si no requiere cambio de password
+    if (!requiereCambio) {
+      cargarMisEventos();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, navigate, requiereCambio]);
 
   const cargarMisEventos = async () => {
     try {
       setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      
+
       const response = await fetch(`${API_URL}/portal/mis-eventos`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -91,7 +76,7 @@ const PortalDashboard = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      
+
       // Cargar ensayos
       const ensayosRes = await fetch(`${API_URL}/portal/evento/${eventoId}/ensayos`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -114,7 +99,7 @@ const PortalDashboard = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      
+
       const response = await fetch(`${API_URL}/portal/asignacion/${asignacionId}/confirmar`, {
         method: 'PUT',
         headers: {
@@ -146,6 +131,18 @@ const PortalDashboard = () => {
     }
   };
 
+  // Render condicional DESPUÉS de todos los hooks
+  if (requiereCambio) {
+    return (
+      <CambiarPasswordPrimeraVez
+        onPasswordChanged={() => {
+          console.log('✅ Password cambiada, actualizando estado local');
+          setRequiereCambio(false);
+        }}
+      />
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -167,10 +164,39 @@ const PortalDashboard = () => {
           </div>
           <button
             onClick={handleSignOut}
+            data-testid="portal-logout-btn"
             className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
           >
             Cerrar sesión
           </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="max-w-7xl mx-auto px-6">
+          <nav className="flex gap-6 -mb-px">
+            <button
+              onClick={() => setVista('eventos')}
+              data-testid="tab-eventos"
+              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                vista === 'eventos'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              🎵 Mis Eventos
+            </button>
+            <button
+              onClick={() => setVista('calendario')}
+              data-testid="tab-calendario"
+              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                vista === 'calendario'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              📅 Calendario
+            </button>
+          </nav>
         </div>
       </header>
 
@@ -181,7 +207,9 @@ const PortalDashboard = () => {
           </div>
         )}
 
-        {eventos.length === 0 ? (
+        {vista === 'calendario' ? (
+          <PortalCalendar />
+        ) : eventos.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-6xl mb-4">🎵</div>
             <h3 className="text-xl font-semibold text-slate-700 mb-2">
@@ -200,6 +228,7 @@ const PortalDashboard = () => {
                 <div
                   key={asignacion.id}
                   onClick={() => seleccionarEvento(asignacion)}
+                  data-testid={`evento-card-${asignacion.id}`}
                   className={`p-4 bg-white rounded-lg shadow-sm border-2 cursor-pointer transition-all ${
                     eventoSeleccionado?.id === asignacion.id
                       ? 'border-slate-900'
@@ -229,6 +258,19 @@ const PortalDashboard = () => {
                     )}
                   </div>
 
+                  {/* Indicador de compañeros confirmados */}
+                  {typeof asignacion.companeros_confirmados === 'number' && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      <span data-testid={`companeros-confirmados-${asignacion.id}`}>
+                        {asignacion.companeros_confirmados} {asignacion.companeros_confirmados === 1 ? 'compañero confirmado' : 'compañeros confirmados'}
+                        {typeof asignacion.companeros_total === 'number' && ` / ${asignacion.companeros_total}`}
+                      </span>
+                    </div>
+                  )}
+
                   {/* Botones de Confirmar/Rechazar */}
                   {asignacion.estado === 'pendiente' && (
                     <div className="mt-4 flex gap-2">
@@ -237,6 +279,7 @@ const PortalDashboard = () => {
                           e.stopPropagation();
                           confirmarAsistencia(asignacion.id, 'confirmado');
                         }}
+                        data-testid={`btn-confirmar-${asignacion.id}`}
                         className="flex-1 px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
                       >
                         ✓ Confirmar
@@ -246,6 +289,7 @@ const PortalDashboard = () => {
                           e.stopPropagation();
                           confirmarAsistencia(asignacion.id, 'rechazado');
                         }}
+                        data-testid={`btn-rechazar-${asignacion.id}`}
                         className="flex-1 px-3 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
                       >
                         ✗ Rechazar

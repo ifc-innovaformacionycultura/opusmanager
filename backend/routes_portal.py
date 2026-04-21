@@ -54,7 +54,7 @@ async def cambiar_password_primera_vez(current_user: dict = Depends(get_current_
 async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
     """
     Get all eventos assigned to current musician.
-    Returns asignaciones with evento details.
+    Returns asignaciones with evento details and companeros_confirmados count.
     """
     try:
         user_profile = current_user.get("profile", {})
@@ -73,14 +73,128 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
             .order('created_at', desc=True) \
             .execute()
         
+        asignaciones = response.data or []
+        
+        # Enriquecer cada asignación con conteo de compañeros confirmados
+        # (sin revelar nombres) para cada evento
+        for asig in asignaciones:
+            evento_id = asig.get('evento_id')
+            if not evento_id:
+                asig['companeros_confirmados'] = 0
+                asig['companeros_total'] = 0
+                continue
+            
+            # Total de asignaciones para el evento (excluyendo al músico actual)
+            total_res = supabase.table('asignaciones') \
+                .select('id', count='exact') \
+                .eq('evento_id', evento_id) \
+                .neq('usuario_id', usuario_id) \
+                .execute()
+            total = total_res.count or 0
+            
+            # Confirmados para el evento (excluyendo al músico actual)
+            conf_res = supabase.table('asignaciones') \
+                .select('id', count='exact') \
+                .eq('evento_id', evento_id) \
+                .eq('estado', 'confirmado') \
+                .neq('usuario_id', usuario_id) \
+                .execute()
+            confirmados = conf_res.count or 0
+            
+            asig['companeros_confirmados'] = confirmados
+            asig['companeros_total'] = total
+        
         return {
-            "asignaciones": response.data or []
+            "asignaciones": asignaciones
         }
         
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al cargar eventos: {str(e)}"
+        )
+
+@router.get("/calendario")
+async def get_calendario(current_user: dict = Depends(get_current_user)):
+    """
+    Get calendar events for the musician:
+    - Ensayos (blue)
+    - Conciertos/funciones (green)
+    - Fechas límite de eventos (orange)
+    """
+    try:
+        user_profile = current_user.get("profile", {})
+        usuario_id = user_profile.get("id")
+        
+        if not usuario_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Perfil de usuario no encontrado"
+            )
+        
+        # Get asignaciones del músico para conocer los eventos asignados
+        asigs = supabase.table('asignaciones') \
+            .select('evento_id, evento:eventos(*)') \
+            .eq('usuario_id', usuario_id) \
+            .execute()
+        
+        evento_ids = [a['evento_id'] for a in (asigs.data or []) if a.get('evento_id')]
+        eventos_map = {a['evento_id']: a.get('evento') for a in (asigs.data or []) if a.get('evento_id')}
+        
+        calendar_events = []
+        
+        if evento_ids:
+            # Ensayos y conciertos
+            ensayos_res = supabase.table('ensayos') \
+                .select('*') \
+                .in_('evento_id', evento_ids) \
+                .execute()
+            
+            for ens in (ensayos_res.data or []):
+                tipo = (ens.get('tipo') or 'ensayo').lower()
+                if tipo in ('concierto', 'funcion', 'función'):
+                    color = 'green'
+                    categoria = 'concierto'
+                else:
+                    color = 'blue'
+                    categoria = 'ensayo'
+                
+                evento = eventos_map.get(ens.get('evento_id'), {}) or {}
+                calendar_events.append({
+                    "id": f"ensayo-{ens.get('id')}",
+                    "tipo": categoria,
+                    "titulo": f"{evento.get('nombre', 'Evento')} - {tipo.title()}",
+                    "fecha": ens.get('fecha'),
+                    "hora": ens.get('hora'),
+                    "lugar": ens.get('lugar'),
+                    "obligatorio": ens.get('obligatorio', False),
+                    "color": color,
+                    "evento_id": ens.get('evento_id'),
+                    "evento_nombre": evento.get('nombre')
+                })
+            
+            # Fechas límite (fecha_fin de eventos)
+            for eid, ev in eventos_map.items():
+                if ev and ev.get('fecha_fin'):
+                    calendar_events.append({
+                        "id": f"limite-{eid}",
+                        "tipo": "fecha_limite",
+                        "titulo": f"Fecha límite: {ev.get('nombre', '')}",
+                        "fecha": ev.get('fecha_fin'),
+                        "hora": None,
+                        "lugar": None,
+                        "obligatorio": False,
+                        "color": "orange",
+                        "evento_id": eid,
+                        "evento_nombre": ev.get('nombre')
+                    })
+        
+        return {"eventos": calendar_events}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al cargar calendario: {str(e)}"
         )
 
 @router.get("/evento/{evento_id}/ensayos")
