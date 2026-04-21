@@ -588,6 +588,21 @@ async def crear_musico(
             usuario_id=created_user_id
         )
 
+        # Registro de actividad
+        try:
+            gp = current_user.get('profile') or {}
+            gname = f"{gp.get('nombre','')} {gp.get('apellidos','')}".strip()
+            supabase.table('registro_actividad').insert({
+                'tipo': 'musico_creado',
+                'descripcion': f"{gname} creó al músico {data.nombre} {data.apellidos}",
+                'usuario_id': gp.get('id'),
+                'usuario_nombre': gname,
+                'entidad_tipo': 'musico',
+                'entidad_id': profile['id'] if profile else None
+            }).execute()
+        except Exception:
+            pass
+
         return {
             "message": "Músico creado correctamente" + (
                 " y email de credenciales enviado" if email_result.get("sent") else ". Email NO enviado (configurar RESEND_API_KEY)"
@@ -854,19 +869,172 @@ async def upsert_recordatorio(
 
 @router.get("/emails/log")
 async def get_email_log(
-    limit: int = 100,
+    limit: int = 200,
+    tipo: Optional[str] = None,
+    estado: Optional[str] = None,
+    evento_id: Optional[str] = None,
+    desde: Optional[str] = None,  # 'YYYY-MM-DD'
+    hasta: Optional[str] = None,
     current_user: dict = Depends(get_current_gestor)
 ):
-    """Historial de emails enviados."""
+    """Historial de emails enviados con filtros y contadores."""
     try:
-        res = supabase.table('email_log') \
-            .select('*') \
-            .order('created_at', desc=True) \
-            .limit(min(limit, 500)) \
-            .execute()
-        return {"emails": res.data or []}
+        query = supabase.table('email_log').select('*')
+        if tipo:
+            query = query.eq('tipo', tipo)
+        if estado:
+            query = query.eq('estado', estado)
+        if evento_id:
+            query = query.eq('evento_id', evento_id)
+        if desde:
+            query = query.gte('created_at', f"{desde}T00:00:00")
+        if hasta:
+            query = query.lte('created_at', f"{hasta}T23:59:59")
+        res = query.order('created_at', desc=True).limit(min(limit, 500)).execute()
+        emails = res.data or []
+
+        # Enrichment: get destinatario nombre de tabla usuarios
+        dest_emails = list({e['destinatario'] for e in emails if e.get('destinatario')})
+        dest_info = {}
+        if dest_emails:
+            try:
+                u_res = supabase.table('usuarios').select('email,nombre,apellidos') \
+                    .in_('email', dest_emails).execute()
+                dest_info = {u['email']: f"{u.get('nombre','')} {u.get('apellidos','')}".strip() for u in (u_res.data or [])}
+            except Exception:
+                dest_info = {}
+        for e in emails:
+            e['destinatario_nombre'] = dest_info.get(e.get('destinatario'), '')
+
+        # Contadores del día actual
+        from datetime import timezone, timedelta
+        now = datetime.now(timezone.utc)
+        hoy_inicio = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        mes_inicio = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        total_hoy = supabase.table('email_log').select('id', count='exact') \
+            .gte('created_at', hoy_inicio).eq('estado', 'enviado').execute().count or 0
+        total_error_hoy = supabase.table('email_log').select('id', count='exact') \
+            .gte('created_at', hoy_inicio).eq('estado', 'error').execute().count or 0
+        total_mes = supabase.table('email_log').select('id', count='exact') \
+            .gte('created_at', mes_inicio).eq('estado', 'enviado').execute().count or 0
+
+        return {
+            "emails": emails,
+            "contadores": {
+                "enviados_hoy": total_hoy,
+                "errores_hoy": total_error_hoy,
+                "enviados_mes": total_mes
+            }
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/emails/status")
+async def get_resend_status(current_user: dict = Depends(get_current_gestor)):
+    """Estado de conexión con Resend."""
+    from email_service import _get_api_key, _get_sender
+    api_key = _get_api_key()
+    if not api_key:
+        return {
+            "conectado": False,
+            "sender": _get_sender(),
+            "mensaje": "RESEND_API_KEY no configurada",
+            "enviados_mes": 0
+        }
+    try:
+        # Validamos la key intentando listar domains. Si Resend responde
+        # con un error de "restricted" significa que la key es válida pero
+        # sólo permite enviar emails (sending key). Ese caso lo consideramos OK.
+        import resend
+        resend.api_key = api_key
+        import asyncio
+        try:
+            await asyncio.to_thread(resend.Domains.list)
+        except Exception as inner:
+            msg = str(inner).lower()
+            if 'restricted' not in msg and 'insufficient' not in msg:
+                raise
+        
+        # Contar emails del mes
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        mes_inicio = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        c = supabase.table('email_log').select('id', count='exact') \
+            .gte('created_at', mes_inicio).eq('estado', 'enviado').execute().count or 0
+        
+        return {
+            "conectado": True,
+            "sender": _get_sender(),
+            "mensaje": "Conexión establecida con Resend",
+            "enviados_mes": c
+        }
+    except Exception as e:
+        return {
+            "conectado": False,
+            "sender": _get_sender(),
+            "mensaje": f"Error: {str(e)[:200]}",
+            "enviados_mes": 0
+        }
+
+
+class EmailTestRequest(BaseModel):
+    destinatario: EmailStr
+    tipo: str = "prueba"  # 'prueba' | 'nueva_convocatoria' | 'recordatorio' | ...
+    asunto: Optional[str] = None
+    html: Optional[str] = None
+
+
+EMAIL_TEST_TEMPLATES = {
+    "prueba": {
+        "asunto": "OPUS MANAGER — Email de prueba",
+        "html": "<h2>✅ Email de prueba</h2><p>Si recibes este correo, Resend está correctamente configurado.</p><p>— OPUS MANAGER</p>"
+    },
+    "nueva_convocatoria": {
+        "asunto": "[Prueba] Nueva convocatoria",
+        "html": "<h2>🎼 Nueva convocatoria</h2><p>Has sido asignado a un nuevo evento. Accede al portal para confirmar tu asistencia.</p><p>— OPUS MANAGER</p>"
+    },
+    "recordatorio": {
+        "asunto": "[Prueba] Recordatorio de respuesta",
+        "html": "<h2>⏰ Recordatorio</h2><p>Aún no has respondido a la convocatoria. Por favor, confirma tu asistencia lo antes posible.</p>"
+    },
+    "aviso_ensayo": {
+        "asunto": "[Prueba] Aviso de ensayo",
+        "html": "<h2>🎵 Recordatorio de ensayo</h2><p>Tu próximo ensayo es mañana. Consulta hora y lugar en el portal.</p>"
+    },
+    "confirmacion_cobro": {
+        "asunto": "[Prueba] Confirmación de pago",
+        "html": "<h2>💰 Pago procesado</h2><p>Hemos procesado tu pago correctamente. Consulta el detalle en tu historial.</p>"
+    }
+}
+
+
+@router.get("/emails/preview")
+async def email_preview(tipo: str = "prueba", current_user: dict = Depends(get_current_gestor)):
+    """Devuelve la previsualización del email según tipo."""
+    tmpl = EMAIL_TEST_TEMPLATES.get(tipo, EMAIL_TEST_TEMPLATES["prueba"])
+    return {"asunto": tmpl["asunto"], "html": tmpl["html"]}
+
+
+@router.post("/emails/test")
+async def email_test_send(
+    payload: EmailTestRequest,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Envía un email de prueba."""
+    from email_service import _send_email
+    tmpl = EMAIL_TEST_TEMPLATES.get(payload.tipo, EMAIL_TEST_TEMPLATES["prueba"])
+    asunto = payload.asunto or tmpl["asunto"]
+    html = payload.html or tmpl["html"]
+    gestor_profile = current_user.get('profile') or {}
+    r = await _send_email(
+        to_email=payload.destinatario,
+        subject=asunto,
+        html=html,
+        tipo=f"test_{payload.tipo}",
+        usuario_id=gestor_profile.get('id')
+    )
+    return r
 
 
 class ReenviarEmailRequest(BaseModel):
@@ -930,10 +1098,161 @@ async def update_reclamacion(
 ):
     """El gestor actualiza el estado/respuesta de una reclamación."""
     try:
+        gestor_profile = current_user.get('profile') or {}
         data = payload.model_dump(exclude_none=True)
+        # Trazabilidad: quién gestiona la reclamación
+        data['gestor_id'] = gestor_profile.get('id')
+        data['gestor_nombre'] = f"{gestor_profile.get('nombre','')} {gestor_profile.get('apellidos','')}".strip()
         if data.get('estado') in ('resuelta', 'rechazada'):
             data['fecha_resolucion'] = datetime.utcnow().isoformat()
         res = supabase.table('reclamaciones').update(data).eq('id', reclamacion_id).execute()
+        
+        # Registro de actividad
+        try:
+            supabase.table('registro_actividad').insert({
+                'tipo': f"reclamacion_{data.get('estado','actualizada')}",
+                'descripcion': f"Reclamación {data.get('estado') or 'actualizada'} por {data['gestor_nombre']}",
+                'usuario_id': gestor_profile.get('id'),
+                'usuario_nombre': data['gestor_nombre'],
+                'entidad_tipo': 'reclamacion',
+                'entidad_id': reclamacion_id
+            }).execute()
+        except Exception:
+            pass
+        
         return {"message": "Reclamación actualizada", "reclamacion": res.data[0] if res.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+# ==================== COMENTARIOS INTERNOS ====================
+
+class ComentarioPayload(BaseModel):
+    tipo: str  # 'reclamacion' | 'evento'
+    entidad_id: str
+    contenido: str
+
+
+@router.get("/comentarios")
+async def get_comentarios(
+    tipo: str,
+    entidad_id: str,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Lista comentarios internos de una entidad."""
+    try:
+        res = supabase.table('comentarios_internos') \
+            .select('*') \
+            .eq('tipo', tipo) \
+            .eq('entidad_id', entidad_id) \
+            .order('created_at', desc=True) \
+            .execute()
+        return {"comentarios": res.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/comentarios")
+async def crear_comentario(
+    payload: ComentarioPayload,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Crea un comentario interno entre gestores."""
+    try:
+        gestor_profile = current_user.get('profile') or {}
+        nombre = f"{gestor_profile.get('nombre','')} {gestor_profile.get('apellidos','')}".strip() or gestor_profile.get('email')
+        data = {
+            "tipo": payload.tipo,
+            "entidad_id": payload.entidad_id,
+            "gestor_id": gestor_profile.get('id'),
+            "gestor_nombre": nombre,
+            "contenido": payload.contenido
+        }
+        res = supabase.table('comentarios_internos').insert(data).execute()
+        
+        # Notificar a otros gestores si hay menciones @
+        import re
+        menciones = re.findall(r'@([\w]+)', payload.contenido)
+        if menciones:
+            try:
+                gs = supabase.table('usuarios').select('id,nombre,apellidos') \
+                    .eq('rol', 'gestor').execute().data or []
+                for g in gs:
+                    if g['id'] == gestor_profile.get('id'):
+                        continue
+                    full = f"{g.get('nombre','')}{g.get('apellidos','')}".lower()
+                    if any(m.lower() in full for m in menciones):
+                        supabase.table('notificaciones_gestor').insert({
+                            "gestor_id": g['id'],
+                            "tipo": "mencion_comentario",
+                            "titulo": f"{nombre} te ha mencionado",
+                            "descripcion": payload.contenido[:200],
+                            "entidad_tipo": "comentario",
+                            "entidad_id": res.data[0]['id']
+                        }).execute()
+            except Exception:
+                pass
+        
+        return {"comentario": res.data[0] if res.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+# ==================== NOTIFICACIONES ====================
+
+@router.get("/notificaciones")
+async def get_notificaciones(
+    limit: int = 50,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Lista notificaciones del gestor actual."""
+    try:
+        gestor_profile = current_user.get('profile') or {}
+        gestor_id = gestor_profile.get('id')
+        res = supabase.table('notificaciones_gestor') \
+            .select('*') \
+            .eq('gestor_id', gestor_id) \
+            .order('created_at', desc=True) \
+            .limit(min(limit, 100)) \
+            .execute()
+        items = res.data or []
+        no_leidas = supabase.table('notificaciones_gestor').select('id', count='exact') \
+            .eq('gestor_id', gestor_id).eq('leida', False).execute().count or 0
+        return {"notificaciones": items, "no_leidas": no_leidas}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.put("/notificaciones/{notif_id}/leer")
+async def marcar_leida(notif_id: str, current_user: dict = Depends(get_current_gestor)):
+    gestor_id = (current_user.get('profile') or {}).get('id')
+    supabase.table('notificaciones_gestor').update({"leida": True}) \
+        .eq('id', notif_id).eq('gestor_id', gestor_id).execute()
+    return {"message": "Leída"}
+
+
+@router.post("/notificaciones/leer-todas")
+async def marcar_todas_leidas(current_user: dict = Depends(get_current_gestor)):
+    gestor_id = (current_user.get('profile') or {}).get('id')
+    supabase.table('notificaciones_gestor').update({"leida": True}) \
+        .eq('gestor_id', gestor_id).eq('leida', False).execute()
+    return {"message": "Todas marcadas como leídas"}
+
+
+# ==================== REGISTRO DE ACTIVIDAD ====================
+
+@router.get("/actividad")
+async def get_actividad(
+    limit: int = 100,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Registro de actividad global."""
+    try:
+        res = supabase.table('registro_actividad') \
+            .select('*') \
+            .order('created_at', desc=True) \
+            .limit(min(limit, 500)) \
+            .execute()
+        return {"actividad": res.data or []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

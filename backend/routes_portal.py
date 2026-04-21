@@ -320,6 +320,32 @@ async def confirmar_asistencia(
             .eq('id', asignacion_id) \
             .execute()
         
+        # Registro + notificaciones a gestores
+        try:
+            nombre = f"{user_profile.get('nombre','')} {user_profile.get('apellidos','')}".strip()
+            evento_id = asignacion.data.get('evento_id')
+            supabase.table('registro_actividad').insert({
+                'tipo': 'convocatoria_respondida',
+                'descripcion': f"{nombre} {data.estado} una convocatoria",
+                'usuario_id': usuario_id,
+                'usuario_nombre': nombre,
+                'entidad_tipo': 'evento',
+                'entidad_id': evento_id,
+                'metadata': {"estado": data.estado}
+            }).execute()
+            gs = supabase.table('usuarios').select('id').eq('rol', 'gestor').execute().data or []
+            titulo = f"{nombre} ha {data.estado} una convocatoria"
+            for g in gs:
+                supabase.table('notificaciones_gestor').insert({
+                    'gestor_id': g['id'],
+                    'tipo': 'convocatoria_respondida',
+                    'titulo': titulo,
+                    'entidad_tipo': 'evento',
+                    'entidad_id': evento_id
+                }).execute()
+        except Exception:
+            pass
+        
         return {
             "message": f"Asistencia {'confirmada' if data.estado == 'confirmado' else 'rechazada'}",
             "asignacion": response.data[0] if response.data else None
@@ -436,6 +462,30 @@ async def update_mi_perfil(
 
     try:
         res = supabase.table('usuarios').update(payload).eq('id', usuario_id).execute()
+        # Trazabilidad + notificaciones a gestores
+        try:
+            nombre = f"{user_profile.get('nombre','')} {user_profile.get('apellidos','')}".strip()
+            supabase.table('registro_actividad').insert({
+                'tipo': 'perfil_actualizado',
+                'descripcion': f"{nombre} actualizó su perfil",
+                'usuario_id': usuario_id,
+                'usuario_nombre': nombre,
+                'entidad_tipo': 'musico',
+                'entidad_id': usuario_id
+            }).execute()
+            # Notificar a todos los gestores
+            gs = supabase.table('usuarios').select('id').eq('rol', 'gestor').execute().data or []
+            for g in gs:
+                supabase.table('notificaciones_gestor').insert({
+                    'gestor_id': g['id'],
+                    'tipo': 'perfil_actualizado',
+                    'titulo': f"{nombre} ha actualizado su perfil",
+                    'descripcion': 'Revisa los cambios en la ficha del músico',
+                    'entidad_tipo': 'musico',
+                    'entidad_id': usuario_id
+                }).execute()
+        except Exception:
+            pass
         return {"message": "Perfil actualizado", "profile": res.data[0] if res.data else None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al actualizar perfil: {str(e)}")
@@ -643,6 +693,30 @@ async def crear_reclamacion(
     payload = {k: v for k, v in payload.items() if v is not None}
     try:
         res = supabase.table('reclamaciones').insert(payload).execute()
+        # Registro de actividad + notificar gestores
+        try:
+            nombre = f"{(current_user.get('profile') or {}).get('nombre','')} {(current_user.get('profile') or {}).get('apellidos','')}".strip()
+            r_id = res.data[0]['id'] if res.data else None
+            supabase.table('registro_actividad').insert({
+                'tipo': 'reclamacion_enviada',
+                'descripcion': f"{nombre} envió una reclamación ({data.tipo})",
+                'usuario_id': usuario_id,
+                'usuario_nombre': nombre,
+                'entidad_tipo': 'reclamacion',
+                'entidad_id': r_id
+            }).execute()
+            gs = supabase.table('usuarios').select('id').eq('rol', 'gestor').execute().data or []
+            for g in gs:
+                supabase.table('notificaciones_gestor').insert({
+                    'gestor_id': g['id'],
+                    'tipo': 'reclamacion_nueva',
+                    'titulo': f"Nueva reclamación de {nombre}",
+                    'descripcion': data.descripcion[:200],
+                    'entidad_tipo': 'reclamacion',
+                    'entidad_id': r_id
+                }).execute()
+        except Exception:
+            pass
         return {"message": "Reclamación enviada", "reclamacion": res.data[0] if res.data else None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al enviar reclamación: {str(e)}")
