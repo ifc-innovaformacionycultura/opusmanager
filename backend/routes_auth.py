@@ -1,12 +1,26 @@
 # Authentication Routes - Supabase Auth
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, EmailStr
+from supabase import create_client
 from supabase_client import supabase, create_user_profile
 from auth_utils import get_current_user
 from typing import Optional
 import os
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _make_auth_client():
+    """Create a fresh, ephemeral Supabase client for a single login/signup request.
+    
+    This is CRITICAL to avoid session contamination on the global `supabase` client
+    which is shared across all DB operations. If we called auth.sign_in_with_password
+    on the shared service-role client, subsequent .table().select() calls would be
+    filtered by RLS using the user JWT, causing 404s intermittently.
+    """
+    url = os.environ['SUPABASE_URL']
+    anon = os.environ.get('SUPABASE_ANON_KEY') or os.environ['SUPABASE_KEY']
+    return create_client(url, anon)
 
 # ==================== Request/Response Models ====================
 
@@ -34,10 +48,11 @@ class AuthResponse(BaseModel):
 async def login(data: LoginRequest):
     """
     Login with email and password (for gestores).
-    Uses Supabase Auth.
+    Uses an ephemeral Supabase client to avoid contaminating the shared service-role session.
     """
+    auth_client = _make_auth_client()
     try:
-        response = supabase.auth.sign_in_with_password({
+        response = auth_client.auth.sign_in_with_password({
             "email": data.email,
             "password": data.password
         })
@@ -58,6 +73,8 @@ async def login(data: LoginRequest):
             }
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         error_msg = str(e)
         if "Invalid login credentials" in error_msg or "invalid" in error_msg.lower():
@@ -76,10 +93,12 @@ async def signup(data: SignupRequest):
     Create new user account (gestores only - músicos use magic link).
     Creates auth user + profile in usuarios table.
     Updates app_metadata with rol for RLS policies.
+    Uses an ephemeral Supabase client for the sign_up call.
     """
+    auth_client = _make_auth_client()
     try:
         # 1. Create Supabase Auth user with rol in app_metadata
-        auth_response = supabase.auth.sign_up({
+        auth_response = auth_client.auth.sign_up({
             "email": data.email,
             "password": data.password,
             "options": {
@@ -96,7 +115,7 @@ async def signup(data: SignupRequest):
                 detail="Error al crear cuenta"
             )
         
-        # 2. Update app_metadata with rol (critical for RLS)
+        # 2. Update app_metadata with rol (use service-role client)
         try:
             supabase.auth.admin.update_user_by_id(
                 auth_response.user.id,
@@ -133,6 +152,8 @@ async def signup(data: SignupRequest):
             "requires_email_confirmation": auth_response.session is None
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         error_msg = str(e)
         if "already registered" in error_msg or "already exists" in error_msg:
@@ -227,22 +248,21 @@ async def sync_user_profile(current_user: dict = Depends(get_current_user)):
 async def logout():
     """
     Logout (client should discard token).
-    Supabase handles session invalidation.
+    Server-side noop: Supabase logout requires an authenticated client and would
+    invalidate ALL user sessions globally. The client-side should just discard
+    its token. We keep this endpoint for compatibility but it returns success.
     """
-    try:
-        supabase.auth.sign_out()
-        return {"message": "Sesión cerrada"}
-    except Exception:
-        # Even if Supabase call fails, client should discard token
-        return {"message": "Sesión cerrada"}
+    return {"message": "Sesión cerrada"}
 
 @router.post("/refresh")
 async def refresh_token(refresh_token: str):
     """
     Refresh access token using refresh token.
+    Uses an ephemeral client to avoid contaminating the shared service-role session.
     """
+    auth_client = _make_auth_client()
     try:
-        response = supabase.auth.refresh_session(refresh_token)
+        response = auth_client.auth.refresh_session(refresh_token)
         
         if not response.session:
             raise HTTPException(

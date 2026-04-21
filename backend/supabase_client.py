@@ -22,6 +22,10 @@ def verify_supabase_token(token: str) -> Optional[Dict]:
     """
     Verify a Supabase Auth token and return user data.
     
+    Uses an EPHEMERAL anon client to avoid contaminating a shared auth session
+    across requests (the supabase-py SDK stores the session on the client instance,
+    which is why we create a fresh one per verification).
+    
     Args:
         token: JWT token from Authorization header
         
@@ -29,8 +33,9 @@ def verify_supabase_token(token: str) -> Optional[Dict]:
         User data dict if valid, None if invalid
     """
     try:
-        # Use anon client to verify user tokens
-        response = supabase_anon.auth.get_user(token)
+        # Create fresh client per verification to avoid session leaking
+        ephemeral = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        response = ephemeral.auth.get_user(token)
         
         if response and response.user:
             user = response.user
