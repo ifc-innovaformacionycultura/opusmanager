@@ -1,14 +1,15 @@
 # Gestor Routes - Admin/Manager endpoints
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from supabase_client import supabase, create_user_profile
 from auth_utils import get_current_user, get_current_gestor
 from typing import List, Optional
 from datetime import datetime
-from io import BytesIO
-from openpyxl import Workbook
+from io import BytesIO, StringIO
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
+import csv
 import secrets
 import string
 from email_service import send_musico_credentials_email
@@ -241,6 +242,132 @@ async def update_evento(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar evento: {str(e)}"
         )
+
+# ==================== Seguimiento de Convocatorias (pivot) ====================
+
+@router.get("/seguimiento")
+async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
+    """
+    Devuelve datos para la tabla pivot de seguimiento:
+      - eventos activos (estado='abierto') con sus fechas principal + secundarias
+      - todos los músicos activos
+      - asignaciones indexadas como { "<musico_id>_<evento_id>": asignacion }
+    El frontend construye la tabla músicos × eventos.
+    """
+    try:
+        eventos_res = supabase.table('eventos') \
+            .select('*') \
+            .eq('estado', 'abierto') \
+            .order('fecha_inicio', desc=False) \
+            .execute()
+        eventos = eventos_res.data or []
+
+        # Lista compacta de fechas por evento (principal + secundarias)
+        eventos_out = []
+        evento_ids = []
+        for ev in eventos:
+            funciones = []
+            if ev.get('fecha_inicio'):
+                funciones.append({"fecha": ev['fecha_inicio'], "hora": None, "label": "Principal"})
+            for i in range(1, 5):
+                f = ev.get(f'fecha_secundaria_{i}')
+                h = ev.get(f'hora_secundaria_{i}')
+                if f:
+                    funciones.append({"fecha": f, "hora": h, "label": f"Función {i + 1}"})
+            eventos_out.append({
+                "id": ev['id'],
+                "nombre": ev.get('nombre'),
+                "temporada": ev.get('temporada'),
+                "tipo": ev.get('tipo'),
+                "lugar": ev.get('lugar'),
+                "fecha_inicio": ev.get('fecha_inicio'),
+                "fecha_fin": ev.get('fecha_fin'),
+                "funciones": funciones,
+            })
+            evento_ids.append(ev['id'])
+
+        musicos_res = supabase.table('usuarios') \
+            .select('id,nombre,apellidos,email,instrumento,estado') \
+            .eq('rol', 'musico') \
+            .eq('estado', 'activo') \
+            .order('apellidos', desc=False) \
+            .execute()
+        musicos = musicos_res.data or []
+
+        # Cargar asignaciones de esos eventos
+        asigs_map = {}
+        if evento_ids:
+            a_res = supabase.table('asignaciones') \
+                .select('id,usuario_id,evento_id,estado,importe') \
+                .in_('evento_id', evento_ids) \
+                .execute()
+            for a in (a_res.data or []):
+                key = f"{a['usuario_id']}_{a['evento_id']}"
+                asigs_map[key] = a
+
+        return {
+            "eventos": eventos_out,
+            "musicos": musicos,
+            "asignaciones": asigs_map,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en seguimiento: {str(e)}")
+
+
+class SeguimientoBulkUpdate(BaseModel):
+    evento_id: str
+    usuario_ids: List[str]
+    estado: str  # 'pendiente' | 'confirmado' | 'rechazado' | 'no_disponible' | 'excluido'
+
+
+@router.post("/seguimiento/bulk")
+async def seguimiento_bulk(
+    data: SeguimientoBulkUpdate,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """
+    Aplica un cambio de estado a varios músicos para un evento.
+    - Si la asignación existe: UPDATE estado.
+    - Si no existe: INSERT (estado + usuario_id + evento_id).
+    Devuelve resumen { actualizados, creados }.
+    """
+    valid = {'pendiente', 'confirmado', 'rechazado', 'no_disponible', 'excluido'}
+    if data.estado not in valid:
+        raise HTTPException(status_code=400, detail=f"Estado inválido. Usa: {sorted(valid)}")
+    if not data.usuario_ids:
+        return {"actualizados": 0, "creados": 0}
+
+    try:
+        # Obtener asignaciones existentes de esos usuarios para el evento
+        existing_res = supabase.table('asignaciones') \
+            .select('id,usuario_id') \
+            .eq('evento_id', data.evento_id) \
+            .in_('usuario_id', data.usuario_ids) \
+            .execute()
+        existing_by_user = {a['usuario_id']: a['id'] for a in (existing_res.data or [])}
+
+        actualizados = 0
+        creados = 0
+        now = datetime.now().isoformat()
+        for uid in data.usuario_ids:
+            if uid in existing_by_user:
+                supabase.table('asignaciones') \
+                    .update({"estado": data.estado, "updated_at": now}) \
+                    .eq('id', existing_by_user[uid]) \
+                    .execute()
+                actualizados += 1
+            else:
+                supabase.table('asignaciones').insert({
+                    "usuario_id": uid,
+                    "evento_id": data.evento_id,
+                    "estado": data.estado,
+                }).execute()
+                creados += 1
+
+        return {"actualizados": actualizados, "creados": creados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en actualización masiva: {str(e)}")
+
 
 @router.delete("/eventos/{evento_id}")
 async def delete_evento(
@@ -554,6 +681,237 @@ def _generate_temp_password(length: int = 12) -> str:
         pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
         if any(c.isupper() for c in pwd) and any(c.isdigit() for c in pwd) and any(c.islower() for c in pwd):
             return pwd
+
+
+# ==================== Importación masiva de músicos ====================
+
+# Columnas aceptadas en la plantilla (orden visible en el Excel).
+IMPORT_MUSICOS_HEADERS = [
+    "nombre", "apellidos", "email", "telefono", "instrumento",
+    "especialidad", "dni", "direccion", "fecha_nacimiento",
+    "nacionalidad", "bio"
+]
+
+
+@router.get("/musicos-import/plantilla")
+async def descargar_plantilla_musicos(current_user: dict = Depends(get_current_gestor)):
+    """Genera y descarga un Excel con sólo las cabeceras de importación."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Músicos"
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="334155", end_color="334155", fill_type="solid")
+    header_align = Alignment(horizontal="center", vertical="center")
+    for idx, name in enumerate(IMPORT_MUSICOS_HEADERS, start=1):
+        cell = ws.cell(row=1, column=idx, value=name)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        ws.column_dimensions[cell.column_letter].width = max(14, len(name) + 4)
+    # Fila de ejemplo (comentada con color) para guiar al usuario
+    ejemplo = ["Ana", "García", "ana@ejemplo.com", "+34600111222", "Violín",
+               "Música clásica", "12345678A", "Calle Mayor 1, Madrid",
+               "1990-05-12", "Española", "Breve biografía opcional"]
+    for idx, value in enumerate(ejemplo, start=1):
+        c = ws.cell(row=2, column=idx, value=value)
+        c.font = Font(color="94A3B8", italic=True)
+    ws.row_dimensions[2].height = 18
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="plantilla_musicos.xlsx"'}
+    )
+
+
+def _parse_musicos_file(raw: bytes, filename: str) -> List[dict]:
+    """Lee un fichero xlsx o csv y devuelve una lista de dicts normalizados."""
+    name = (filename or "").lower()
+    rows: List[dict] = []
+    if name.endswith(".csv"):
+        text = raw.decode("utf-8-sig", errors="replace")
+        # Detectar delimitador (coma o punto y coma)
+        sample = text[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        except Exception:
+            dialect = csv.excel
+        reader = csv.DictReader(StringIO(text), dialect=dialect)
+        for r in reader:
+            rows.append({(k or "").strip().lower(): (v.strip() if isinstance(v, str) else v)
+                         for k, v in r.items() if k})
+    else:
+        wb = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+        ws = wb.active
+        headers: List[str] = []
+        for row_idx, row in enumerate(ws.iter_rows(values_only=True)):
+            if row_idx == 0:
+                headers = [str(c).strip().lower() if c is not None else "" for c in row]
+                continue
+            if not any(cell not in (None, "") for cell in row):
+                continue
+            d = {}
+            for h, v in zip(headers, row):
+                if not h:
+                    continue
+                if isinstance(v, datetime):
+                    v = v.date().isoformat()
+                d[h] = (str(v).strip() if v is not None else "")
+            rows.append(d)
+    # Quitar filas completamente vacías o sin email
+    return [r for r in rows if any(v for v in r.values())]
+
+
+@router.post("/musicos-import/preview")
+async def importar_musicos_preview(
+    archivo: UploadFile = File(...),
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Preview: devuelve los primeros 5 registros + total + errores de validación."""
+    content = await archivo.read()
+    try:
+        rows = _parse_musicos_file(content, archivo.filename)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo: {str(e)}")
+
+    missing_headers = [h for h in ("nombre", "apellidos", "email") if h not in (rows[0].keys() if rows else [])]
+    return {
+        "total_filas": len(rows),
+        "preview": rows[:5],
+        "missing_required_headers": missing_headers,
+        "columnas_plantilla": IMPORT_MUSICOS_HEADERS,
+    }
+
+
+@router.post("/musicos-import")
+async def importar_musicos(
+    archivo: UploadFile = File(...),
+    current_user: dict = Depends(get_current_gestor)
+):
+    """
+    Importa masivamente músicos desde Excel/CSV.
+    Para cada fila:
+      - Crea usuario en Supabase Auth con password temporal aleatorio (8 chars).
+      - Crea el perfil en tabla `usuarios` con requiere_cambio_password=True.
+      - Si el email ya existe, lo marca como "ya_existente" y continúa.
+      - Cualquier otro error se reporta en el informe final.
+    """
+    import os
+    from supabase import create_client
+
+    content = await archivo.read()
+    try:
+        rows = _parse_musicos_file(content, archivo.filename)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo: {str(e)}")
+
+    admin_client = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_KEY'])
+
+    creados: List[dict] = []
+    existentes: List[dict] = []
+    errores: List[dict] = []
+
+    for idx, row in enumerate(rows, start=2):  # start=2 porque fila 1 es header
+        email = (row.get("email") or "").strip().lower()
+        nombre = (row.get("nombre") or "").strip()
+        apellidos = (row.get("apellidos") or "").strip()
+        if not email or not nombre or not apellidos:
+            errores.append({"fila": idx, "email": email, "motivo": "Faltan campos obligatorios (nombre, apellidos, email)"})
+            continue
+
+        # Saltar si ya existe en tabla usuarios
+        try:
+            existente = admin_client.table('usuarios').select('id,email').eq('email', email).limit(1).execute()
+            if existente.data:
+                existentes.append({"fila": idx, "email": email})
+                continue
+        except Exception:
+            pass
+
+        # Crear en Auth
+        temp_password = _generate_temp_password(8)
+        created_user_id = None
+        try:
+            auth_resp = admin_client.auth.admin.create_user({
+                "email": email,
+                "password": temp_password,
+                "email_confirm": True,
+                "app_metadata": {"rol": "musico"}
+            })
+            created_user = auth_resp.user if hasattr(auth_resp, 'user') else None
+            if not created_user:
+                errores.append({"fila": idx, "email": email, "motivo": "No se pudo crear el usuario en Auth"})
+                continue
+            created_user_id = created_user.id
+        except Exception as e:
+            msg = str(e).lower()
+            if "already" in msg or "exists" in msg or "duplicate" in msg or "registered" in msg:
+                existentes.append({"fila": idx, "email": email})
+            else:
+                errores.append({"fila": idx, "email": email, "motivo": f"Auth: {str(e)[:150]}"})
+            continue
+
+        # Perfil en usuarios
+        profile_payload = {
+            "user_id": created_user_id,
+            "email": email,
+            "nombre": nombre,
+            "apellidos": apellidos,
+            "telefono": row.get("telefono") or None,
+            "instrumento": row.get("instrumento") or None,
+            "especialidad": row.get("especialidad") or None,
+            "dni": row.get("dni") or None,
+            "direccion": row.get("direccion") or None,
+            "fecha_nacimiento": row.get("fecha_nacimiento") or None,
+            "nacionalidad": row.get("nacionalidad") or None,
+            "bio": row.get("bio") or None,
+            "rol": "musico",
+            "estado": "activo",
+            "requiere_cambio_password": True,
+        }
+        profile_payload = {k: v for k, v in profile_payload.items() if v not in (None, "")}
+        try:
+            ins = admin_client.table('usuarios').insert(profile_payload).execute()
+            profile = ins.data[0] if ins.data else None
+        except Exception as e:
+            try:
+                admin_client.auth.admin.delete_user(created_user_id)
+            except Exception:
+                pass
+            errores.append({"fila": idx, "email": email, "motivo": f"Perfil: {str(e)[:150]}"})
+            continue
+
+        creados.append({"fila": idx, "email": email, "id": profile.get("id") if profile else None})
+
+    # Registro de actividad
+    try:
+        gp = current_user.get('profile') or {}
+        gname = f"{gp.get('nombre','')} {gp.get('apellidos','')}".strip()
+        supabase.table('registro_actividad').insert({
+            'tipo': 'importacion_musicos',
+            'descripcion': f"{gname} importó {len(creados)} músicos (existentes: {len(existentes)}, errores: {len(errores)})",
+            'usuario_id': gp.get('id'),
+            'usuario_nombre': gname,
+            'entidad_tipo': 'musico',
+            'metadata': {'creados': len(creados), 'existentes': len(existentes), 'errores': len(errores)}
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "creados": creados,
+        "existentes": existentes,
+        "errores": errores,
+        "resumen": {
+            "total_procesadas": len(rows),
+            "creados": len(creados),
+            "ya_existentes": len(existentes),
+            "errores": len(errores),
+        }
+    }
 
 
 @router.post("/musicos/crear")

@@ -164,6 +164,191 @@ const CrearMusicoModal = ({ isOpen, onClose, onCreated, api }) => {
   );
 };
 
+const ImportarMusicosModal = ({ isOpen, onClose, onImported, api }) => {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+
+  if (!isOpen) return null;
+
+  const reset = () => {
+    setFile(null); setPreview(null); setError(null); setResult(null); setLoading(false);
+  };
+
+  const handleFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    setError(null); setPreview(null); setResult(null);
+    try {
+      setLoading(true);
+      const fd = new FormData();
+      fd.append('archivo', f);
+      const r = await api.post('/api/gestor/musicos-import/preview', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setPreview(r.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message);
+    } finally { setLoading(false); }
+  };
+
+  const confirmar = async () => {
+    if (!file) return;
+    try {
+      setLoading(true); setError(null);
+      const fd = new FormData();
+      fd.append('archivo', file);
+      const r = await api.post('/api/gestor/musicos-import', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setResult(r.data);
+      onImported && onImported();
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message);
+    } finally { setLoading(false); }
+  };
+
+  const descargarInforme = () => {
+    if (!result) return;
+    const lines = [];
+    lines.push('tipo,fila,email,motivo');
+    (result.creados || []).forEach(x => lines.push(`creado,${x.fila},${x.email},`));
+    (result.existentes || []).forEach(x => lines.push(`ya_existente,${x.fila},${x.email},`));
+    (result.errores || []).forEach(x => lines.push(`error,${x.fila},${x.email || ''},"${(x.motivo || '').replace(/"/g,'""')}"`));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `informe_importacion_musicos_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const cerrar = () => { reset(); onClose(); };
+
+  const headersPreview = preview && preview.preview?.length ? Object.keys(preview.preview[0]) : [];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" data-testid="importar-musicos-modal">
+      <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-auto">
+        <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center z-10">
+          <h3 className="font-semibold text-lg">Importar músicos desde Excel/CSV</h3>
+          <button onClick={cerrar} className="p-1 hover:bg-slate-100 rounded" data-testid="close-importar-modal">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {!result && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Selecciona un archivo <code>.xlsx</code> o <code>.csv</code>
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,.csv"
+                  onChange={handleFile}
+                  data-testid="input-archivo-importar"
+                  className="block w-full text-sm text-slate-700 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-slate-900 file:text-white hover:file:bg-slate-800"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Columnas requeridas: <strong>nombre, apellidos, email</strong>. Si no tienes plantilla,
+                  ciérralo y pulsa <em>Descargar plantilla Excel</em>.
+                </p>
+              </div>
+
+              {loading && <div className="text-sm text-slate-500">Procesando archivo...</div>}
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-800 text-sm" data-testid="importar-error">{error}</div>
+              )}
+
+              {preview && (
+                <div className="space-y-3" data-testid="importar-preview">
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-sm">
+                    <span>Total filas detectadas: <strong>{preview.total_filas}</strong></span>
+                    {preview.missing_required_headers?.length > 0 && (
+                      <span className="text-red-700">
+                        ⚠ Faltan columnas: {preview.missing_required_headers.join(', ')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          {headersPreview.map(h => (
+                            <th key={h} className="px-2 py-1.5 text-left font-semibold text-slate-700 whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preview.preview.map((r, idx) => (
+                          <tr key={idx} className="border-t border-slate-100">
+                            {headersPreview.map(h => (
+                              <td key={h} className="px-2 py-1.5 text-slate-700 whitespace-nowrap">{String(r[h] ?? '')}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={cerrar} className="px-4 py-2 border border-slate-300 bg-white text-slate-700 rounded-md text-sm">Cancelar</button>
+                    <button
+                      onClick={confirmar}
+                      disabled={loading || preview.missing_required_headers?.length > 0}
+                      data-testid="btn-confirmar-importar"
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-sm font-medium disabled:opacity-60"
+                    >
+                      {loading ? 'Importando...' : `Confirmar importación de ${preview.total_filas} filas`}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {result && (
+            <div className="space-y-4" data-testid="importar-resultado">
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="font-semibold text-green-900">✅ Importación completada</p>
+                <p className="text-sm text-green-800 mt-1">
+                  <strong>{result.resumen.creados}</strong> músicos importados,{' '}
+                  <strong>{result.resumen.ya_existentes}</strong> ya existían,{' '}
+                  <strong>{result.resumen.errores}</strong> errores.
+                </p>
+              </div>
+              {(result.errores?.length || 0) > 0 && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md text-xs space-y-1 max-h-40 overflow-auto">
+                  <p className="font-semibold text-red-900">Errores:</p>
+                  {result.errores.map((e, idx) => (
+                    <p key={idx} className="text-red-800">· Fila {e.fila} ({e.email}): {e.motivo}</p>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button onClick={descargarInforme} data-testid="btn-descargar-informe"
+                  className="px-4 py-2 border border-slate-300 bg-white text-slate-700 rounded-md text-sm font-medium">
+                  Descargar informe (CSV)
+                </button>
+                <button onClick={cerrar} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-sm font-medium">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const GestorMusicos = () => {
   const { api } = useAuth();
   const navigate = useNavigate();
@@ -176,6 +361,7 @@ const GestorMusicos = () => {
   const [instrumentos, setInstrumentos] = useState([]);
   const [exporting, setExporting] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const cargarMusicos = useCallback(async () => {
     try {
@@ -244,6 +430,25 @@ const GestorMusicos = () => {
     }
   };
 
+  const descargarPlantilla = async () => {
+    try {
+      const res = await api.get('/api/gestor/musicos-import/plantilla', { responseType: 'blob' });
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'plantilla_musicos.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Error al descargar plantilla: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
   return (
     <div className="p-6" data-testid="gestor-musicos-page">
       <header className="mb-6 flex items-start justify-between gap-4 flex-wrap">
@@ -253,7 +458,31 @@ const GestorMusicos = () => {
             Búsqueda y gestión del directorio de músicos
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={descargarPlantilla}
+            data-testid="btn-descargar-plantilla"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md font-medium shadow-sm"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Descargar plantilla
+          </button>
+          <button
+            onClick={() => setImportOpen(true)}
+            data-testid="btn-importar-musicos"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-medium shadow-sm"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            Importar músicos
+          </button>
           <button
             onClick={() => setModalOpen(true)}
             data-testid="btn-crear-musico"
@@ -297,6 +526,13 @@ const GestorMusicos = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onCreated={() => cargarMusicos()}
+        api={api}
+      />
+
+      <ImportarMusicosModal
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => cargarMusicos()}
         api={api}
       />
 

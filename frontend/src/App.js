@@ -194,7 +194,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       children: [
         { id: "eventos", label: "Eventos", path: "/configuracion/eventos" },
         { id: "presupuestos", label: "Presupuestos", path: "/configuracion/presupuestos" },
-        { id: "base-datos", label: "Base de datos", path: "/configuracion/base-datos" },
+        { id: "base-datos", label: "Base de datos de músicos", path: "/configuracion/base-datos" },
         { id: "plantillas", label: "Plantillas de comunicación", path: "/configuracion/plantillas" }
       ]
     },
@@ -418,7 +418,7 @@ const Layout = ({ children }) => {
     } else if (path.startsWith("/configuracion/eventos")) {
       return { page: "Configuración de temporada", section: "Eventos" };
     } else if (path.startsWith("/configuracion/base-datos")) {
-      return { page: "Configuración de temporada", section: "Base de Datos" };
+      return { page: "Configuración de temporada", section: "Base de datos de músicos" };
     } else if (path.startsWith("/configuracion/plantillas")) {
       return { page: "Configuración de temporada", section: "Plantillas Email" };
     } else if (path.startsWith("/seguimiento")) {
@@ -763,7 +763,7 @@ function App() {
                         <Route path="/configuracion" element={<Navigate to="/configuracion/eventos" replace />} />
                         <Route path="/configuracion/eventos" element={<ConfiguracionEventos />} />
                         <Route path="/configuracion/presupuestos" element={<Presupuestos />} />
-                        <Route path="/configuracion/base-datos" element={<ConfiguracionBaseDatos />} />
+                        <Route path="/configuracion/base-datos" element={<GestorMusicos />} />
                         <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
                         <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
                         <Route path="/plantillas-definitivas" element={<PlantillasDefinitivas />} />

@@ -31,6 +31,27 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Abril 2026 — Bloque C: Base de datos + Seguimiento (pivot)
+- ✅ **C-1** `/configuracion/base-datos` renderiza el mismo `GestorMusicos` que `/admin/musicos` (buscador, filtros, importar, exportar, crear).
+- ✅ **C-2 Importación masiva desde Excel/CSV**:
+  - `GET /api/gestor/musicos-import/plantilla` devuelve un `.xlsx` con 11 cabeceras (`nombre, apellidos, email, telefono, instrumento, especialidad, dni, direccion, fecha_nacimiento, nacionalidad, bio`) + fila ejemplo.
+  - `POST /api/gestor/musicos-import/preview` valida y devuelve `{total_filas, preview: first 5, missing_required_headers}`.
+  - `POST /api/gestor/musicos-import` crea usuarios en Supabase Auth con password temporal de 8 chars + perfil con `requiere_cambio_password=true`. Resumen `{creados, ya_existentes, errores}` + informe CSV descargable.
+  - UI: botones "Descargar plantilla" + "Importar músicos" en la cabecera, modal con file-picker, preview de primeros 5 registros y botón confirmar.
+- ✅ **C-3 Seguimiento pivot**:
+  - `GET /api/gestor/seguimiento` devuelve eventos con `estado='abierto'` (incluye `funciones[]` con fecha principal + hasta 4 secundarias), todos los músicos activos y asignaciones indexadas por `{musico_id}_{evento_id}`.
+  - `POST /api/gestor/seguimiento/bulk` aplica cambio de estado a múltiples músicos (UPDATE existentes o INSERT).
+  - UI reescrita: tabla pivot con checkboxes, buscador de músicos, cada columna de evento muestra chips de fechas, selector "Acción..." y botón "Aplicar" cuando hay selección + acción elegida.
+  - Estados soportados: `pendiente/confirmado/no_disponible/rechazado/excluido`. Los `confirmado` pasan automáticamente a Plantillas Definitivas (query existente).
+
+### SQL pendiente por parte del usuario
+Para que las acciones masivas `no_disponible` y `excluido` funcionen (estados añadidos en C-3), el usuario debe ejecutar:
+```sql
+ALTER TABLE asignaciones DROP CONSTRAINT IF EXISTS asignaciones_estado_check;
+ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
+  CHECK (estado IN ('pendiente', 'confirmado', 'rechazado', 'no_disponible', 'excluido'));
+```
+
 ### Abril 2026 — Mejoras módulo Eventos (5 bloques)
 - ✅ **Bug fix Dashboard**: "Próximos eventos" ahora mapea correctamente `nombre/fecha_inicio/estado/lugar/temporada` (antes usaba `name/date/time` legacy). Ordenación ASC por fecha.
 - ✅ **Bug fix ConfiguracionEventos**: EventForm y `saveEvent`/`createNewEvent`/`duplicateEvent` usan `pickPayload()` con campos en castellano. Banner de feedback sustituye `alert()`.
