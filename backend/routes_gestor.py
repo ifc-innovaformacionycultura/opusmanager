@@ -26,6 +26,27 @@ class EventoCreate(BaseModel):
     tipo: Optional[str] = None
     lugar: Optional[str] = None
     notas: Optional[str] = None
+    # Fechas secundarias de función (punto 2)
+    fecha_secundaria_1: Optional[str] = None
+    hora_secundaria_1: Optional[str] = None
+    fecha_secundaria_2: Optional[str] = None
+    hora_secundaria_2: Optional[str] = None
+    fecha_secundaria_3: Optional[str] = None
+    hora_secundaria_3: Optional[str] = None
+    fecha_secundaria_4: Optional[str] = None
+    hora_secundaria_4: Optional[str] = None
+    # Partituras por sección instrumental (punto 3)
+    partitura_cuerda: Optional[str] = None
+    partitura_viento_madera: Optional[str] = None
+    partitura_viento_metal: Optional[str] = None
+    partitura_percusion: Optional[str] = None
+    partitura_coro: Optional[str] = None
+    partitura_teclados: Optional[str] = None
+    # Notas y enlaces para músicos (punto 4)
+    notas_musicos: Optional[str] = None
+    info_adicional_url_1: Optional[str] = None
+    info_adicional_url_2: Optional[str] = None
+    info_adicional_url_3: Optional[str] = None
 
 class EventoUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -37,6 +58,27 @@ class EventoUpdate(BaseModel):
     tipo: Optional[str] = None
     lugar: Optional[str] = None
     notas: Optional[str] = None
+    # Fechas secundarias de función (punto 2)
+    fecha_secundaria_1: Optional[str] = None
+    hora_secundaria_1: Optional[str] = None
+    fecha_secundaria_2: Optional[str] = None
+    hora_secundaria_2: Optional[str] = None
+    fecha_secundaria_3: Optional[str] = None
+    hora_secundaria_3: Optional[str] = None
+    fecha_secundaria_4: Optional[str] = None
+    hora_secundaria_4: Optional[str] = None
+    # Partituras por sección instrumental (punto 3)
+    partitura_cuerda: Optional[str] = None
+    partitura_viento_madera: Optional[str] = None
+    partitura_viento_metal: Optional[str] = None
+    partitura_percusion: Optional[str] = None
+    partitura_coro: Optional[str] = None
+    partitura_teclados: Optional[str] = None
+    # Notas y enlaces para músicos (punto 4)
+    notas_musicos: Optional[str] = None
+    info_adicional_url_1: Optional[str] = None
+    info_adicional_url_2: Optional[str] = None
+    info_adicional_url_3: Optional[str] = None
 
 class AsignacionCreate(BaseModel):
     usuario_id: str
@@ -163,8 +205,24 @@ async def update_evento(
 ):
     """Update evento"""
     try:
+        # exclude_unset: permite borrar un campo enviándolo explícitamente como null.
+        # Normalizamos strings vacíos a None para los campos de fecha/hora/url,
+        # ya que PostgreSQL rechazaría "" en TIMESTAMPTZ/TIME.
+        raw = data.model_dump(exclude_unset=True)
+        null_on_empty = {
+            'fecha_inicio', 'fecha_fin',
+            'fecha_secundaria_1', 'fecha_secundaria_2', 'fecha_secundaria_3', 'fecha_secundaria_4',
+            'hora_secundaria_1', 'hora_secundaria_2', 'hora_secundaria_3', 'hora_secundaria_4',
+            'partitura_cuerda', 'partitura_viento_madera', 'partitura_viento_metal',
+            'partitura_percusion', 'partitura_coro', 'partitura_teclados',
+            'info_adicional_url_1', 'info_adicional_url_2', 'info_adicional_url_3',
+        }
+        for key in null_on_empty:
+            if key in raw and raw[key] == '':
+                raw[key] = None
+
         update_data = {
-            **data.model_dump(exclude_none=True),
+            **raw,
             "updated_at": datetime.now().isoformat()
         }
         

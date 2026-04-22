@@ -401,6 +401,97 @@ const PortalDashboard = () => {
                     </div>
                   </div>
 
+                  {/* Fechas de función (primaria + secundarias) */}
+                  {(() => {
+                    const ev = eventoSeleccionado.evento || {};
+                    const funciones = [];
+                    if (ev.fecha_inicio) {
+                      funciones.push({ fecha: ev.fecha_inicio, hora: null, label: 'Función principal' });
+                    }
+                    for (let i = 1; i <= 4; i++) {
+                      const f = ev[`fecha_secundaria_${i}`];
+                      const h = ev[`hora_secundaria_${i}`];
+                      if (f) funciones.push({ fecha: f, hora: h, label: `Función ${i + 1}` });
+                    }
+                    if (funciones.length <= 1) return null;
+                    return (
+                      <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200" data-testid="fechas-funcion-block">
+                        <h3 className="text-lg font-semibold text-slate-900 mb-4">🎭 Fechas de función</h3>
+                        <div className="space-y-2">
+                          {funciones.map((f, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                              <div>
+                                <p className="font-medium text-slate-900">{f.label}</p>
+                                <p className="text-sm text-slate-600">
+                                  {new Date(f.fecha).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                                  {f.hora ? ` · ${String(f.hora).slice(0,5)}` : ''}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Notas para los músicos */}
+                  {eventoSeleccionado.evento?.notas_musicos && (
+                    <div className="bg-blue-50 p-6 rounded-lg border border-blue-200" data-testid="notas-musicos-block">
+                      <h3 className="text-lg font-semibold text-blue-900 mb-2">📝 Notas del equipo gestor</h3>
+                      <p className="text-sm text-blue-900 whitespace-pre-wrap">{eventoSeleccionado.evento.notas_musicos}</p>
+                    </div>
+                  )}
+
+                  {/* Partitura específica del instrumento del músico */}
+                  {eventoSeleccionado.partitura_url && (
+                    <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200" data-testid="partitura-block">
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">🎼 Partitura de tu sección</h3>
+                      <p className="text-xs text-slate-500 mb-3">
+                        {profile?.instrumento ? `Partitura para ${profile.instrumento}` : 'Partitura de tu sección instrumental'}
+                      </p>
+                      <a
+                        href={eventoSeleccionado.partitura_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-medium"
+                        data-testid="btn-abrir-partitura"
+                      >
+                        <span>📎</span> Abrir partitura
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Información adicional (hasta 3 enlaces) */}
+                  {(() => {
+                    const ev = eventoSeleccionado.evento || {};
+                    const urls = [ev.info_adicional_url_1, ev.info_adicional_url_2, ev.info_adicional_url_3]
+                      .filter(Boolean);
+                    if (urls.length === 0) return null;
+                    return (
+                      <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200" data-testid="info-adicional-block">
+                        <h3 className="text-lg font-semibold text-slate-900 mb-3">🔗 Información adicional</h3>
+                        <div className="space-y-2">
+                          {urls.map((u, i) => (
+                            <a
+                              key={i}
+                              href={u}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              data-testid={`info-adicional-link-${i + 1}`}
+                              className="flex items-center gap-2 p-3 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 text-sm text-blue-700 hover:underline"
+                            >
+                              <span>🔗</span>
+                              <span className="truncate">{u}</span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Ensayos */}
                   <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                     <h3 className="text-lg font-semibold text-slate-900 mb-4">📅 Ensayos y Fechas</h3>

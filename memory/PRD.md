@@ -31,6 +31,20 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Abril 2026 — Mejoras módulo Eventos (5 bloques)
+- ✅ **Bug fix Dashboard**: "Próximos eventos" ahora mapea correctamente `nombre/fecha_inicio/estado/lugar/temporada` (antes usaba `name/date/time` legacy). Ordenación ASC por fecha.
+- ✅ **Bug fix ConfiguracionEventos**: EventForm y `saveEvent`/`createNewEvent`/`duplicateEvent` usan `pickPayload()` con campos en castellano. Banner de feedback sustituye `alert()`.
+- ✅ **Punto 1 — Estados ampliados**: `borrador/abierto/en_curso/cerrado/cancelado/finalizado` con etiquetas en español y badges de color distinto (gris/azul/verde/amarillo/rojo/morado). Portal músico filtra `/mis-eventos` y `/calendario` por `estado='abierto'`. Historial mantiene vista completa.
+- ✅ **Punto 2 — Fechas secundarias**: Columnas `fecha_secundaria_[1..4]` + `hora_secundaria_[1..4]` en `eventos`. UI con "Añadir fecha" (máx 4). Se muestran en el calendario del músico como función.
+- ✅ **Punto 3 — Partituras por sección**: Columnas `partitura_cuerda/viento_madera/viento_metal/percusion/coro/teclados`. Mapeo instrumento→sección (`INSTRUMENTO_A_SECCION`). En el portal sólo se expone la URL correspondiente a la sección del músico; el resto no aparecen en la respuesta.
+- ✅ **Punto 4 — Notas para músicos + info adicional**: Columnas `notas_musicos`, `info_adicional_url_[1..3]`. `notas` interno queda oculto en el portal.
+- ✅ **Punto 5 — Eliminar evento**: Botón rojo sólo visible a admin (`user.rol==='admin'`) o creador del evento (`user.profile.id===event.gestor_id`). Modal de confirmación antes del DELETE. Cascada vía FK `ON DELETE CASCADE` (asignaciones, ensayos, materiales, recordatorios_config).
+
+### SQL aplicado en esta iteración
+- `/app/MIGRATION_BLOQUE3.sql` (comentarios_internos + notificaciones_gestor + registro_actividad + cols auxiliares)
+- Migración en-chat aplicada por el usuario: 14 columnas nuevas en `eventos` (fechas secundarias + partituras + notas_musicos + info_adicional_urls)
+- Ampliación de `eventos_estado_check` para los 6 estados.
+
 ### Abril 2026 — iteración Bloque 3 (comunicación interna + UX Portal)
 - ✅ **SQL Bloque 3 aplicado** (`/app/MIGRATION_BLOQUE3.sql`): tablas `comentarios_internos`, `notificaciones_gestor`, `registro_actividad`; columnas `usuarios.ultima_actualizacion_perfil`/`ultimo_acceso_gestor`, `asignaciones.fecha_respuesta`, `reclamaciones.gestor_id`/`gestor_nombre`; RLS bloqueado (backend usa service role).
 - ✅ **Campana de notificaciones** (`/app/frontend/src/components/NotificacionesBell.js`): icono fijo top-right del Layout gestor con badge de no leídas; panel desplegable con historial; polling 60s a `/api/gestor/notificaciones`; acción "marcar todas como leídas"; click individual marca como leída.

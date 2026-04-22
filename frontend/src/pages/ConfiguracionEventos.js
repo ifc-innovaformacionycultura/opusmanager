@@ -149,9 +149,18 @@ const InstrumentationSection = ({ instrumentation, onChange }) => {
 };
 
 // Event Form
-const EventForm = ({ event, onChange, onSave }) => {
+const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
   const [rehearsals, setRehearsals] = useState(event.rehearsals || []);
   const [program, setProgram] = useState(event.program || []);
+  const [fechasSecVisibles, setFechasSecVisibles] = useState(() => {
+    // Mostrar tantos bloques como los rellenados + uno vacío (mínimo 0, máx 4)
+    let count = 0;
+    for (let i = 1; i <= 4; i++) {
+      if (event[`fecha_secundaria_${i}`]) count = i;
+    }
+    return count;
+  });
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
     setRehearsals(event.rehearsals || []);
@@ -381,6 +390,111 @@ const EventForm = ({ event, onChange, onSave }) => {
         </button>
       </div>
 
+      {/* Fechas adicionales de función */}
+      <SectionTitle color="blue">Fechas adicionales de función</SectionTitle>
+      <p className="text-xs text-slate-500 -mt-2 mb-2">Añade hasta 4 fechas extra de función con su hora correspondiente.</p>
+      <div className="space-y-2" data-testid="fechas-secundarias-wrapper">
+        {[1, 2, 3, 4].slice(0, fechasSecVisibles).map((i) => {
+          const fechaKey = `fecha_secundaria_${i}`;
+          const horaKey = `hora_secundaria_${i}`;
+          const fechaValue = event[fechaKey] ? String(event[fechaKey]).slice(0, 10) : '';
+          return (
+            <div key={i} className="flex items-center gap-2 bg-slate-50 p-2 rounded" data-testid={`fecha-secundaria-row-${i}`}>
+              <span className="text-sm text-slate-500 w-20">Fecha {i}</span>
+              <input
+                type="date"
+                value={fechaValue}
+                onChange={(e) => onChange({ ...event, [fechaKey]: e.target.value })}
+                className="px-2 py-1 border border-slate-200 rounded text-sm"
+                data-testid={`input-fecha-sec-${i}`}
+              />
+              <input
+                type="time"
+                value={event[horaKey] || ''}
+                onChange={(e) => onChange({ ...event, [horaKey]: e.target.value })}
+                className="px-2 py-1 border border-slate-200 rounded text-sm"
+                data-testid={`input-hora-sec-${i}`}
+                placeholder="Hora"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  // Vaciamos esta fecha y desplazamos el resto visualmente (simple: la dejamos vacía)
+                  onChange({ ...event, [fechaKey]: null, [horaKey]: null });
+                  if (i === fechasSecVisibles) setFechasSecVisibles(Math.max(0, fechasSecVisibles - 1));
+                }}
+                className="p-1 text-red-500 hover:bg-red-50 rounded"
+                title="Quitar fecha"
+                data-testid={`btn-remove-fecha-sec-${i}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+          );
+        })}
+        {fechasSecVisibles < 4 && (
+          <button
+            type="button"
+            onClick={() => setFechasSecVisibles(fechasSecVisibles + 1)}
+            className="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1"
+            data-testid="btn-add-fecha-secundaria"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
+            Añadir fecha
+          </button>
+        )}
+      </div>
+
+      {/* Partituras y materiales por sección */}
+      <SectionTitle color="yellow">Partituras y materiales por sección</SectionTitle>
+      <p className="text-xs text-slate-500 -mt-2 mb-2">Pega un enlace (Google Drive, Dropbox...) para cada sección. Cada músico verá sólo el de su instrumento.</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {[
+          { key: 'partitura_cuerda',        label: 'Cuerda (violines, violas, cellos, contrabajos)' },
+          { key: 'partitura_viento_madera', label: 'Viento madera (flauta, oboe, clarinete, fagot)' },
+          { key: 'partitura_viento_metal',  label: 'Viento metal (trompa, trompeta, trombón, tuba)' },
+          { key: 'partitura_percusion',     label: 'Percusión' },
+          { key: 'partitura_coro',          label: 'Coro' },
+          { key: 'partitura_teclados',      label: 'Teclados y piano' },
+        ].map((f) => (
+          <InputField
+            key={f.key}
+            label={f.label}
+            value={event[f.key]}
+            onChange={(v) => onChange({ ...event, [f.key]: v })}
+            placeholder="https://drive.google.com/..."
+          />
+        ))}
+      </div>
+
+      {/* Notas para los músicos + información adicional */}
+      <SectionTitle color="orange">Notas e información para músicos</SectionTitle>
+      <div className="mb-3">
+        <label className="block text-sm text-slate-600 mb-1">Notas para los músicos (visibles en el portal)</label>
+        <textarea
+          value={event.notas_musicos || ''}
+          onChange={(e) => onChange({ ...event, notas_musicos: e.target.value })}
+          rows={3}
+          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-slate-300 focus:border-transparent"
+          data-testid="event-notas-musicos"
+          placeholder="Indicaciones sobre vestuario, puntualidad, material a traer..."
+        />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {[1, 2, 3].map((i) => {
+          const key = `info_adicional_url_${i}`;
+          return (
+            <InputField
+              key={key}
+              label={`Enlace información adicional ${i}`}
+              value={event[key]}
+              onChange={(v) => onChange({ ...event, [key]: v })}
+              placeholder="https://..."
+            />
+          );
+        })}
+      </div>
+
       {/* Formulario de inscripción */}
       <SectionTitle color="purple">Formulario de Inscripción</SectionTitle>
       <InputField
@@ -398,8 +512,20 @@ const EventForm = ({ event, onChange, onSave }) => {
         </div>
       )}
 
-      {/* Save Button */}
-      <div className="flex justify-end pt-4">
+      {/* Save Button + Eliminar evento (condicional) */}
+      <div className="flex items-center justify-between pt-4 gap-3 flex-wrap">
+        <div>
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
+              data-testid="btn-eliminar-evento"
+            >
+              Eliminar evento
+            </button>
+          )}
+        </div>
         <button
           onClick={onSave}
           className="px-4 py-2 bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors text-sm font-medium"
@@ -408,13 +534,55 @@ const EventForm = ({ event, onChange, onSave }) => {
           Guardar cambios
         </button>
       </div>
+
+      {/* Modal confirmación de eliminación */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" data-testid="modal-eliminar-evento">
+          <div className="bg-white rounded-lg max-w-md w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">¿Eliminar este evento?</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  Esta acción eliminará el evento <strong>{event.nombre || ''}</strong> y TODOS sus datos asociados
+                  (ensayos, asignaciones, materiales, presupuestos). Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-sm font-medium"
+                data-testid="btn-cancelar-eliminar"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setShowDeleteModal(false);
+                  if (onDelete) await onDelete(event.id);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium"
+                data-testid="btn-confirmar-eliminar"
+              >
+                Eliminar definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 // Main Component
 const ConfiguracionEventos = () => {
-  const { api } = useGestorAuth();
+  const { api, user } = useGestorAuth();
   const [events, setEvents] = useState([]);
   const [temporadas, setTemporadas] = useState(['2024-2025', '2025-2026', '2026-2027']);
   const [selectedSeason, setSelectedSeason] = useState('2025-2026');
@@ -462,17 +630,36 @@ const ConfiguracionEventos = () => {
   // Campos que acepta el backend (EventoUpdate / EventoCreate en routes_gestor.py).
   // Cualquier otro campo del form (rehearsals, program, instrumentation...) se
   // descarta: se gestiona en tablas independientes (ensayos, etc).
-  const pickPayload = (event) => ({
-    nombre: event.nombre ?? null,
-    temporada: event.temporada ?? null,
-    descripcion: event.descripcion ?? null,
-    fecha_inicio: event.fecha_inicio || null,
-    fecha_fin: event.fecha_fin || null,
-    estado: event.estado ?? null,
-    tipo: event.tipo ?? null,
-    lugar: event.lugar ?? null,
-    notas: event.notas ?? null,
-  });
+  const pickPayload = (event) => {
+    const base = {
+      nombre: event.nombre ?? null,
+      temporada: event.temporada ?? null,
+      descripcion: event.descripcion ?? null,
+      fecha_inicio: event.fecha_inicio || null,
+      fecha_fin: event.fecha_fin || null,
+      estado: event.estado ?? null,
+      tipo: event.tipo ?? null,
+      lugar: event.lugar ?? null,
+      notas: event.notas ?? null,
+      notas_musicos: event.notas_musicos ?? null,
+    };
+    // Fechas secundarias (punto 2)
+    for (let i = 1; i <= 4; i++) {
+      base[`fecha_secundaria_${i}`] = event[`fecha_secundaria_${i}`] || null;
+      base[`hora_secundaria_${i}`] = event[`hora_secundaria_${i}`] || null;
+    }
+    // Partituras (punto 3)
+    ['cuerda','viento_madera','viento_metal','percusion','coro','teclados'].forEach(s => {
+      const k = `partitura_${s}`;
+      base[k] = event[k] ?? null;
+    });
+    // Info adicional (punto 4)
+    for (let i = 1; i <= 3; i++) {
+      const k = `info_adicional_url_${i}`;
+      base[k] = event[k] ?? null;
+    }
+    return base;
+  };
 
   const saveEvent = async (event) => {
     setSaving(true);
@@ -541,6 +728,29 @@ const ConfiguracionEventos = () => {
       console.error("[Eventos] Error duplicating event:", err, err.response?.data);
       showFeedback('error', `Error al duplicar: ${err.response?.data?.detail || err.message}`);
     }
+  };
+
+  const deleteEvent = async (eventId) => {
+    try {
+      console.log('[Eventos] DELETE /api/gestor/eventos/' + eventId);
+      await api.delete(`/api/gestor/eventos/${eventId}`);
+      setOpenAccordions(prev => {
+        const next = { ...prev }; delete next[eventId]; return next;
+      });
+      await loadEvents(selectedSeason);
+      showFeedback('success', 'Evento eliminado correctamente');
+    } catch (err) {
+      console.error("[Eventos] Error deleting event:", err, err.response?.data);
+      showFeedback('error', `Error al eliminar: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
+  // Puede eliminar el evento si es admin o el gestor que lo creó.
+  const canDeleteEvent = (event) => {
+    if (!user) return false;
+    if (user.rol === 'admin') return true;
+    const myProfileId = user.profile?.id;
+    return Boolean(myProfileId && event.gestor_id && myProfileId === event.gestor_id);
   };
 
   if (loading) {
@@ -616,6 +826,8 @@ const ConfiguracionEventos = () => {
                   event={event}
                   onChange={(data) => updateEvent(event.id, data)}
                   onSave={() => saveEvent(event)}
+                  onDelete={deleteEvent}
+                  canDelete={canDeleteEvent(event)}
                 />
               </Accordion>
               {/* Duplicate Button */}

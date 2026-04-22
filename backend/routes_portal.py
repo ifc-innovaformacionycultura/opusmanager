@@ -9,6 +9,50 @@ import uuid
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
+
+# ==================== Helper: partitura por instrumento ====================
+# Mapeo normalizado del instrumento del músico a la columna de partitura del
+# evento que debe verse. Si el instrumento no coincide con ninguno, no se
+# muestra ninguna partitura.
+INSTRUMENTO_A_SECCION = {
+    # Cuerda
+    'violin': 'cuerda', 'violín': 'cuerda', 'violines': 'cuerda',
+    'viola': 'cuerda', 'violas': 'cuerda',
+    'cello': 'cuerda', 'chelo': 'cuerda', 'violonchelo': 'cuerda', 'violoncello': 'cuerda',
+    'contrabajo': 'cuerda', 'contrabajos': 'cuerda',
+    # Viento madera
+    'flauta': 'viento_madera', 'flauta travesera': 'viento_madera', 'flautin': 'viento_madera', 'flautín': 'viento_madera',
+    'oboe': 'viento_madera', 'corno ingles': 'viento_madera', 'corno inglés': 'viento_madera',
+    'clarinete': 'viento_madera', 'clarinete bajo': 'viento_madera',
+    'fagot': 'viento_madera', 'contrafagot': 'viento_madera',
+    'saxofon': 'viento_madera', 'saxofón': 'viento_madera', 'saxo': 'viento_madera',
+    # Viento metal
+    'trompa': 'viento_metal', 'corno': 'viento_metal', 'corno frances': 'viento_metal', 'corno francés': 'viento_metal',
+    'trompeta': 'viento_metal',
+    'trombon': 'viento_metal', 'trombón': 'viento_metal',
+    'tuba': 'viento_metal',
+    # Percusión
+    'percusion': 'percusion', 'percusión': 'percusion',
+    'timbales': 'percusion', 'bateria': 'percusion', 'batería': 'percusion',
+    # Coro
+    'tenor': 'coro', 'soprano': 'coro', 'baritono': 'coro', 'barítono': 'coro',
+    'bajo': 'coro', 'mezzo': 'coro', 'mezzosoprano': 'coro', 'contratenor': 'coro',
+    'coro': 'coro',
+    # Teclados
+    'piano': 'teclados', 'organo': 'teclados', 'órgano': 'teclados',
+    'clave': 'teclados', 'clavecin': 'teclados', 'clavecín': 'teclados',
+    'teclado': 'teclados', 'teclados': 'teclados',
+}
+
+def partitura_url_para_instrumento(evento: dict, instrumento: Optional[str]) -> Optional[str]:
+    """Devuelve la URL de la partitura del evento correspondiente al instrumento del músico."""
+    if not evento or not instrumento:
+        return None
+    seccion = INSTRUMENTO_A_SECCION.get(str(instrumento).strip().lower())
+    if not seccion:
+        return None
+    return evento.get(f'partitura_{seccion}')
+
 # ==================== Models ====================
 
 class ConfirmarAsistenciaRequest(BaseModel):
@@ -111,6 +155,26 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
             a for a in asignaciones
             if (a.get('evento') or {}).get('estado') == 'abierto'
         ]
+
+        # Instrumento principal del músico para filtrar la partitura adecuada
+        instrumento_musico = user_profile.get('instrumento')
+
+        # Enriquecer/sanitizar el evento anidado: quitar notas internas del equipo
+        # y añadir únicamente la partitura que corresponde al instrumento del músico.
+        partitura_keys = (
+            'partitura_cuerda', 'partitura_viento_madera', 'partitura_viento_metal',
+            'partitura_percusion', 'partitura_coro', 'partitura_teclados'
+        )
+        for asig in asignaciones:
+            evento = asig.get('evento') or {}
+            # Ocultar campos internos
+            evento.pop('notas', None)
+            evento.pop('gestor_id', None)
+            # Partitura específica por instrumento (no exponer todas)
+            asig['partitura_url'] = partitura_url_para_instrumento(evento, instrumento_musico)
+            for k in partitura_keys:
+                evento.pop(k, None)
+            asig['evento'] = evento
         
         # Enriquecer cada asignación con conteo de compañeros confirmados
         # (sin revelar nombres) para cada evento
@@ -230,6 +294,27 @@ async def get_calendario(current_user: dict = Depends(get_current_user)):
                         "evento_id": eid,
                         "evento_nombre": ev.get('nombre')
                     })
+
+            # Fechas secundarias de función (punto 2) — se muestran en el calendario
+            for eid, ev in eventos_map.items():
+                if not ev:
+                    continue
+                for i in range(1, 5):
+                    fecha_sec = ev.get(f'fecha_secundaria_{i}')
+                    hora_sec = ev.get(f'hora_secundaria_{i}')
+                    if fecha_sec:
+                        calendar_events.append({
+                            "id": f"funcion-{eid}-{i}",
+                            "tipo": "concierto",
+                            "titulo": f"{ev.get('nombre', 'Evento')} - Función {i + 1}",
+                            "fecha": fecha_sec,
+                            "hora": hora_sec,
+                            "lugar": ev.get('lugar'),
+                            "obligatorio": True,
+                            "color": "green",
+                            "evento_id": eid,
+                            "evento_nombre": ev.get('nombre')
+                        })
         
         return {"eventos": calendar_events}
         
