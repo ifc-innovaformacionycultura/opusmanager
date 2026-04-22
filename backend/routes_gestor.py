@@ -587,6 +587,97 @@ async def get_musico_detalle(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
+@router.delete("/musicos/{musico_id}")
+async def delete_musico(
+    musico_id: str,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """
+    Elimina un músico:
+    - Bloquea si tiene asignaciones confirmadas en eventos activos (estado='abierto'/'en_curso').
+    - Si no, elimina el perfil de `usuarios` y el usuario de Supabase Auth.
+    - Registra la acción en `registro_actividad`.
+    """
+    import os
+    from supabase import create_client
+    admin_client = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_KEY'])
+
+    # 1) Cargar perfil
+    try:
+        u_res = admin_client.table('usuarios').select('id,user_id,email,nombre,apellidos,rol') \
+            .eq('id', musico_id).single().execute()
+        musico = u_res.data
+    except Exception:
+        musico = None
+    if not musico:
+        raise HTTPException(status_code=404, detail="Músico no encontrado")
+    if musico.get('rol') != 'musico':
+        raise HTTPException(status_code=400, detail="El usuario no es un músico")
+
+    # 2) Comprobar asignaciones confirmadas en eventos activos
+    try:
+        confirmadas_res = admin_client.table('asignaciones') \
+            .select('id, evento:eventos(id,nombre,estado)') \
+            .eq('usuario_id', musico_id) \
+            .eq('estado', 'confirmado') \
+            .execute()
+        activas = [
+            a for a in (confirmadas_res.data or [])
+            if (a.get('evento') or {}).get('estado') in ('abierto', 'en_curso')
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error comprobando asignaciones: {str(e)}")
+
+    if activas:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede eliminar un músico con convocatorias confirmadas activas"
+        )
+
+    # 3) Eliminar perfil (CASCADE se lleva asignaciones, reclamaciones, etc.)
+    try:
+        admin_client.table('usuarios').delete().eq('id', musico_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar perfil: {str(e)}")
+
+    # 4) Eliminar usuario en Supabase Auth (best-effort)
+    auth_deleted = False
+    auth_error = None
+    if musico.get('user_id'):
+        try:
+            admin_client.auth.admin.delete_user(musico['user_id'])
+            auth_deleted = True
+        except Exception as e:
+            auth_error = str(e)[:200]
+
+    # 5) Registro de actividad
+    try:
+        gp = current_user.get('profile') or {}
+        gname = f"{gp.get('nombre','')} {gp.get('apellidos','')}".strip()
+        mname = f"{musico.get('nombre','')} {musico.get('apellidos','')}".strip()
+        supabase.table('registro_actividad').insert({
+            'tipo': 'musico_eliminado',
+            'descripcion': f"{gname} eliminó al músico {mname} ({musico.get('email')})",
+            'usuario_id': gp.get('id'),
+            'usuario_nombre': gname,
+            'entidad_tipo': 'musico',
+            'entidad_id': musico_id,
+            'metadata': {
+                'email': musico.get('email'),
+                'auth_deleted': auth_deleted,
+                'auth_error': auth_error,
+            }
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "message": "Músico eliminado correctamente",
+        "auth_deleted": auth_deleted,
+        "auth_error": auth_error,
+    }
+
+
 @router.get("/pendientes")
 async def get_pendientes(current_user: dict = Depends(get_current_gestor)):
     """Contadores de pendientes para el sidebar y el dashboard del gestor."""

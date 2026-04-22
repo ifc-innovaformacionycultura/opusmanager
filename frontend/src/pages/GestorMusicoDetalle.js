@@ -23,6 +23,9 @@ const GestorMusicoDetalle = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -34,6 +37,18 @@ const GestorMusicoDetalle = () => {
       } finally { setLoading(false); }
     })();
   }, [api, id]);
+
+  const handleDelete = async () => {
+    try {
+      setDeleting(true);
+      setDeleteError(null);
+      await api.delete(`/api/gestor/musicos/${id}`);
+      setShowDelete(false);
+      navigate('/admin/musicos');
+    } catch (err) {
+      setDeleteError(err.response?.data?.detail || err.message);
+    } finally { setDeleting(false); }
+  };
 
   if (loading) return <div className="p-8 text-slate-500">Cargando...</div>;
   if (error) return <div className="p-8 text-red-600">{error}</div>;
@@ -51,7 +66,61 @@ const GestorMusicoDetalle = () => {
           className="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
           ← Volver a la lista
         </button>
+        <button
+          onClick={() => setShowDelete(true)}
+          data-testid="btn-eliminar-musico"
+          className="px-3 py-1.5 text-sm text-red-700 border border-red-300 bg-white hover:bg-red-50 rounded-md font-medium"
+        >
+          Eliminar músico
+        </button>
       </div>
+
+      {showDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" data-testid="modal-eliminar-musico">
+          <div className="bg-white rounded-lg max-w-md w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">¿Eliminar este músico?</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  Se eliminará <strong>{m.nombre} {m.apellidos}</strong> ({m.email}) del sistema y del sistema de autenticación.
+                  Esta acción no se puede deshacer.
+                </p>
+                <p className="text-xs text-slate-500 mt-2">
+                  Si el músico tiene convocatorias confirmadas activas, la eliminación se bloqueará automáticamente.
+                </p>
+              </div>
+            </div>
+            {deleteError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-800 text-sm" data-testid="delete-error">
+                {deleteError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setShowDelete(false); setDeleteError(null); }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-sm font-medium"
+                data-testid="btn-cancelar-eliminar-musico"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium disabled:opacity-60"
+                data-testid="btn-confirmar-eliminar-musico"
+              >
+                {deleting ? 'Eliminando...' : 'Eliminar definitivamente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header con foto y datos básicos */}
       <div className="bg-white rounded-lg border border-slate-200 p-6">

@@ -1,0 +1,55 @@
+{
+  "summary": "Bloque C completo (Base de datos músicos + Importación Excel/CSV + Seguimiento pivot + acciones masivas) y endpoint nuevo DELETE /api/gestor/musicos/{id}: 10/10 tests backend PASS y 100% flujos UI verificados manualmente con Playwright (importación, seguimiento bulk, delete con 409 y delete OK con redirect).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/gestor/musicos-import/plantilla -> 200 xlsx con 11 cabeceras exactas (nombre,apellidos,email,telefono,instrumento,especialidad,dni,direccion,fecha_nacimiento,nacionalidad,bio)",
+    "POST /api/gestor/musicos-import/preview con CSV 3 filas -> {total_filas:3, preview<=5, missing_required_headers:[]}",
+    "POST /api/gestor/musicos-import crea 2 usuarios nuevos en Auth+usuarios con requiere_cambio_password=true; resumen.creados>=1",
+    "POST /api/gestor/musicos-import con email repetido -> resumen.ya_existentes>=1",
+    "GET /api/gestor/seguimiento -> {eventos[], musicos[], asignaciones{}}; cada evento incluye 'funciones' con fecha principal (y secundarias si existen)",
+    "POST /api/gestor/seguimiento/bulk con los 5 estados (pendiente,confirmado,rechazado,no_disponible,excluido) -> 200 {actualizados,creados}",
+    "POST /api/gestor/musicos/crear + DELETE /api/gestor/musicos/{id} -> 200 {message, auth_deleted:true, auth_error:null} y desaparece del listado",
+    "DELETE /api/gestor/musicos/{Jesus_id_con_confirmado_activo} -> 409 detail='No se puede eliminar un músico con convocatorias confirmadas activas'",
+    "DELETE /api/gestor/musicos/00000000-... -> 404 'Músico no encontrado'",
+    "GET /api/gestor/actividad muestra entrada tipo='musico_eliminado' con entidad_id correcto tras delete",
+    "Frontend /configuracion/base-datos: gestor-musicos-page con 4 botones (descargar-plantilla, importar-musicos, crear-musico, exportar-excel) y sidebar 'Base de datos de músicos' visible",
+    "Frontend Importar modal: subir CSV -> aparece importar-preview con tabla de primeros registros",
+    "Frontend /seguimiento: 4 col-evento, 4 fechas-evento (chips '20 abr','22 abr','15 may','01 jul'), 7 check-musico, bulk no_disponible aplicado y celda actualizada; toast '1 actualizados · 0 creados'",
+    "Frontend DELETE Jesús: modal-eliminar-musico abre con botones cancelar/confirmar; tras confirmar 409 muestra delete-error con texto exacto del backend",
+    "Frontend DELETE OK: tras crear musico vía API y confirmar borrado en UI, redirect a /admin/musicos"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_bloque_c.py",
+    "/app/test_reports/pytest/bloque_c_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes_gestor.py L601-603 (delete_musico): se importa supabase y create_client localmente y se crea un nuevo admin_client en cada llamada. Funciona, pero crear el cliente Supabase es relativamente caro; mejor reutilizar un cliente module-level (igual que `supabase` global). Mismo patrón se repite en importar_musicos (L902).",
+    "routes_gestor.py L831-836 (_parse_musicos_file CSV): csv.Sniffer().sniff puede fallar en CSV de 1 columna; usar fallback a csv.excel como ya hace está bien. Considerar normalizar BOM con 'utf-8-sig' (ya lo hace ✓).",
+    "routes_gestor.py L871 (preview): missing_required_headers solo comprueba la PRIMERA fila — si la primera fila tiene email pero ninguna tiene nombre, no se reporta como missing. Considerar inspeccionar headers extraídos del archivo (no del primer dict) para evitar falsos negativos.",
+    "routes_gestor.py L926 _generate_temp_password longitud 8 — para producción mejor usar >=12 chars (recomendación NIST). Usuario debe cambiar password en primer login (ya marcado), pero el temp password se envía por email/se muestra al gestor.",
+    "GestorMusicoDetalle.js L36/49: setError con err.response?.data?.detail || err.message — si 'detail' viene como objeto (FastAPI validation), se renderizará '[object Object]'. Considerar normalizar.",
+    "SeguimientoConvocatorias.js: tras aplicar bulk, se refetchea toda la lista. Para tablas grandes (>100 músicos) puede ser lento; considerar update optimista local.",
+    "test_bloque_c.py: tests crean musicos con dominio @example.com y los limpia en teardown vía service_role. Si el endpoint /musicos/crear cambia de respuesta, ajustar el extractor de id (actualmente busca j['musico']['id'] o j['id'])."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bloque_c.py (nuevo, 10 tests pytest)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (5/5 flujos críticos)"},
+  "test_credentials": {
+    "gestor": {"email": "admin@convocatorias.com", "password": "Admin123!"},
+    "musico": {"email": "jesusalonsodirector@gmail.com", "password": "Musico123!", "id": "8bf521fa-dc27-4c5b-8069-d36d3d4eaad3"}
+  },
+  "seed_data_creation": "Se crearon 2 musicos test_import_*@example.com (limpiados con fixture teardown vía service_role: tabla usuarios + auth.admin.delete_user). Se crearon y eliminaron varios musicos test_del_*@example.com y test_uidel_*@example.com en flujo crear+borrar. En seguimiento se aplicó bulk no_disponible al usuario Jesús en 'Concierto de Navidad' y se LIMPIÓ borrando la asignación huérfana via service_role (id 73f12c69-d609-4f1b-a1d2-6b0c48c842ea). No queda ningún dato residual.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bloque C end-to-end OK. CHECK constraint asignaciones.estado ya acepta los 5 valores (verificado por test_bulk_5_estados). El endpoint DELETE /api/gestor/musicos/{id} usa supabase admin client (service_role) correctamente. Para repetir: cd /app/backend && python -m pytest tests/test_bloque_c.py -v. UI: el delete-error puede tardar 2-4s en aparecer tras click confirmar (latencia red+supabase auth admin); usar timeout >= 4s en futuros scripts. La UI de seguimiento tarda ~2s en hacer el primer fetch — no usar 'screenshot inmediato' tras navigate; esperar a [data-testid=seguimiento-table]. No se probaron las fechas SECUNDARIAS de evento porque ningún evento las tiene poblada en la BD actual (sólo principal); las 4 chips visibles son fechas principales — la lógica del backend para fecha_secundaria_1..4 está implementada (routes_gestor.py L272-276) pero sin datos de prueba. Si se quiere validar visualmente, crear un evento con fecha_secundaria_1='2026-04-21' y verificar 2 chips."
+}
