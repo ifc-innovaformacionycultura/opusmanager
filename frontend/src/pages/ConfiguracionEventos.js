@@ -236,13 +236,17 @@ const EventForm = ({ event, onChange, onSave }) => {
         <div className="mb-3">
           <label className="block text-sm text-slate-600 mb-1">Estado</label>
           <select
-            value={event.estado || 'abierto'}
+            value={event.estado || 'borrador'}
             onChange={(e) => onChange({ ...event, estado: e.target.value })}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
             data-testid="event-estado"
           >
-            <option value="abierto">Abierto</option>
+            <option value="borrador">Borrador (no visible para músicos)</option>
+            <option value="abierto">Público (visible para músicos)</option>
+            <option value="en_curso">En curso</option>
             <option value="cerrado">Cerrado</option>
+            <option value="cancelado">Cancelado</option>
+            <option value="finalizado">Finalizado</option>
           </select>
         </div>
         <div className="md:col-span-2 mb-3">

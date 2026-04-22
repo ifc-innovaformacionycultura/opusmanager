@@ -648,8 +648,12 @@ const DashboardPage = () => {
                   })
                 : 'Sin fecha';
               const estadoColors = {
-                abierto: 'bg-blue-100 text-blue-800',
-                cerrado: 'bg-slate-200 text-slate-700'
+                borrador:   'bg-slate-200 text-slate-700',
+                abierto:    'bg-blue-100 text-blue-800',
+                cerrado:    'bg-amber-100 text-amber-800',
+                en_curso:   'bg-green-100 text-green-800',
+                cancelado:  'bg-red-100 text-red-800',
+                finalizado: 'bg-purple-100 text-purple-800'
               };
               const estadoClass = estadoColors[event.estado] || 'bg-slate-100 text-slate-700';
               return (

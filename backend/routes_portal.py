@@ -104,6 +104,14 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
         
         asignaciones = response.data or []
         
+        # Filtrar: sólo eventos con estado 'abierto' son visibles para el músico
+        # (borrador/cerrado/cancelado/finalizado/en_curso quedan ocultos aquí;
+        # el historial completo se ve en /mi-historial/eventos)
+        asignaciones = [
+            a for a in asignaciones
+            if (a.get('evento') or {}).get('estado') == 'abierto'
+        ]
+        
         # Enriquecer cada asignación con conteo de compañeros confirmados
         # (sin revelar nombres) para cada evento
         for asig in asignaciones:
@@ -161,14 +169,19 @@ async def get_calendario(current_user: dict = Depends(get_current_user)):
                 detail="Perfil de usuario no encontrado"
             )
         
-        # Get asignaciones del músico para conocer los eventos asignados
+        # Get asignaciones del músico para conocer los eventos asignados.
+        # Filtramos para mostrar sólo los eventos con estado='abierto' en el calendario del músico.
         asigs = supabase.table('asignaciones') \
             .select('evento_id, evento:eventos(*)') \
             .eq('usuario_id', usuario_id) \
             .execute()
         
-        evento_ids = [a['evento_id'] for a in (asigs.data or []) if a.get('evento_id')]
-        eventos_map = {a['evento_id']: a.get('evento') for a in (asigs.data or []) if a.get('evento_id')}
+        asigs_visibles = [
+            a for a in (asigs.data or [])
+            if a.get('evento_id') and (a.get('evento') or {}).get('estado') == 'abierto'
+        ]
+        evento_ids = [a['evento_id'] for a in asigs_visibles]
+        eventos_map = {a['evento_id']: a.get('evento') for a in asigs_visibles}
         
         calendar_events = []
         
