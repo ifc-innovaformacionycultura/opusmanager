@@ -515,13 +515,19 @@ const DashboardPage = () => {
         eventsData = eventsResponse.data.eventos;
         console.log(`✅ ${eventsData.length} eventos cargados`);
       }
-      
+
+      // Ordenar por fecha_inicio ascendente, próximos 5
+      const upcoming = [...eventsData]
+        .filter(e => e && e.fecha_inicio)
+        .sort((a, b) => String(a.fecha_inicio).localeCompare(String(b.fecha_inicio)))
+        .slice(0, 5);
+
       setStats({
         events: eventsData.length,
         contacts: 0, // TODO: Implementar endpoint de contactos
         seasons: 0   // TODO: Implementar endpoint de temporadas
       });
-      setRecentEvents(eventsData.slice(0, 5));
+      setRecentEvents(upcoming);
     } catch (err) {
       console.error("Error loading dashboard data:", err);
       setStats({ events: 0, contacts: 0, seasons: 0 });
@@ -635,19 +641,40 @@ const DashboardPage = () => {
           {!recentEvents || recentEvents.length === 0 ? (
             <p className="p-4 text-slate-500 text-sm">No hay eventos programados</p>
           ) : (
-            (recentEvents || []).map(event => (
-              <div key={event.id} className="p-4 hover:bg-slate-50 transition-colors" data-testid={`event-${event.id}`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium text-slate-900">{event.name}</h3>
-                    <p className="text-sm text-slate-500">{event.date} a las {event.time}</p>
+            (recentEvents || []).map(event => {
+              const fecha = event.fecha_inicio
+                ? new Date(event.fecha_inicio).toLocaleDateString('es-ES', {
+                    day: 'numeric', month: 'long', year: 'numeric'
+                  })
+                : 'Sin fecha';
+              const estadoColors = {
+                abierto: 'bg-blue-100 text-blue-800',
+                cerrado: 'bg-slate-200 text-slate-700'
+              };
+              const estadoClass = estadoColors[event.estado] || 'bg-slate-100 text-slate-700';
+              return (
+                <div key={event.id} className="p-4 hover:bg-slate-50 transition-colors" data-testid={`event-${event.id}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-medium text-slate-900 truncate" data-testid={`event-nombre-${event.id}`}>
+                        {event.nombre || 'Sin nombre'}
+                      </h3>
+                      <p className="text-sm text-slate-500" data-testid={`event-fecha-${event.id}`}>
+                        {fecha}
+                        {event.lugar ? ` · ${event.lugar}` : ''}
+                        {event.temporada ? ` · ${event.temporada}` : ''}
+                      </p>
+                    </div>
+                    <span
+                      className={`px-3 py-1 text-xs font-medium rounded-full ${estadoClass}`}
+                      data-testid={`event-estado-${event.id}`}
+                    >
+                      {event.estado || 'abierto'}
+                    </span>
                   </div>
-                  <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-medium rounded-full">
-                    {event.rehearsals?.length || 0} ensayos
-                  </span>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

@@ -194,10 +194,77 @@ const EventForm = ({ event, onChange, onSave }) => {
     <div className="space-y-4 pt-4">
       {/* Datos Generales */}
       <SectionTitle color="blue">Datos Generales</SectionTitle>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <InputField label="Nombre del evento" value={event.name} onChange={(v) => onChange({ ...event, name: v })} />
-        <InputField label="Fecha principal" type="date" value={event.date} onChange={(v) => onChange({ ...event, date: v })} />
-        <InputField label="Hora principal" type="time" value={event.time} onChange={(v) => onChange({ ...event, time: v })} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <InputField
+          label="Nombre del evento"
+          value={event.nombre}
+          onChange={(v) => onChange({ ...event, nombre: v })}
+        />
+        <div className="mb-3">
+          <label className="block text-sm text-slate-600 mb-1">Tipo</label>
+          <select
+            value={event.tipo || 'concierto'}
+            onChange={(e) => onChange({ ...event, tipo: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
+            data-testid="event-tipo"
+          >
+            <option value="concierto">Concierto</option>
+            <option value="ensayo">Ensayo</option>
+            <option value="funcion">Función</option>
+            <option value="gira">Gira</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <InputField
+          label="Fecha de inicio"
+          type="date"
+          value={event.fecha_inicio ? String(event.fecha_inicio).slice(0, 10) : ''}
+          onChange={(v) => onChange({ ...event, fecha_inicio: v })}
+        />
+        <InputField
+          label="Fecha de fin"
+          type="date"
+          value={event.fecha_fin ? String(event.fecha_fin).slice(0, 10) : ''}
+          onChange={(v) => onChange({ ...event, fecha_fin: v })}
+        />
+        <InputField
+          label="Lugar"
+          value={event.lugar}
+          onChange={(v) => onChange({ ...event, lugar: v })}
+          placeholder="Auditorio, sala..."
+        />
+        <div className="mb-3">
+          <label className="block text-sm text-slate-600 mb-1">Estado</label>
+          <select
+            value={event.estado || 'abierto'}
+            onChange={(e) => onChange({ ...event, estado: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
+            data-testid="event-estado"
+          >
+            <option value="abierto">Abierto</option>
+            <option value="cerrado">Cerrado</option>
+          </select>
+        </div>
+        <div className="md:col-span-2 mb-3">
+          <label className="block text-sm text-slate-600 mb-1">Descripción</label>
+          <textarea
+            value={event.descripcion || ''}
+            onChange={(e) => onChange({ ...event, descripcion: e.target.value })}
+            rows={2}
+            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-slate-300 focus:border-transparent"
+            data-testid="event-descripcion"
+          />
+        </div>
+        <div className="md:col-span-2 mb-3">
+          <label className="block text-sm text-slate-600 mb-1">Notas internas</label>
+          <textarea
+            value={event.notas || ''}
+            onChange={(e) => onChange({ ...event, notas: e.target.value })}
+            rows={2}
+            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-slate-300 focus:border-transparent"
+            data-testid="event-notas"
+          />
+        </div>
       </div>
 
       {/* Ensayos */}
@@ -350,6 +417,12 @@ const ConfiguracionEventos = () => {
   const [openAccordions, setOpenAccordions] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState(null); // { type: 'success'|'error', text: string }
+
+  const showFeedback = (type, text) => {
+    setFeedback({ type, text });
+    setTimeout(() => setFeedback(null), 3500);
+  };
 
   useEffect(() => {
     loadEvents(selectedSeason);
@@ -362,10 +435,12 @@ const ConfiguracionEventos = () => {
       const url = temporada
         ? `/api/gestor/eventos?temporada=${encodeURIComponent(temporada)}`
         : '/api/gestor/eventos';
+      console.log('[Eventos] GET', url);
       const response = await api.get(url);
+      console.log('[Eventos] GET response:', response.data?.eventos?.length ?? 0, 'eventos');
       setEvents(response.data?.eventos || []);
     } catch (err) {
-      console.error("Error loading events:", err);
+      console.error("[Eventos] Error loading events:", err);
       setEvents([]);
     } finally {
       setLoading(false);
@@ -380,15 +455,39 @@ const ConfiguracionEventos = () => {
     setEvents(events.map(e => e.id === id ? { ...e, ...data } : e));
   };
 
+  // Campos que acepta el backend (EventoUpdate / EventoCreate en routes_gestor.py).
+  // Cualquier otro campo del form (rehearsals, program, instrumentation...) se
+  // descarta: se gestiona en tablas independientes (ensayos, etc).
+  const pickPayload = (event) => ({
+    nombre: event.nombre ?? null,
+    temporada: event.temporada ?? null,
+    descripcion: event.descripcion ?? null,
+    fecha_inicio: event.fecha_inicio || null,
+    fecha_fin: event.fecha_fin || null,
+    estado: event.estado ?? null,
+    tipo: event.tipo ?? null,
+    lugar: event.lugar ?? null,
+    notas: event.notas ?? null,
+  });
+
   const saveEvent = async (event) => {
     setSaving(true);
     try {
-      await api.put(`/api/gestor/eventos/${event.id}`, event);
-      alert('✅ Evento guardado correctamente');
-      loadEvents(selectedSeason);
+      const payload = pickPayload(event);
+      // nombre es obligatorio en EventoCreate; validamos también en update
+      if (!payload.nombre || !payload.nombre.trim()) {
+        showFeedback('error', 'El nombre del evento es obligatorio');
+        setSaving(false);
+        return;
+      }
+      console.log('[Eventos] PUT /api/gestor/eventos/' + event.id, payload);
+      const res = await api.put(`/api/gestor/eventos/${event.id}`, payload);
+      console.log('[Eventos] PUT response:', res.data);
+      showFeedback('success', 'Evento guardado correctamente');
+      await loadEvents(selectedSeason);
     } catch (err) {
-      console.error("Error saving event:", err);
-      alert(`❌ Error al guardar: ${err.response?.data?.detail || err.message}`);
+      console.error("[Eventos] Error saving event:", err, err.response?.data);
+      showFeedback('error', `Error al guardar: ${err.response?.data?.detail || err.message}`);
     } finally {
       setSaving(false);
     }
@@ -396,7 +495,7 @@ const ConfiguracionEventos = () => {
 
   const createNewEvent = async () => {
     if (!selectedSeason) {
-      alert('Por favor selecciona una temporada');
+      showFeedback('error', 'Selecciona una temporada antes de crear un evento');
       return;
     }
 
@@ -404,20 +503,20 @@ const ConfiguracionEventos = () => {
       const newEvent = {
         nombre: `Nuevo Evento ${events.length + 1}`,
         temporada: selectedSeason,
-        estado: 'abierto',
         descripcion: '',
         fecha_inicio: new Date().toISOString().split('T')[0],
-        tipo: 'concierto'
+        tipo: 'concierto',
       };
-
+      console.log('[Eventos] POST /api/gestor/eventos', newEvent);
       const response = await api.post('/api/gestor/eventos', newEvent);
+      console.log('[Eventos] POST response:', response.data);
       await loadEvents(selectedSeason);
       const createdId = response.data?.evento?.id;
       if (createdId) setOpenAccordions(prev => ({ ...prev, [createdId]: true }));
-      alert('✅ Evento creado correctamente');
+      showFeedback('success', 'Evento creado correctamente');
     } catch (err) {
-      console.error("Error creating event:", err);
-      alert(`❌ Error al crear evento: ${err.response?.data?.detail || err.message}`);
+      console.error("[Eventos] Error creating event:", err, err.response?.data);
+      showFeedback('error', `Error al crear evento: ${err.response?.data?.detail || err.message}`);
     }
   };
 
@@ -426,18 +525,17 @@ const ConfiguracionEventos = () => {
       const originalEvent = events.find(e => e.id === eventId);
       if (!originalEvent) return;
 
-      const duplicatedEvent = {
-        ...originalEvent,
-        nombre: `${originalEvent.nombre} (Copia)`,
-        id: undefined
+      const duplicatedPayload = {
+        ...pickPayload(originalEvent),
+        nombre: `${originalEvent.nombre || 'Evento'} (Copia)`,
       };
-
-      await api.post('/api/gestor/eventos', duplicatedEvent);
+      console.log('[Eventos] POST (duplicate)', duplicatedPayload);
+      await api.post('/api/gestor/eventos', duplicatedPayload);
       await loadEvents(selectedSeason);
-      alert('Evento duplicado correctamente');
+      showFeedback('success', 'Evento duplicado correctamente');
     } catch (err) {
-      console.error("Error duplicating event:", err);
-      alert(`Error al duplicar el evento: ${err.response?.data?.detail || err.message}`);
+      console.error("[Eventos] Error duplicating event:", err, err.response?.data);
+      showFeedback('error', `Error al duplicar: ${err.response?.data?.detail || err.message}`);
     }
   };
 
@@ -451,6 +549,18 @@ const ConfiguracionEventos = () => {
 
   return (
     <div className="p-6" data-testid="configuracion-eventos-page">
+      {feedback && (
+        <div
+          data-testid="eventos-feedback"
+          className={`fixed top-20 right-4 z-50 px-4 py-3 rounded-lg shadow-lg border max-w-sm text-sm ${
+            feedback.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-800'
+          }`}
+        >
+          <strong>{feedback.type === 'success' ? '✅ ' : '❌ '}</strong>{feedback.text}
+        </div>
+      )}
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="font-cabinet text-3xl font-bold text-slate-900">Configuración de Eventos</h1>
