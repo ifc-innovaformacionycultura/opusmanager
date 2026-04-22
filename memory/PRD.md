@@ -31,6 +31,14 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Abril 2026 — DELETE músico + testing end-to-end Bloque C
+- ✅ **DELETE /api/gestor/musicos/{id}**: bloquea 409 si el músico tiene asignaciones `confirmado` en eventos `abierto`/`en_curso`; 404 si no existe; 200 elimina perfil `usuarios` (CASCADE) + usuario de Supabase Auth + registro en `registro_actividad` con tipo='musico_eliminado'.
+- ✅ UI: botón rojo "Eliminar músico" en ficha `/admin/musicos/{id}` con modal de confirmación y manejo visible del error 409.
+- ✅ Testing `testing_agent_v3_fork` iteration_6: **10/10 backend + 5/5 frontend PASS** (100%). Suite nueva en `/app/backend/tests/test_bloque_c.py`.
+  - Verificado: plantilla xlsx con 11 cabeceras, preview, importación 2 creados + 1 duplicado detectado.
+  - Verificado: seguimiento pivot con los 5 estados (incluidos los dos nuevos `no_disponible`/`excluido` tras SQL aplicado).
+  - Verificado: DELETE con los 3 códigos (200/409/404) y registro_actividad actualizado.
+
 ### Abril 2026 — Bloque C: Base de datos + Seguimiento (pivot)
 - ✅ **C-1** `/configuracion/base-datos` renderiza el mismo `GestorMusicos` que `/admin/musicos` (buscador, filtros, importar, exportar, crear).
 - ✅ **C-2 Importación masiva desde Excel/CSV**:
