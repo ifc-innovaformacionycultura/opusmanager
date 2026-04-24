@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import IncidenciaModal from '../components/IncidenciaModal';
+import ImageLightbox from '../components/ImageLightbox';
 
 const TIPO_BADGE = {
   incidencia: { label: '🐞 Incidencia', cls: 'bg-red-100 text-red-800' },
@@ -35,6 +36,7 @@ const GestorIncidencias = () => {
   const [filtroHasta, setFiltroHasta] = useState('');
   const [respuestas, setRespuestas] = useState({});
   const [createOpen, setCreateOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -176,6 +178,8 @@ const GestorIncidencias = () => {
         onSubmitted={() => cargar()}
       />
 
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+
       {loading ? <div className="text-slate-500">Cargando...</div> : (
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
@@ -219,19 +223,19 @@ const GestorIncidencias = () => {
                     <td className="px-3 py-2 text-slate-900 max-w-md">{inc.descripcion}</td>
                     <td className="px-3 py-2">
                       {inc.screenshot_url ? (
-                        <a
-                          href={inc.screenshot_url}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => setLightboxSrc(inc.screenshot_url)}
                           data-testid={`shot-${inc.id}`}
-                          className="block"
+                          className="block focus:outline-none focus:ring-2 focus:ring-emerald-400 rounded"
+                          title="Ver captura en grande"
                         >
                           <img
                             src={inc.screenshot_url}
                             alt="Captura"
-                            className="h-10 w-16 object-cover rounded border border-slate-200 hover:opacity-80 transition-opacity"
+                            className="h-10 w-16 object-cover rounded border border-slate-200 hover:opacity-80 transition-opacity cursor-zoom-in"
                           />
-                        </a>
+                        </button>
                       ) : (
                         <span className="text-slate-300 text-xs">—</span>
                       )}

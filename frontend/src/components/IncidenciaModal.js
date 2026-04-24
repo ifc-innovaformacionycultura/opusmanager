@@ -12,6 +12,7 @@
 // y la URL pública resultante se incluye en `screenshot_url` al crear la incidencia.
 
 import React, { useEffect, useRef, useState } from 'react';
+import * as markerjs2 from 'markerjs2';
 
 const MIN_DESC = 20;
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -41,14 +42,17 @@ export default function IncidenciaModal({ open, onClose, onSubmitted, pagina = '
   const [prioridad, setPrioridad] = useState('media');
   const [descripcion, setDescripcion] = useState('');
   const [paginaInput, setPaginaInput] = useState(pagina);
-  const [shotPreview, setShotPreview] = useState(null);   // URL local del preview (object URL)
+  const [shotPreview, setShotPreview] = useState(null);   // URL local del preview (object URL o dataURL)
   const [shotUrl, setShotUrl] = useState(null);           // URL pública subida
   const [shotFile, setShotFile] = useState(null);
   const [shotUploading, setShotUploading] = useState(false);
+  const [annotating, setAnnotating] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState(null);
   const fileInputRef = useRef(null);
+  const previewImgRef = useRef(null);
+  const markerAreaRef = useRef(null);
 
   // Reset al abrir/cerrar
   useEffect(() => {
@@ -122,6 +126,54 @@ export default function IncidenciaModal({ open, onClose, onSubmitted, pagina = '
     }
   };
 
+  // Sube un Blob (resultado de la anotación) reusando la API uploadScreenshot.
+  const uploadAnnotatedBlob = async (blob) => {
+    const file = new File([blob], 'annotated.png', { type: 'image/png' });
+    setShotFile(file);
+    setShotUrl(null);
+    setMsg(null);
+    try {
+      setShotUploading(true);
+      const { url } = await uploadScreenshot(file);
+      setShotUrl(url);
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.message || 'No se pudo subir la imagen anotada';
+      setMsg({ type: 'error', text: detail });
+    } finally {
+      setShotUploading(false);
+    }
+  };
+
+  // Abre el editor markerjs2 sobre el preview actual.
+  const startAnnotation = () => {
+    const img = previewImgRef.current;
+    if (!img || annotating) return;
+    setAnnotating(true);
+    const ma = new markerjs2.MarkerArea(img);
+    ma.targetRoot = document.body;
+    ma.settings.displayMode = 'popup';
+    ma.uiStyleSettings.toolbarBackgroundColor = '#0f172a';
+    ma.uiStyleSettings.toolboxBackgroundColor = '#1e293b';
+    ma.uiStyleSettings.toolbarColor = '#f1f5f9';
+    ma.renderImageType = 'image/png';
+    ma.renderImageQuality = 0.92;
+    ma.addRenderEventListener(async (dataUrl) => {
+      // Actualiza preview y sube la versión anotada
+      setShotPreview(dataUrl);
+      try {
+        const blob = await (await fetch(dataUrl)).blob();
+        await uploadAnnotatedBlob(blob);
+      } catch (err) {
+        setMsg({ type: 'error', text: 'No se pudo procesar la imagen anotada' });
+      } finally {
+        setAnnotating(false);
+      }
+    });
+    ma.addCloseEventListener(() => setAnnotating(false));
+    markerAreaRef.current = ma;
+    ma.show();
+  };
+
   const onFileInput = (e) => {
     const f = e.target.files?.[0];
     if (f) handleFile(f);
@@ -145,7 +197,7 @@ export default function IncidenciaModal({ open, onClose, onSubmitted, pagina = '
   };
 
   const charsLeft = Math.max(0, MIN_DESC - descripcion.trim().length);
-  const canSubmit = !sending && !shotUploading && charsLeft === 0;
+  const canSubmit = !sending && !shotUploading && !annotating && charsLeft === 0;
 
   const enviar = async () => {
     if (!canSubmit) return;
@@ -268,34 +320,53 @@ export default function IncidenciaModal({ open, onClose, onSubmitted, pagina = '
               Captura de pantalla <span className="text-slate-400">(opcional · arrastra, pega con Ctrl+V o pulsa para seleccionar · máx 5 MB)</span>
             </label>
             {shotPreview ? (
-              <div className="relative inline-block" data-testid="inc-shot-preview-wrap">
-                <img
-                  src={shotPreview}
-                  alt="Captura adjunta"
-                  data-testid="inc-shot-preview"
-                  className="max-h-48 rounded-md border border-slate-300"
-                />
-                {shotUploading && (
-                  <div className="absolute inset-0 bg-white/70 flex items-center justify-center text-xs font-medium text-slate-700 rounded-md">
-                    Subiendo…
-                  </div>
-                )}
-                {!shotUploading && shotUrl && (
-                  <span
-                    className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-semibold"
-                    data-testid="inc-shot-uploaded"
+              <div className="space-y-2" data-testid="inc-shot-preview-wrap">
+                <div className="relative inline-block">
+                  <img
+                    ref={previewImgRef}
+                    src={shotPreview}
+                    alt="Captura adjunta"
+                    crossOrigin="anonymous"
+                    data-testid="inc-shot-preview"
+                    className="max-h-48 rounded-md border border-slate-300"
+                  />
+                  {(shotUploading || annotating) && (
+                    <div className="absolute inset-0 bg-white/70 flex items-center justify-center text-xs font-medium text-slate-700 rounded-md">
+                      {annotating ? 'Anotando…' : 'Subiendo…'}
+                    </div>
+                  )}
+                  {!shotUploading && !annotating && shotUrl && (
+                    <span
+                      className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-semibold"
+                      data-testid="inc-shot-uploaded"
+                    >
+                      ✓ Subida
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={removeShot}
+                    data-testid="inc-shot-remove"
+                    disabled={shotUploading || annotating}
+                    className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white text-xs hover:bg-red-600 disabled:opacity-50"
+                    title="Quitar imagen"
+                  >×</button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={startAnnotation}
+                    disabled={shotUploading || annotating}
+                    data-testid="inc-shot-annotate"
+                    className="px-3 py-1 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center gap-1"
+                    title="Resaltar áreas con flechas, círculos, texto…"
                   >
-                    ✓ Subida
+                    ✏️ Anotar captura
+                  </button>
+                  <span className="text-[11px] text-slate-500">
+                    Añade flechas, marcas y notas. La versión anotada se sube automáticamente.
                   </span>
-                )}
-                <button
-                  type="button"
-                  onClick={removeShot}
-                  data-testid="inc-shot-remove"
-                  disabled={shotUploading}
-                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white text-xs hover:bg-red-600 disabled:opacity-50"
-                  title="Quitar imagen"
-                >×</button>
+                </div>
               </div>
             ) : (
               <div

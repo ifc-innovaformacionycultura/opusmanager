@@ -524,3 +524,22 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - Validación curl: subida 200 con URL pública accesible HTTP 200; rechazo PDF 400; resolución `usuario_id` correcta para admin.
 - Frontend verificado por screenshots end-to-end (8 capturas).
 
+
+## Iteración 16 (Feb 2026) — Anotación de capturas + Lightbox
+
+### ✅ Anotación de capturas con markerjs2
+- Dependencia añadida: `markerjs2@2.32.7` (`yarn add markerjs2`).
+- Botón "✏️ Anotar captura" debajo del preview en `IncidenciaModal`. Al pulsar, abre el editor en modo `popup` con toolbar (rectángulo, freehand, flecha, texto, óvalo, marcador, callout, undo/borrar).
+- Tema oscuro coherente con la app (`toolbarBackgroundColor=#0f172a`).
+- `addRenderEventListener` recibe el dataURL anotado, lo establece como nuevo preview y re-sube el blob automáticamente al backend (mismo endpoint `/upload-screenshot`). El `screenshot_url` final apunta a la versión anotada.
+- Estado `annotating` bloquea el botón "Enviar reporte" hasta que el editor cierra.
+
+### ✅ Lightbox para ver capturas en grande
+- Nuevo componente `ImageLightbox.js` con backdrop al 85 %, cierre por Escape/click fuera/botón ✕, link "Abrir en pestaña nueva ↗".
+- Integrado en `GestorIncidencias`: la columna **Captura** ya no abre directamente la URL — al pulsar la miniatura abre el lightbox (`data-testid="image-lightbox"`).
+- Bloquea el scroll del body mientras está abierto.
+
+### Tests
+- pytest 22/22 PASS sin regresiones.
+- Screenshots end-to-end: lightbox sobre thumbnail, modal con botón Anotar, MarkerArea con toolbar completa, captura subida tras anotación.
+
