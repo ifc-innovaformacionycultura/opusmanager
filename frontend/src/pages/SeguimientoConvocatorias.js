@@ -71,15 +71,41 @@ const SeguimientoConvocatorias = () => {
 
   // Selección y acciones masivas
   const [selected, setSelected] = useState(new Set());
-  const [bulkEvento, setBulkEvento] = useState('');
+  const [bulkEventos, setBulkEventos] = useState([]); // MULTI-SELECT
   const [bulkAccion, setBulkAccion] = useState('');
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Filtros
+  // Filtros múltiples acumulativos
   const [search, setSearch] = useState('');
-  const [filterInstr, setFilterInstr] = useState('');
-  const [filterEvento, setFilterEvento] = useState(''); // si se define, sólo esa columna
+  const [filterInstrumentos, setFilterInstrumentos] = useState([]); // multi-select
+  const [filterEspecialidad, setFilterEspecialidad] = useState('');
+  const [filterNivel, setFilterNivel] = useState('');
+  const [filterLocalidad, setFilterLocalidad] = useState('');
+  const [filterEvento, setFilterEvento] = useState(''); // columna (no filtra músicos)
+
+  // Columnas de datos personales visibles (persistido en localStorage)
+  const COLUMN_DEFS = [
+    { key: 'apellidos',     label: 'Apellidos',     defaultVisible: true },
+    { key: 'nombre',        label: 'Nombre',        defaultVisible: true },
+    { key: 'instrumento',   label: 'Instrumento',   defaultVisible: true },
+    { key: 'especialidad',  label: 'Especialidad',  defaultVisible: false },
+    { key: 'nivel_estudios',label: 'Nivel est.',    defaultVisible: false },
+    { key: 'baremo',        label: 'Baremo',        defaultVisible: false },
+    { key: 'localidad',     label: 'Localidad',     defaultVisible: false },
+  ];
+  const [visibleCols, setVisibleCols] = useState(() => {
+    try {
+      const raw = localStorage.getItem('seguimiento_visible_cols');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return Object.fromEntries(COLUMN_DEFS.map(c => [c.key, c.defaultVisible]));
+  });
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  useEffect(() => {
+    try { localStorage.setItem('seguimiento_visible_cols', JSON.stringify(visibleCols)); } catch {}
+  }, [visibleCols]);
+  const toggleColumn = (key) => setVisibleCols(prev => ({ ...prev, [key]: !prev[key] }));
 
   const showFeedback = (type, text) => {
     setFeedback({ type, text });
@@ -98,35 +124,66 @@ const SeguimientoConvocatorias = () => {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  // Lista de instrumentos únicos para el filtro
+  // Listas únicas para cada filtro
   const instrumentosList = useMemo(() => {
     const s = new Set();
     data.musicos.forEach(m => m.instrumento && s.add(m.instrumento));
     return Array.from(s).sort();
   }, [data.musicos]);
+  const especialidadesList = useMemo(() => {
+    const s = new Set();
+    data.musicos.forEach(m => m.especialidad && s.add(m.especialidad));
+    return Array.from(s).sort();
+  }, [data.musicos]);
+  const nivelesList = useMemo(() => {
+    const s = new Set();
+    data.musicos.forEach(m => m.nivel_estudios && s.add(m.nivel_estudios));
+    return Array.from(s).sort();
+  }, [data.musicos]);
+  const localidadesList = useMemo(() => {
+    const s = new Set();
+    data.musicos.forEach(m => m.localidad && s.add(m.localidad));
+    return Array.from(s).sort();
+  }, [data.musicos]);
 
-  // Músicos ordenados por (sección → apellidos) y filtrados
+  const filtrosActivos = (
+    search.trim().length > 0 ||
+    filterInstrumentos.length > 0 ||
+    filterEspecialidad ||
+    filterNivel ||
+    filterLocalidad ||
+    filterEvento
+  );
+
+  // Músicos ordenados por (sección → apellidos) y filtrados con TODOS los filtros acumulados
   const musicosVisibles = useMemo(() => {
     const q = search.trim().toLowerCase();
     let out = data.musicos.slice();
     if (q) {
       out = out.filter(m => (
         (m.apellidos || '').toLowerCase().includes(q) ||
-        (m.nombre || '').toLowerCase().includes(q) ||
-        (m.instrumento || '').toLowerCase().includes(q) ||
-        (m.especialidad || '').toLowerCase().includes(q) ||
-        (m.localidad || '').toLowerCase().includes(q) ||
-        (m.email || '').toLowerCase().includes(q)
+        (m.nombre || '').toLowerCase().includes(q)
       ));
     }
-    if (filterInstr) out = out.filter(m => m.instrumento === filterInstr);
+    if (filterInstrumentos.length > 0) {
+      const set = new Set(filterInstrumentos);
+      out = out.filter(m => set.has(m.instrumento));
+    }
+    if (filterEspecialidad) out = out.filter(m => m.especialidad === filterEspecialidad);
+    if (filterNivel)        out = out.filter(m => m.nivel_estudios === filterNivel);
+    if (filterLocalidad)    out = out.filter(m => m.localidad === filterLocalidad);
     out.sort((a, b) => {
       const ra = seccionRank(a.instrumento), rb = seccionRank(b.instrumento);
       if (ra !== rb) return ra - rb;
       return (a.apellidos || '').localeCompare(b.apellidos || '', 'es');
     });
     return out;
-  }, [data.musicos, search, filterInstr]);
+  }, [data.musicos, search, filterInstrumentos, filterEspecialidad, filterNivel, filterLocalidad]);
+
+  const limpiarFiltros = () => {
+    setSearch(''); setFilterInstrumentos([]); setFilterEspecialidad('');
+    setFilterNivel(''); setFilterLocalidad(''); setFilterEvento('');
+  };
 
   const eventosVisibles = useMemo(() => {
     if (!filterEvento) return data.eventos;
@@ -194,29 +251,40 @@ const SeguimientoConvocatorias = () => {
     else setSelected(new Set(musicosVisibles.map(m => m.id)));
   };
 
-  // === Aplicar acción masiva ===
+  // === Aplicar acción masiva (ahora sobre MULTI-EVENTOS) ===
   const aplicarBulk = async () => {
-    if (!bulkEvento || !bulkAccion || selected.size === 0) {
-      showFeedback('error', 'Selecciona músicos, evento y acción');
+    if (bulkEventos.length === 0 || !bulkAccion || selected.size === 0) {
+      showFeedback('error', 'Selecciona músicos, al menos un evento y una acción');
       return;
     }
     try {
       setBusy(true);
-      if (bulkAccion === 'publicar_on' || bulkAccion === 'publicar_off') {
-        const publicar = bulkAccion === 'publicar_on';
-        const r = await api.post('/api/gestor/seguimiento/publicar', {
-          usuario_ids: Array.from(selected), evento_id: bulkEvento, publicar,
-        });
-        showFeedback('success', `Publicados:${r.data.publicados} Creados:${r.data.creados} Despublicados:${r.data.despublicados}`);
-      } else {
-        const r = await api.post('/api/gestor/seguimiento/bulk-accion', {
-          usuario_ids: Array.from(selected), evento_id: bulkEvento, accion: bulkAccion,
-        });
-        showFeedback('success', `Actualizados:${r.data.actualizados} Creados:${r.data.creados}`);
+      let totalAct = 0, totalCre = 0, totalPub = 0, totalDespub = 0;
+      for (const evId of bulkEventos) {
+        if (bulkAccion === 'publicar_on' || bulkAccion === 'publicar_off') {
+          const publicar = bulkAccion === 'publicar_on';
+          const r = await api.post('/api/gestor/seguimiento/publicar', {
+            usuario_ids: Array.from(selected), evento_id: evId, publicar,
+          });
+          totalPub += (r.data.publicados || 0);
+          totalCre += (r.data.creados || 0);
+          totalDespub += (r.data.despublicados || 0);
+        } else {
+          const r = await api.post('/api/gestor/seguimiento/bulk-accion', {
+            usuario_ids: Array.from(selected), evento_id: evId, accion: bulkAccion,
+          });
+          totalAct += (r.data.actualizados || 0);
+          totalCre += (r.data.creados || 0);
+        }
       }
+      const msg = (bulkAccion === 'publicar_on' || bulkAccion === 'publicar_off')
+        ? `Publicados:${totalPub} · Creados:${totalCre} · Despublicados:${totalDespub} (en ${bulkEventos.length} eventos)`
+        : `Actualizados:${totalAct} · Creados:${totalCre} (en ${bulkEventos.length} eventos)`;
+      showFeedback('success', msg);
       await cargar();
       setSelected(new Set());
       setBulkAccion('');
+      setBulkEventos([]);
     } catch (err) {
       showFeedback('error', err.response?.data?.detail || err.message);
     } finally { setBusy(false); }
@@ -237,42 +305,144 @@ const SeguimientoConvocatorias = () => {
         </div>
       </header>
 
-      {/* Filtros */}
-      <div className="bg-white border border-slate-200 rounded-lg p-3 mb-3 flex items-center gap-2 flex-wrap">
-        <input
-          type="text"
-          placeholder="Buscar apellidos, nombre, instrumento, localidad..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          data-testid="seguimiento-search"
-          className="px-3 py-2 border border-slate-300 rounded-md text-sm w-80"
-        />
-        <select
-          value={filterInstr}
-          onChange={(e) => setFilterInstr(e.target.value)}
-          data-testid="filter-instrumento"
-          className="px-2 py-2 border border-slate-300 rounded-md text-sm bg-white"
-        >
-          <option value="">Todos los instrumentos</option>
-          {instrumentosList.map(i => <option key={i} value={i}>{i}</option>)}
-        </select>
-        <select
-          value={filterEvento}
-          onChange={(e) => setFilterEvento(e.target.value)}
-          data-testid="filter-evento"
-          className="px-2 py-2 border border-slate-300 rounded-md text-sm bg-white"
-        >
-          <option value="">Todos los eventos</option>
-          {data.eventos.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-        </select>
-        {(search || filterInstr || filterEvento) && (
-          <button
-            onClick={() => { setSearch(''); setFilterInstr(''); setFilterEvento(''); }}
-            data-testid="btn-clear-filters"
-            className="text-xs text-slate-600 hover:text-slate-900 underline"
+      {/* Filtros acumulativos */}
+      <div className="bg-white border border-slate-200 rounded-lg p-3 mb-3" data-testid="filtros-bar">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="text"
+            placeholder="Buscar por nombre o apellidos..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            data-testid="seguimiento-search"
+            className="px-3 py-2 border border-slate-300 rounded-md text-sm w-64"
+          />
+
+          {/* Multi-select instrumentos via chips */}
+          <div className="relative">
+            <select
+              value=""
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                setFilterInstrumentos(prev => prev.includes(v) ? prev : [...prev, v]);
+              }}
+              data-testid="filter-instrumento"
+              className="px-2 py-2 border border-slate-300 rounded-md text-sm bg-white min-w-[180px]"
+            >
+              <option value="">+ Instrumento</option>
+              {instrumentosList.filter(i => !filterInstrumentos.includes(i)).map(i => (
+                <option key={i} value={i}>{i}</option>
+              ))}
+            </select>
+          </div>
+
+          <select
+            value={filterEspecialidad}
+            onChange={(e) => setFilterEspecialidad(e.target.value)}
+            data-testid="filter-especialidad"
+            className="px-2 py-2 border border-slate-300 rounded-md text-sm bg-white"
           >
-            Limpiar filtros
-          </button>
+            <option value="">Todas las especialidades</option>
+            {especialidadesList.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
+          <select
+            value={filterNivel}
+            onChange={(e) => setFilterNivel(e.target.value)}
+            data-testid="filter-nivel"
+            className="px-2 py-2 border border-slate-300 rounded-md text-sm bg-white"
+          >
+            <option value="">Todos los niveles</option>
+            {nivelesList.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
+          <select
+            value={filterLocalidad}
+            onChange={(e) => setFilterLocalidad(e.target.value)}
+            data-testid="filter-localidad"
+            className="px-2 py-2 border border-slate-300 rounded-md text-sm bg-white"
+          >
+            <option value="">Todas las localidades</option>
+            {localidadesList.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
+          <select
+            value={filterEvento}
+            onChange={(e) => setFilterEvento(e.target.value)}
+            data-testid="filter-evento"
+            className="px-2 py-2 border border-slate-300 rounded-md text-sm bg-white"
+          >
+            <option value="">Todos los eventos</option>
+            {data.eventos.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+          </select>
+
+          {/* Botón Columnas (3B) */}
+          <div className="relative ml-auto">
+            <button
+              onClick={() => setShowColumnsMenu(v => !v)}
+              data-testid="btn-columnas"
+              className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white hover:bg-slate-50 flex items-center gap-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>
+              Columnas
+            </button>
+            {showColumnsMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-300 rounded-md shadow-lg p-2 z-30 min-w-[180px]" data-testid="columnas-menu">
+                {COLUMN_DEFS.map(c => (
+                  <label key={c.key} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!visibleCols[c.key]}
+                      onChange={() => toggleColumn(c.key)}
+                      data-testid={`col-check-${c.key}`}
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Chips de filtros activos */}
+        {filtrosActivos && (
+          <div className="mt-2 flex items-center gap-2 flex-wrap" data-testid="filtros-activos">
+            {search.trim() && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full">
+                "{search.trim()}" <button onClick={() => setSearch('')} className="ml-1 hover:text-blue-900">×</button>
+              </span>
+            )}
+            {filterInstrumentos.map(i => (
+              <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-100 text-violet-800 text-xs rounded-full" data-testid={`chip-instr-${i}`}>
+                🎻 {i}
+                <button onClick={() => setFilterInstrumentos(prev => prev.filter(x => x !== i))} className="ml-1 hover:text-violet-900">×</button>
+              </span>
+            ))}
+            {filterEspecialidad && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 text-xs rounded-full">
+                {filterEspecialidad} <button onClick={() => setFilterEspecialidad('')} className="ml-1 hover:text-emerald-900">×</button>
+              </span>
+            )}
+            {filterNivel && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 text-xs rounded-full">
+                {filterNivel} <button onClick={() => setFilterNivel('')} className="ml-1 hover:text-amber-900">×</button>
+              </span>
+            )}
+            {filterLocalidad && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 text-teal-800 text-xs rounded-full">
+                📍 {filterLocalidad} <button onClick={() => setFilterLocalidad('')} className="ml-1 hover:text-teal-900">×</button>
+              </span>
+            )}
+            {filterEvento && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-800 text-xs rounded-full">
+                Evento único <button onClick={() => setFilterEvento('')} className="ml-1 hover:text-slate-900">×</button>
+              </span>
+            )}
+            <button
+              onClick={limpiarFiltros}
+              data-testid="btn-clear-filters"
+              className="text-xs text-slate-600 hover:text-slate-900 underline"
+            >
+              Limpiar filtros
+            </button>
+          </div>
         )}
       </div>
 
@@ -291,47 +461,73 @@ const SeguimientoConvocatorias = () => {
 
       {/* Barra de acciones masivas — sólo si hay selección */}
       {selected.size > 0 && (
-        <div className="bg-slate-900 text-white rounded-lg p-3 mb-3 flex items-center gap-2 flex-wrap" data-testid="bulk-bar">
-          <span className="text-sm"><strong>{selected.size}</strong> músicos seleccionados</span>
-          <span className="text-slate-500">·</span>
-          <select
-            value={bulkEvento}
-            onChange={(e) => setBulkEvento(e.target.value)}
-            data-testid="bulk-evento"
-            className="px-2 py-1.5 rounded-md text-sm text-slate-900"
-          >
-            <option value="">Selecciona evento...</option>
-            {data.eventos.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-          </select>
-          <select
-            value={bulkAccion}
-            onChange={(e) => setBulkAccion(e.target.value)}
-            data-testid="bulk-accion"
-            className="px-2 py-1.5 rounded-md text-sm text-slate-900"
-          >
-            <option value="">Selecciona acción...</option>
-            <option value="publicar_on">Publicar</option>
-            <option value="publicar_off">Despublicar</option>
-            <option value="pendiente">En espera</option>
-            <option value="confirmado">Confirmar</option>
-            <option value="no_disponible">No disponible</option>
-            <option value="excluido">Excluir</option>
-          </select>
-          <button
-            onClick={aplicarBulk}
-            disabled={busy || !bulkEvento || !bulkAccion}
-            data-testid="btn-aplicar-bulk"
-            className="px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-100 rounded-md text-sm font-medium disabled:opacity-60"
-          >
-            {busy ? 'Aplicando...' : `Aplicar a seleccionados (${selected.size})`}
-          </button>
-          <button
-            onClick={() => setSelected(new Set())}
-            className="ml-auto text-xs underline text-slate-300 hover:text-white"
-            data-testid="btn-clear-selection"
-          >
-            Limpiar selección
-          </button>
+        <div className="bg-slate-900 text-white rounded-lg p-3 mb-3" data-testid="bulk-bar">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-base font-semibold">⚡ ACCIONES MASIVAS</span>
+            <span className="text-slate-300 text-xs">·</span>
+            <span className="text-sm"><strong>{selected.size}</strong> músicos seleccionados</span>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="ml-auto text-xs underline text-slate-300 hover:text-white"
+              data-testid="btn-clear-selection"
+            >
+              Limpiar selección
+            </button>
+          </div>
+          <p className="text-xs text-slate-300 mb-3">
+            Selecciona músicos con el checkbox y elige el evento y la acción a aplicar a todos los seleccionados.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Multi-select eventos con chips */}
+            <div className="flex items-center gap-1 flex-wrap">
+              <select
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  setBulkEventos(prev => prev.includes(v) ? prev : [...prev, v]);
+                }}
+                data-testid="bulk-evento"
+                className="px-2 py-1.5 rounded-md text-sm text-slate-900 min-w-[180px]"
+              >
+                <option value="">+ Añadir evento...</option>
+                {data.eventos.filter(e => !bulkEventos.includes(e.id)).map(e => (
+                  <option key={e.id} value={e.id}>{e.nombre}</option>
+                ))}
+              </select>
+              {bulkEventos.map(id => {
+                const ev = data.eventos.find(e => e.id === id);
+                return (
+                  <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 text-white text-xs rounded-full" data-testid={`bulk-evento-chip-${id}`}>
+                    {ev?.nombre || id.slice(0, 8)}
+                    <button onClick={() => setBulkEventos(prev => prev.filter(x => x !== id))} className="ml-1 hover:text-blue-100">×</button>
+                  </span>
+                );
+              })}
+            </div>
+            <select
+              value={bulkAccion}
+              onChange={(e) => setBulkAccion(e.target.value)}
+              data-testid="bulk-accion"
+              className="px-2 py-1.5 rounded-md text-sm text-slate-900"
+            >
+              <option value="">Selecciona acción...</option>
+              <option value="publicar_on">Publicar</option>
+              <option value="publicar_off">Despublicar</option>
+              <option value="pendiente">En espera</option>
+              <option value="confirmado">Confirmar</option>
+              <option value="no_disponible">No disponible</option>
+              <option value="excluido">Excluir</option>
+            </select>
+            <button
+              onClick={aplicarBulk}
+              disabled={busy || bulkEventos.length === 0 || !bulkAccion}
+              data-testid="btn-aplicar-bulk"
+              className="px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-100 rounded-md text-sm font-medium disabled:opacity-60"
+            >
+              {busy ? 'Aplicando...' : `Aplicar a seleccionados (${selected.size})`}
+            </button>
+          </div>
         </div>
       )}
 
@@ -358,13 +554,27 @@ const SeguimientoConvocatorias = () => {
                       data-testid="select-all-musicos"
                     />
                   </th>
-                  <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 border-r bg-slate-50 min-w-[140px]">Apellidos</th>
-                  <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[120px]">Nombre</th>
-                  <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[110px]">Instrumento</th>
-                  <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[120px]">Especialidad</th>
-                  <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[120px]">Nivel est.</th>
-                  <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[80px]">Baremo</th>
-                  <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b-2 border-r-2 border-slate-400 bg-slate-50 min-w-[110px]">Localidad</th>
+                  {visibleCols.apellidos && (
+                    <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 border-r bg-slate-50 min-w-[140px]" data-testid="col-head-apellidos">Apellidos</th>
+                  )}
+                  {visibleCols.nombre && (
+                    <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[120px]" data-testid="col-head-nombre">Nombre</th>
+                  )}
+                  {visibleCols.instrumento && (
+                    <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[110px]" data-testid="col-head-instrumento">Instrumento</th>
+                  )}
+                  {visibleCols.especialidad && (
+                    <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[120px]" data-testid="col-head-especialidad">Especialidad</th>
+                  )}
+                  {visibleCols.nivel_estudios && (
+                    <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[120px]" data-testid="col-head-nivel">Nivel est.</th>
+                  )}
+                  {visibleCols.baremo && (
+                    <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b border-slate-200 bg-slate-50 min-w-[80px]" data-testid="col-head-baremo">Baremo</th>
+                  )}
+                  {visibleCols.localidad && (
+                    <th rowSpan={2} className="px-2 py-2 text-left font-semibold text-slate-700 border-b-2 border-r-2 border-slate-400 bg-slate-50 min-w-[110px]" data-testid="col-head-localidad">Localidad</th>
+                  )}
                   {eventosVisibles.map(ev => {
                     const badge = ESTADO_EVENTO_BADGE[ev.estado] || { label: ev.estado, className: 'bg-slate-200 text-slate-700' };
                     const subcols = ev.ensayos.length + 3; // ensayos + %Disp + Publicado + Acción
@@ -439,13 +649,27 @@ const SeguimientoConvocatorias = () => {
                         data-testid={`check-musico-${m.id}`}
                       />
                     </td>
-                    <td className="px-2 py-1.5 font-medium text-slate-900 border-r border-slate-200 whitespace-nowrap">{m.apellidos || '—'}</td>
-                    <td className="px-2 py-1.5 text-slate-900 whitespace-nowrap">{m.nombre || '—'}</td>
-                    <td className="px-2 py-1.5 text-slate-700">{m.instrumento || '—'}</td>
-                    <td className="px-2 py-1.5 text-slate-700">{m.especialidad || '—'}</td>
-                    <td className="px-2 py-1.5 text-slate-700">{m.nivel_estudios || '—'}</td>
-                    <td className="px-2 py-1.5 text-slate-700">{m.baremo != null ? m.baremo : '—'}</td>
-                    <td className="px-2 py-1.5 text-slate-700 border-r-2 border-slate-300">{m.localidad || '—'}</td>
+                    {visibleCols.apellidos && (
+                      <td className="px-2 py-1.5 font-medium text-slate-900 border-r border-slate-200 whitespace-nowrap">{m.apellidos || '—'}</td>
+                    )}
+                    {visibleCols.nombre && (
+                      <td className="px-2 py-1.5 text-slate-900 whitespace-nowrap">{m.nombre || '—'}</td>
+                    )}
+                    {visibleCols.instrumento && (
+                      <td className="px-2 py-1.5 text-slate-700">{m.instrumento || '—'}</td>
+                    )}
+                    {visibleCols.especialidad && (
+                      <td className="px-2 py-1.5 text-slate-700">{m.especialidad || '—'}</td>
+                    )}
+                    {visibleCols.nivel_estudios && (
+                      <td className="px-2 py-1.5 text-slate-700">{m.nivel_estudios || '—'}</td>
+                    )}
+                    {visibleCols.baremo && (
+                      <td className="px-2 py-1.5 text-slate-700">{m.baremo != null ? m.baremo : '—'}</td>
+                    )}
+                    {visibleCols.localidad && (
+                      <td className="px-2 py-1.5 text-slate-700 border-r-2 border-slate-300">{m.localidad || '—'}</td>
+                    )}
                     {eventosVisibles.map(ev => {
                       const asig = m.asignaciones[ev.id] || { publicado_musico: false, estado: null, disponibilidad: {}, porcentaje_disponibilidad: 0 };
                       const isPub = Boolean(asig.publicado_musico);
@@ -509,6 +733,12 @@ const SeguimientoConvocatorias = () => {
           </div>
         </div>
       )}
+
+      {/* Mensaje informativo permanente sobre guardado automático */}
+      <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-900 flex items-start gap-2" data-testid="autosave-info">
+        <span>💾</span>
+        <span>Los cambios individuales (toggle <strong>Publicar</strong> y selector <strong>Acción</strong>) se guardan automáticamente al instante.</span>
+      </div>
     </div>
   );
 };
