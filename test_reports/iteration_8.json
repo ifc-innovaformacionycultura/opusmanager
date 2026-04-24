@@ -1,0 +1,82 @@
+{
+  "summary": "Validación integral OPUS MANAGER (Bloques 1-7 + regresión). Backend 12/12 pytest PASS. Frontend verificado en 7 rutas: /configuracion/presupuestos, /plantillas-definitivas, /asistencia/pagos, /asistencia/analisis, /admin/tareas, /admin/incidencias, modal Feedback. Todo operativo salvo un error de datos en POST /api/gestor/incidencias (FK a usuarios) distinto del 'schema cache' documentado.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/gestor/incidencias",
+        "issue": "Error real NO es 'table not in schema cache' (como esperado), sino FK violation: 'incidencias_usuario_id_fkey' - Key (usuario_id)=(88c9beb9-d4d7-4801-a291-c4f4632a3bed) is not present in table usuarios. El admin autenticado vía Supabase Auth no tiene fila espejo en public.usuarios. Ejecutar POST /api/auth/sync-profile o INSERT manual del admin en usuarios resuelve el bloqueo. La tabla incidencias SÍ existe — el bloqueo previo de schema cache ya está superado."
+      },
+      {
+        "endpoint": "GET /api/gestor/plantillas-definitivas",
+        "issue": "cache_fuente devuelve el valor 'sin_datos' (además de exacto/por_instrumento/base_exacto/base_por_instrumento/asignacion). No está documentado en el contrato del problema; convendría añadirlo al enum documentado o renombrarlo a 'sin_cachet' para consistencia."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Global (varias páginas gestor)",
+        "issues": [
+          "React hydration warning en consola: '<span> cannot be a child of <option>'. Localizado en algún Select (probablemente Tareas o Feedback). No rompe UX pero ensucia la consola y puede causar problemas SSR futuros."
+        ]
+      },
+      {
+        "screen": "Plantillas definitivas",
+        "issues": [
+          "La columna aparece rotulada como 'Caché Prev.' (abreviada), mientras el PRD y el spec la nombran 'Caché Previsto'. No es bug, pero puede confundir en QA — alinear etiqueta o documentación."
+        ]
+      }
+    ]
+  },
+  "passed_tests": [
+    "[Backend] GET /api/gestor/cachets-base (200, estructura {cachets:[]})",
+    "[Backend] PUT /api/gestor/cachets-base: UPSERT Violín/Superior finalizado +7€, re-GET persiste, restauración OK",
+    "[Backend] GET /api/gestor/plantillas-definitivas: todos los músicos traen cache_previsto (numérico) y cache_fuente (valor del enum)",
+    "[Backend] GET /api/gestor/gestion-economica 200 OK (Bloques 3 y 4 leen de aquí)",
+    "[Backend] GET /api/gestor/tareas 200 OK",
+    "[Backend] POST /api/gestor/tareas (con fecha_limite obligatoria) 200 OK + id devuelto",
+    "[Backend] PUT /api/gestor/tareas/{id} 200 OK",
+    "[Backend] DELETE /api/gestor/tareas/{id} 200/204 OK",
+    "[Backend] GET /api/gestor/incidencias 200 OK (lista vacía)",
+    "[Backend] Login gestor 200 OK",
+    "[Backend] GET /api/gestor/eventos 200 OK (regresión)",
+    "[Frontend /configuracion/presupuestos] btn-save-cachets-base presente, 4 niveles (Superior finalizado, Superior cursando, Profesional finalizado, Profesional cursando) visibles en DOM",
+    "[Frontend /plantillas-definitivas] 5 evento-acordeon-* encontrados, columnas 'Caché Prev.' / 'Caché Real' / 'Extra' / 'Motivo' renderizadas, músicos listados por sección (Cuerda, Teclados) con ceros (eventos sin cachets_config asignado → fuente sin_datos)",
+    "[Frontend /asistencia/pagos] carga correctamente (sin stuck en 'Cargando')",
+    "[Frontend /asistencia/analisis] 10 elementos Recharts renderizados (bar chart Previsto vs Real, pie Distribución por sección, bar Asistencia media por evento); KPIs visibles (5 eventos, 8 convocados, 20 confirmados, 300€ previsto, 230.50€ real, -69.50€ diferencia); botones Excel y SEPA XML presentes",
+    "[Frontend /admin/tareas] 3 vistas (Lista, Gantt, Calendario) con toggle, botón 'Nueva tarea', 5 filtros (estado, prioridad, categoría, responsable, evento) y acciones (Completar/Editar/Eliminar) por fila",
+    "[Frontend Feedback button] 💬 Feedback visible en páginas admin, modal abre con campos Tipo + Descripción + opciones tipo (incidencia/mejora/pregunta en select)",
+    "[Frontend /admin/incidencias] tabla con columnas Tipo/Descripción/Autor/Página/Fecha/Estado/Acciones + filtro 'Todos los estados' + mensaje 'Sin incidencias' OK"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_bloques_1_7.py",
+    "/app/test_reports/pytest/bloques_1_7.xml"
+  ],
+  "action_items": [
+    "[BACKEND/MEDIUM] Sincronizar admin (UID 88c9beb9-d4d7-4801-a291-c4f4632a3bed) en tabla public.usuarios. Opción A: llamar sync-profile tras login, Opción B: insertar fila manual, Opción C: sustituir la FK de incidencias.usuario_id → auth.users(id) en lugar de usuarios(id). Sin esto, el feedback nunca se guarda aunque la UI diga lo contrario.",
+    "[BACKEND/LOW] Documentar valor 'sin_datos' en el enum de cache_fuente (o unificar con 'sin_cachet') en /plantillas-definitivas.",
+    "[FRONTEND/LOW] Resolver warning de hidratación React: localizar <span> dentro de <option> (probablemente en un Select con iconos) y reemplazar por estructura válida (<option> sólo admite texto).",
+    "[DOC/LOW] Alinear etiqueta visible 'Caché Prev.' con la documentación ('Caché Previsto') — decidir si abreviar en docs o expandir en UI."
+  ],
+  "critical_code_review_comments": [
+    "routes_gestor.py: el endpoint POST /api/gestor/incidencias asume que current_user['id'] coincide con una fila en public.usuarios; esta asunción rompe con usuarios creados vía Supabase Auth sin sync. Solución: hacer el INSERT con ON CONFLICT DO NOTHING en usuarios primero, o cambiar la FK a auth.users(id).",
+    "TareaCreate (routes_gestor.py:3118): 'fecha_limite: str' es obligatorio pero el frontend GestorTareas.js puede no enviarlo al crear una tarea rápida (revisar formulario). Recomendado: hacer Optional con valor por defecto (hoy + 7 días) o marcar claramente required en UI.",
+    "PlantillasDefinitivas: el valor 'sin_datos' en cache_fuente no está en el contrato del ticket (spec menciona 5 fuentes: exacto/por_instrumento/base_exacto/base_por_instrumento/asignacion). Añadirlo a la documentación o mapear a 'sin_cachet'.",
+    "Hydration warning (<span> dentro de <option>) indica un anti-patrón HTML común cuando se intenta renderizar iconos dentro de <option>. Chrome lo tolera pero Firefox y React SSR pueden fallar. Usar un Select headless (Radix/shadcn) en lugar de <select> nativo para poder tener spans dentro."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bloques_1_7.py (nuevo, 12 tests pytest)"
+  ],
+  "success_rate": {"backend": "100% (12/12 pytest)", "frontend": "95% (7/7 rutas cargan; 1 warning de hidratación)"},
+  "test_credentials": {
+    "gestor": {"email": "admin@convocatorias.com", "password": "Admin123!"}
+  },
+  "seed_data_creation": "Durante el test se creó una tarea 'TEST_tarea_automatica' que se eliminó al final del mismo test (DELETE). Los cachets base de Violín/Superior finalizado se restauraron a su valor original al acabar el test de persistencia. No queda seed residual.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-ejecutar: cd /app && python -m pytest backend/tests/test_bloques_1_7.py -v. La tabla 'incidencias' YA existe en Supabase (el test GET devuelve 200). El bloqueo actual es únicamente la FK usuario_id → usuarios — al admin admin@convocatorias.com (UID 88c9beb9-...) le falta fila espejo en public.usuarios. Tras sync, el POST /api/gestor/incidencias (y por tanto el FeedbackButton) funcionará. El nombre de la ruta es /admin/incidencias (no /admin/feedback) y aparece en el sidebar como 'Feedback e incidencias'. La página /plantillas-definitivas rotula la columna como 'Caché Prev.' (abreviada).",
+  "rca_of_the_issue": "POST /api/gestor/incidencias -> 500 FK violation. Reproducción: login admin + POST {tipo:incidencia, descripcion:..., pagina:/x}. Causa raíz: la tabla 'incidencias' tiene una FK 'incidencias_usuario_id_fkey' que apunta a public.usuarios(id), pero el admin autenticado con Supabase Auth UID 88c9beb9-d4d7-4801-a291-c4f4632a3bed NO tiene fila en public.usuarios (la tabla espejo). El backend extrae current_user['id'] del JWT de Supabase Auth y lo usa directamente como usuario_id al insertar. Mitigación: (a) ejecutar POST /api/auth/sync-profile con el token admin para crear la fila, (b) insertar manualmente en Supabase SQL: INSERT INTO usuarios (id,email,rol,nombre) VALUES ('88c9beb9-...','admin@convocatorias.com','gestor','Admin OPUS') ON CONFLICT (id) DO NOTHING;, o (c) cambiar la FK a auth.users(id) en la migración de incidencias."
+}
