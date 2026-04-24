@@ -2,7 +2,7 @@
 Tareas — Planificador de tareas (CRUD).
 Endpoints extraídos de routes_gestor.py durante el refactor de feb 2026.
 """
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -21,8 +21,8 @@ class TareaCreate(BaseModel):
     responsable_nombre: Optional[str] = None
     fecha_inicio: Optional[str] = None
     fecha_limite: str
-    prioridad: Optional[str] = 'media'
-    estado: Optional[str] = 'pendiente'
+    prioridad: Optional[Literal['baja', 'media', 'alta', 'urgente']] = 'media'
+    estado: Optional[Literal['pendiente', 'en_progreso', 'completada', 'cancelada']] = 'pendiente'
     categoria: Optional[str] = 'otro'
     recordatorio_fecha: Optional[str] = None
 
@@ -35,8 +35,8 @@ class TareaUpdate(BaseModel):
     responsable_nombre: Optional[str] = None
     fecha_inicio: Optional[str] = None
     fecha_limite: Optional[str] = None
-    prioridad: Optional[str] = None
-    estado: Optional[str] = None
+    prioridad: Optional[Literal['baja', 'media', 'alta', 'urgente']] = None
+    estado: Optional[Literal['pendiente', 'en_progreso', 'completada', 'cancelada']] = None
     categoria: Optional[str] = None
     recordatorio_fecha: Optional[str] = None
 

@@ -2,7 +2,7 @@
 Incidencias / Feedback — API.
 Acepta reportes desde gestor y portal del músico.
 """
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -14,17 +14,17 @@ router = APIRouter(prefix="/api", tags=["incidencias"])
 
 
 class IncidenciaCreate(BaseModel):
-    tipo: str  # 'incidencia' | 'mejora' | 'pregunta'
+    tipo: Literal['incidencia', 'mejora', 'pregunta']
     descripcion: str
     pagina: Optional[str] = None
     screenshot_url: Optional[str] = None
-    prioridad: Optional[str] = 'media'  # 'alta' | 'media' | 'baja'
+    prioridad: Optional[Literal['alta', 'media', 'baja']] = 'media'
 
 
 class IncidenciaUpdate(BaseModel):
     estado: Optional[str] = None
     respuesta: Optional[str] = None
-    prioridad: Optional[str] = None
+    prioridad: Optional[Literal['alta', 'media', 'baja']] = None
 
 
 def _crear_incidencia_y_notificar(payload: dict, current_user: dict) -> dict:

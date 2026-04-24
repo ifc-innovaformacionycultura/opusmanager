@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from supabase_client import supabase, create_user_profile
 from auth_utils import get_current_user, get_current_gestor
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime
 from io import BytesIO, StringIO
 from openpyxl import Workbook, load_workbook
@@ -3082,7 +3082,7 @@ async def list_gestores(current_user: dict = Depends(get_current_gestor)):
 
 class LogisticaItem(BaseModel):
     id: Optional[str] = None
-    tipo: str  # 'transporte_ida' | 'transporte_vuelta' | 'alojamiento'
+    tipo: Literal['transporte_ida', 'transporte_vuelta', 'alojamiento']
     orden: Optional[int] = 1
     fecha: Optional[str] = None
     hora_salida: Optional[str] = None

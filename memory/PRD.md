@@ -437,3 +437,28 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 
 ### URLs nuevas
 - `/admin/guia-pruebas` — Guía de pruebas para el equipo
+
+
+## Iteración 13 (Feb 2026) — Regresión + Endurecimiento de validaciones
+
+### ✅ Tests de regresión completos (testing_agent_v3_fork)
+- **Backend pytest**: 22/23 PASS, 1 SKIP (sin dato). Cobertura: auth, eventos, presupuestos matriz, cachets, convocatoria por instrumento, propagación `convocado`, logística (CRUD + confirmación), incidencias con prioridad (gestor + portal), tareas CRUD, gestión económica.
+- **Frontend**: dashboard, sidebar limpio (sin GuiaPruebas), `/admin/guia-pruebas` ya no enrutada, `/configuracion/presupuestos` con matriz dinámica, `/plantillas-definitivas` con `Caché Previsto` + celdas naranjas de fallback, `/admin/incidencias` con selector per-row de prioridad.
+- Reporte: `/app/test_reports/iteration_10.json`.
+
+### ✅ Correcciones aplicadas tras la regresión
+- **`routes_gestor.py` `LogisticaItem.tipo`**: `str` → `Literal['transporte_ida','transporte_vuelta','alojamiento']`. Antes devolvía 500 con error crudo de Postgres; ahora 422 Pydantic con mensaje claro.
+- **`routes_incidencias.py`**: `IncidenciaCreate.tipo` y `prioridad`, e `IncidenciaUpdate.prioridad` ahora son `Literal` tipados → 422 ante valores inválidos.
+- **`routes_tareas.py`**: `TareaCreate/Update.prioridad` → `Literal['baja','media','alta','urgente']`; `estado` → `Literal['pendiente','en_progreso','completada','cancelada']`.
+
+### Hallazgos minor diferidos (no bloqueantes)
+- Asimetría de shape entre `/plantillas-definitivas` (lista) y `/seguimiento` (dict) — heredado.
+- `/portal/mis-eventos` puede devolver `{}` cuando el usuario no tiene asignaciones (consistencia menor).
+- `/admin/incidencias` no expone botón "Crear incidencia" para gestor (sólo via API). UX a evaluar.
+- Preselección de "temporada con eventos abiertos" en `/configuracion/presupuestos` (hoy default 2024-2025).
+- Warning de fuente cabinet-grotesk en consola (no bloqueante).
+
+### Próximas tareas
+- P1: Google OAuth (diferido por el usuario).
+- P1: Mejoras a emails Resend (diferido).
+- Backlog: refactor cuellos O(n²) en `put_cachets_config` y `bulk_presupuestos_matriz` (`upsert` nativo Supabase).
