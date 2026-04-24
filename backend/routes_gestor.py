@@ -439,7 +439,8 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
                 asig = asig_index.get((u['id'], ev['id']))
                 ensayos = ensayos_map.get(ev['id'], [])
                 instr_musico = u.get('instrumento')
-                disp_by_ensayo = {}
+                # Shape unificado con /plantillas-definitivas: LISTA ordenada por ensayo
+                disp_list = []
                 si_disp = 0
                 si_real = 0
                 convocados_count = 0
@@ -448,13 +449,13 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
                     if convocado:
                         convocados_count += 1
                     d = disp_map.get((u['id'], e['id']))
-                    entry = {
+                    disp_list.append({
+                        "ensayo_id": e['id'],
                         "asiste": d.get('asiste') if d else None,
                         "asistencia_real": d.get('asistencia_real') if d else None,
                         "disponibilidad_id": d.get('id') if d else None,
                         "convocado": convocado,
-                    }
-                    disp_by_ensayo[e['id']] = entry
+                    })
                     if convocado and d:
                         if d.get('asiste') is True:
                             si_disp += 1
@@ -467,7 +468,7 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
                     "asignacion_id": asig['id'] if asig else None,
                     "estado": asig['estado'] if asig else None,
                     "publicado_musico": bool(asig.get('publicado_musico')) if asig else False,
-                    "disponibilidad": disp_by_ensayo,
+                    "disponibilidad": disp_list,
                     "porcentaje_disponibilidad": pct_disp,
                     "porcentaje_asistencia_real": pct_real,
                 }
@@ -1036,11 +1037,8 @@ async def guardar_plantillas_definitivas(
 
 
 # ==================== Cachets Config & Upload justificantes ====================
-
-class CachetRow(BaseModel):
-    instrumento: str
-    nivel_estudios: Optional[str] = None
-    importe: float
+# NOTE: Modelos CachetRow y CachetBaseItem + endpoints /cachets-config y /cachets-base
+# movidos a routes_economia.py durante el refactor de feb 2026.
 
 
 @router.post("/plantillas-definitivas/justificante")
@@ -1077,159 +1075,14 @@ async def upload_justificante(
     return {"url": public_url, "path": path}
 
 
-@router.get("/cachets-config/{evento_id}")
-async def get_cachets_config(
-    evento_id: str,
-    current_user: dict = Depends(get_current_gestor)
-):
-    """Devuelve las tarifas configuradas para un evento (instrumento + nivel + importe)."""
-    try:
-        r = supabase.table('cachets_config') \
-            .select('id,instrumento,nivel_estudios,importe') \
-            .eq('evento_id', evento_id) \
-            .order('instrumento', desc=False) \
-            .execute()
-        return {"cachets": r.data or []}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-@router.put("/cachets-config/{evento_id}")
-async def put_cachets_config(
-    evento_id: str,
-    rows: List[CachetRow],
-    current_user: dict = Depends(get_current_gestor)
-):
-    """
-    Sustituye (UPSERT) las tarifas de un evento.
-    Todas las filas se guardan con evento_id fijo. Las (instrumento, nivel_estudios)
-    duplicadas se actualizan (hay UNIQUE INDEX ux_cachets_evento_instr_nivel).
-    """
-    try:
-        now = datetime.now().isoformat()
-        written = 0
-        for row in rows:
-            payload = {
-                "evento_id": evento_id,
-                "instrumento": row.instrumento.strip(),
-                "nivel_estudios": (row.nivel_estudios or '').strip() or 'General',
-                "importe": row.importe,
-                "updated_at": now,
-            }
-            ex = supabase.table('cachets_config').select('id') \
-                .eq('evento_id', evento_id) \
-                .eq('instrumento', payload['instrumento']) \
-                .execute()
-            # Emular UPSERT por (evento, instrumento, nivel)
-            target = None
-            for r in (ex.data or []):
-                # no traemos nivel en select previo -> hacemos otro match
-                pass
-            # Mejor: trae todas las filas del evento y filtra en Python para evitar NULL matcheo raro
-            all_rows = supabase.table('cachets_config').select('id,nivel_estudios,instrumento') \
-                .eq('evento_id', evento_id).execute().data or []
-            for r in all_rows:
-                if (r.get('instrumento') or '').strip().lower() == payload['instrumento'].lower() and \
-                   ((r.get('nivel_estudios') or '') == (payload['nivel_estudios'] or '')):
-                    target = r['id']
-                    break
-            if target:
-                supabase.table('cachets_config').update(payload).eq('id', target).execute()
-            else:
-                supabase.table('cachets_config').insert(payload).execute()
-            written += 1
-        return {"ok": True, "escritas": written}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al guardar cachets: {str(e)}")
+# NOTE: /cachets-config/{evento_id} GET/PUT movidos a routes_economia.py
 
 
 # ==================================================================
-# CACHETS BASE (evento_id IS NULL) — plantilla global instrumento+nivel
+# CACHETS BASE (evento_id IS NULL)
+# NOTE: endpoints /cachets-base y /cachets-config/{id}/copy-from-base
+# movidos a routes_economia.py durante el refactor de feb 2026.
 # ==================================================================
-
-class CachetBaseItem(BaseModel):
-    instrumento: str
-    nivel_estudios: str
-    importe: Optional[float] = 0
-
-
-@router.get("/cachets-base")
-async def get_cachets_base(current_user: dict = Depends(get_current_gestor)):
-    """Lista los cachets base (evento_id IS NULL)."""
-    try:
-        r = supabase.table('cachets_config').select('*').is_('evento_id', 'null').execute()
-        return {"cachets": r.data or []}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al listar cachets base: {str(e)}")
-
-
-@router.put("/cachets-base")
-async def put_cachets_base(data: List[CachetBaseItem], current_user: dict = Depends(get_current_gestor)):
-    """UPSERT de cachets base por (instrumento, nivel_estudios) con evento_id=NULL."""
-    try:
-        now = datetime.now().isoformat()
-        existing = supabase.table('cachets_config').select('*').is_('evento_id', 'null').execute().data or []
-        idx = {(r.get('instrumento'), r.get('nivel_estudios')): r['id'] for r in existing}
-        creados = 0
-        actualizados = 0
-        for row in data:
-            payload = {
-                "evento_id": None,
-                "instrumento": row.instrumento,
-                "nivel_estudios": (row.nivel_estudios or '').strip() or 'General',
-                "importe": float(row.importe or 0),
-                "updated_at": now,
-            }
-            key = (row.instrumento, payload["nivel_estudios"])
-            if key in idx:
-                supabase.table('cachets_config').update(payload).eq('id', idx[key]).execute()
-                actualizados += 1
-            else:
-                supabase.table('cachets_config').insert(payload).execute()
-                creados += 1
-        return {"ok": True, "creados": creados, "actualizados": actualizados}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al guardar cachets base: {str(e)}")
-
-
-@router.post("/cachets-config/{evento_id}/copy-from-base")
-async def copy_cachets_base_to_evento(
-    evento_id: str,
-    current_user: dict = Depends(get_current_gestor),
-):
-    """Copia los cachets base (evento_id IS NULL) como cachets específicos del evento dado.
-    Sobrescribe cualquier cachet del evento con la misma clave (instrumento, nivel_estudios)."""
-    try:
-        base = supabase.table('cachets_config').select('instrumento,nivel_estudios,importe') \
-            .is_('evento_id', 'null').execute().data or []
-        if not base:
-            return {"ok": True, "copiados": 0, "mensaje": "No hay plantilla base configurada"}
-
-        existentes = supabase.table('cachets_config').select('id,instrumento,nivel_estudios') \
-            .eq('evento_id', evento_id).execute().data or []
-        idx = {((r.get('instrumento') or '').strip().lower(), (r.get('nivel_estudios') or '').strip()): r['id'] for r in existentes}
-
-        now = datetime.now().isoformat()
-        copiados = 0
-        actualizados = 0
-        for b in base:
-            payload = {
-                "evento_id": evento_id,
-                "instrumento": b.get('instrumento'),
-                "nivel_estudios": (b.get('nivel_estudios') or '').strip() or 'General',
-                "importe": float(b.get('importe') or 0),
-                "updated_at": now,
-            }
-            key = ((payload['instrumento'] or '').strip().lower(), payload['nivel_estudios'])
-            if key in idx:
-                supabase.table('cachets_config').update(payload).eq('id', idx[key]).execute()
-                actualizados += 1
-            else:
-                supabase.table('cachets_config').insert(payload).execute()
-                copiados += 1
-        return {"ok": True, "copiados": copiados, "actualizados": actualizados}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al copiar plantilla base: {str(e)}")
 
 
 # ==================================================================
@@ -2761,118 +2614,11 @@ async def get_actividad(
 # BLOQUE 1 — Presupuestos (CRUD real sobre tabla `presupuestos`)
 # ==================================================================
 
-class PresupuestoItem(BaseModel):
-    evento_id: str
-    concepto: str
-    categoria: Optional[str] = None
-    tipo: Optional[str] = 'gasto'  # 'ingreso' | 'gasto'
-    importe_previsto: Optional[float] = 0
-    importe_real: Optional[float] = 0
-    estado: Optional[str] = None
-    notas: Optional[str] = None
-    fecha_prevista: Optional[str] = None
-    fecha_pago: Optional[str] = None
-
-
-class PresupuestoBulkItem(BaseModel):
-    id: Optional[str] = None  # si viene, UPDATE; si no, INSERT
-    evento_id: str
-    concepto: str
-    categoria: Optional[str] = None
-    tipo: Optional[str] = 'gasto'
-    importe_previsto: Optional[float] = 0
-    importe_real: Optional[float] = 0
-    estado: Optional[str] = None
-    notas: Optional[str] = None
-    fecha_prevista: Optional[str] = None
-    fecha_pago: Optional[str] = None
-
-
-@router.get("/presupuestos")
-async def get_presupuestos_all(
-    evento_id: Optional[str] = None,
-    temporada: Optional[str] = None,
-    current_user: dict = Depends(get_current_gestor),
-):
-    """Lista partidas de presupuesto. Filtra por evento o por temporada (joineando eventos)."""
-    try:
-        if evento_id:
-            r = supabase.table('presupuestos').select('*').eq('evento_id', evento_id).order('concepto', desc=False).execute()
-            return {"partidas": r.data or []}
-        # Filtrar por temporada: primero buscamos eventos de esa temporada
-        ev_ids = None
-        if temporada:
-            ev_res = supabase.table('eventos').select('id').eq('temporada', temporada).execute()
-            ev_ids = [e['id'] for e in (ev_res.data or [])]
-            if not ev_ids:
-                return {"partidas": []}
-        q = supabase.table('presupuestos').select('*')
-        if ev_ids is not None:
-            q = q.in_('evento_id', ev_ids)
-        r = q.order('concepto', desc=False).execute()
-        return {"partidas": r.data or []}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al listar presupuestos: {str(e)}")
-
-
-@router.post("/presupuestos")
-async def create_presupuesto(data: PresupuestoItem, current_user: dict = Depends(get_current_gestor)):
-    try:
-        r = supabase.table('presupuestos').insert(data.model_dump(exclude_none=True)).execute()
-        return {"partida": r.data[0] if r.data else None}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al crear partida: {str(e)}")
-
-
-@router.put("/presupuestos/{partida_id}")
-async def update_presupuesto(partida_id: str, data: PresupuestoItem, current_user: dict = Depends(get_current_gestor)):
-    try:
-        payload = data.model_dump(exclude_none=True)
-        payload['updated_at'] = datetime.now().isoformat()
-        r = supabase.table('presupuestos').update(payload).eq('id', partida_id).execute()
-        return {"partida": r.data[0] if r.data else None}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al actualizar partida: {str(e)}")
-
-
-@router.delete("/presupuestos/{partida_id}")
-async def delete_presupuesto(partida_id: str, current_user: dict = Depends(get_current_gestor)):
-    try:
-        supabase.table('presupuestos').delete().eq('id', partida_id).execute()
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al eliminar partida: {str(e)}")
-
-
-class PresupuestosBulkRequest(BaseModel):
-    partidas: List[PresupuestoBulkItem]
-    eliminar_ids: List[str] = []
-
-
-@router.post("/presupuestos/bulk")
-async def bulk_presupuestos(data: PresupuestosBulkRequest, current_user: dict = Depends(get_current_gestor)):
-    """Guardado masivo: crea / actualiza / borra partidas en una sola llamada."""
-    try:
-        now = datetime.now().isoformat()
-        creados = 0
-        actualizados = 0
-        for p in data.partidas:
-            base = p.model_dump(exclude_none=True)
-            base.pop('id', None)
-            base['updated_at'] = now
-            if p.id:
-                supabase.table('presupuestos').update(base).eq('id', p.id).execute()
-                actualizados += 1
-            else:
-                supabase.table('presupuestos').insert(base).execute()
-                creados += 1
-        borrados = 0
-        for pid in (data.eliminar_ids or []):
-            supabase.table('presupuestos').delete().eq('id', pid).execute()
-            borrados += 1
-        return {"ok": True, "creados": creados, "actualizados": actualizados, "borrados": borrados}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al guardar presupuestos: {str(e)}")
+# ==================================================================
+# BLOQUE 4 — Presupuestos (Bloque B)
+# NOTE: Modelos PresupuestoItem / PresupuestoBulkItem y endpoints /presupuestos
+# movidos a routes_economia.py durante el refactor de feb 2026.
+# ==================================================================
 
 
 # ==================================================================
@@ -3306,120 +3052,10 @@ async def export_sepa_xml(
 
 
 # ==================================================================
-# BLOQUE 7 — Tareas (CRUD)
 # ==================================================================
-
-class TareaCreate(BaseModel):
-    titulo: str
-    descripcion: Optional[str] = None
-    evento_id: Optional[str] = None
-    responsable_id: Optional[str] = None
-    responsable_nombre: Optional[str] = None
-    fecha_inicio: Optional[str] = None
-    fecha_limite: str
-    prioridad: Optional[str] = 'media'
-    estado: Optional[str] = 'pendiente'
-    categoria: Optional[str] = 'otro'
-    recordatorio_fecha: Optional[str] = None
-
-
-class TareaUpdate(BaseModel):
-    titulo: Optional[str] = None
-    descripcion: Optional[str] = None
-    evento_id: Optional[str] = None
-    responsable_id: Optional[str] = None
-    responsable_nombre: Optional[str] = None
-    fecha_inicio: Optional[str] = None
-    fecha_limite: Optional[str] = None
-    prioridad: Optional[str] = None
-    estado: Optional[str] = None
-    categoria: Optional[str] = None
-    recordatorio_fecha: Optional[str] = None
-
-
-@router.get("/tareas")
-async def list_tareas(current_user: dict = Depends(get_current_gestor)):
-    try:
-        r = supabase.table('tareas').select('*').order('fecha_limite', desc=False).execute()
-        return {"tareas": r.data or []}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al listar tareas: {str(e)}")
-
-
-@router.post("/tareas")
-async def create_tarea(data: TareaCreate, current_user: dict = Depends(get_current_gestor)):
-    try:
-        payload = data.model_dump(exclude_none=True)
-        r = supabase.table('tareas').insert(payload).execute()
-        tarea = r.data[0] if r.data else None
-        # Notificar al responsable si hay uno y es distinto del autor
-        try:
-            if tarea and tarea.get('responsable_id') and tarea['responsable_id'] != current_user['id']:
-                supabase.table('notificaciones_gestor').insert({
-                    "usuario_id": tarea['responsable_id'],
-                    "tipo": "tarea_asignada",
-                    "titulo": "Nueva tarea asignada",
-                    "mensaje": f"Te han asignado la tarea: {tarea.get('titulo')}",
-                    "link": f"/admin/tareas?id={tarea['id']}",
-                }).execute()
-        except Exception:
-            pass  # Notificación opcional — no romper el flujo si tabla no existe
-        return {"tarea": tarea}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
-
-
-@router.put("/tareas/{tarea_id}")
-async def update_tarea(tarea_id: str, data: TareaUpdate, current_user: dict = Depends(get_current_gestor)):
-    try:
-        before = supabase.table('tareas').select('*').eq('id', tarea_id).execute().data or []
-        prev_estado = (before[0].get('estado') if before else None)
-        prev_responsable = (before[0].get('responsable_id') if before else None)
-
-        payload = data.model_dump(exclude_none=True)
-        payload['updated_at'] = datetime.now().isoformat()
-        r = supabase.table('tareas').update(payload).eq('id', tarea_id).execute()
-        tarea = r.data[0] if r.data else None
-
-        # Notificar al nuevo responsable si ha cambiado
-        try:
-            new_resp = payload.get('responsable_id')
-            if tarea and new_resp and new_resp != prev_responsable and new_resp != current_user['id']:
-                supabase.table('notificaciones_gestor').insert({
-                    "usuario_id": new_resp,
-                    "tipo": "tarea_asignada",
-                    "titulo": "Tarea reasignada",
-                    "mensaje": f"Se te ha asignado la tarea: {tarea.get('titulo')}",
-                    "link": f"/admin/tareas?id={tarea['id']}",
-                }).execute()
-        except Exception:
-            pass
-
-        # Registrar en registro_actividad si se completó
-        try:
-            if tarea and payload.get('estado') == 'completada' and prev_estado != 'completada':
-                supabase.table('registro_actividad').insert({
-                    "usuario_id": current_user['id'],
-                    "accion": "tarea_completada",
-                    "descripcion": f"Completó la tarea: {tarea.get('titulo')}",
-                    "entidad_tipo": "tarea",
-                    "entidad_id": tarea_id,
-                }).execute()
-        except Exception:
-            pass
-
-        return {"tarea": tarea}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al actualizar tarea: {str(e)}")
-
-
-@router.delete("/tareas/{tarea_id}")
-async def delete_tarea(tarea_id: str, current_user: dict = Depends(get_current_gestor)):
-    try:
-        supabase.table('tareas').delete().eq('id', tarea_id).execute()
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al eliminar tarea: {str(e)}")
+# BLOQUE 7 — Tareas (CRUD)
+# NOTE: Movido a routes_tareas.py durante el refactor de feb 2026.
+# ==================================================================
 
 
 @router.get("/gestores")
@@ -3431,77 +3067,5 @@ async def list_gestores(current_user: dict = Depends(get_current_gestor)):
         raise HTTPException(status_code=500, detail=f"Error al listar gestores: {str(e)}")
 
 
-
-# ==================================================================
-# BLOQUE 6 — Incidencias / Feedback
-# ==================================================================
-
-class IncidenciaCreate(BaseModel):
-    tipo: str  # 'incidencia' | 'mejora' | 'pregunta'
-    descripcion: str
-    pagina: Optional[str] = None
-    screenshot_url: Optional[str] = None
-
-
-class IncidenciaUpdate(BaseModel):
-    estado: Optional[str] = None
-    respuesta: Optional[str] = None
-
-
-@router.post("/incidencias")
-async def create_incidencia(data: IncidenciaCreate, current_user: dict = Depends(get_current_gestor)):
-    try:
-        payload = data.model_dump(exclude_none=True)
-        uid = current_user.get('id')
-        # Comprobar que el usuario existe en public.usuarios; si no, guardamos NULL
-        # (la FK es ON DELETE SET NULL y usuario_nombre preserva la identidad).
-        usuario_id_valido = None
-        if uid:
-            exists = supabase.table('usuarios').select('id').eq('id', uid).limit(1).execute()
-            if exists.data:
-                usuario_id_valido = uid
-        payload['usuario_id'] = usuario_id_valido
-        nombre_full = f"{current_user.get('apellidos','')}, {current_user.get('nombre','')}".strip(', ')
-        if not nombre_full:
-            nombre_full = current_user.get('email') or 'Usuario desconocido'
-        payload['usuario_nombre'] = nombre_full
-        r = supabase.table('incidencias').insert(payload).execute()
-        return {"incidencia": r.data[0] if r.data else None}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al crear incidencia: {str(e)}")
-
-
-@router.get("/incidencias")
-async def list_incidencias(
-    estado: Optional[str] = None,
-    current_user: dict = Depends(get_current_gestor),
-):
-    try:
-        q = supabase.table('incidencias').select('*')
-        if estado:
-            q = q.eq('estado', estado)
-        r = q.order('created_at', desc=True).execute()
-        return {"incidencias": r.data or []}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al listar incidencias: {str(e)}")
-
-
-@router.put("/incidencias/{inc_id}")
-async def update_incidencia(inc_id: str, data: IncidenciaUpdate, current_user: dict = Depends(get_current_gestor)):
-    try:
-        payload = data.model_dump(exclude_none=True)
-        payload['updated_at'] = datetime.now().isoformat()
-        r = supabase.table('incidencias').update(payload).eq('id', inc_id).execute()
-        return {"incidencia": r.data[0] if r.data else None}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al actualizar incidencia: {str(e)}")
-
-
-@router.delete("/incidencias/{inc_id}")
-async def delete_incidencia(inc_id: str, current_user: dict = Depends(get_current_gestor)):
-    try:
-        supabase.table('incidencias').delete().eq('id', inc_id).execute()
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al eliminar incidencia: {str(e)}")
+# NOTE: Endpoints de /incidencias movidos a routes_incidencias.py (refactor feb 2026)
 

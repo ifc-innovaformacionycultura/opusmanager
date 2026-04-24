@@ -327,3 +327,34 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
   - [LOW] Warning React `<span> cannot be a child of <option>` — no rompe UX, origen aún no localizado (no es ningún `<option>` actual del código).
   - [LOW] Shape de `disponibilidad` en `/seguimiento` es dict (frontend ya lo consume así) vs list en `/plantillas-definitivas`. Inconsistencia no breaking.
   - [LOW] `/portal/mi-historial/eventos` no incluye lista de ensayos (solo conteos). La lista + `convocado` está en `/portal/mis-eventos` y `/portal/evento/{id}/ensayos`.
+
+---
+
+## Changelog (Feb 2026 — Iteración 10 / Fork Resume #3)
+
+### ✅ Botón "Copiar del ensayo anterior" (DONE)
+- Añadido en `ConvocatoriaInstrumentosPanel` con prop `ensayoAnteriorId` + `ensayoAnteriorLabel`.
+- Visible sólo cuando existe un ensayo previo tipo='ensayo' persistido en el mismo evento.
+- Tooltip dinámico: *"Copia la convocatoria de: {fecha} {hora}"*.
+- Carga los overrides del ensayo anterior en el state local; el usuario debe pulsar "Guardar convocatoria" para persistir.
+- Integrado en `ConfiguracionEventos.js`: calcula el ensayo anterior recorriendo `rehearsals.slice(0, index).reverse().find(r => r.id && r.tipo === 'ensayo')`.
+
+### ✅ Unificación shape `disponibilidad` (DONE)
+- `GET /seguimiento` ahora devuelve `disponibilidad: list[{ensayo_id, asiste, asistencia_real, disponibilidad_id, convocado}]` (mismo shape que `/plantillas-definitivas`).
+- Frontend `SeguimientoConvocatorias.js` actualizado: usa `Array.isArray(asig.disponibilidad) ? .find(x => x.ensayo_id === e.id) : asig.disponibilidad[e.id]` (compatible con ambos formatos por seguridad).
+
+### ✅ Refactor de routes_gestor.py (DONE)
+- **routes_incidencias.py** (+90 líneas) — `POST/GET/PUT/DELETE /api/gestor/incidencias`
+- **routes_tareas.py** (+140 líneas) — `GET/POST/PUT/DELETE /api/gestor/tareas` (incluye notificaciones + registro_actividad)
+- **routes_economia.py** (+290 líneas) — Modelos `CachetRow`/`CachetBaseItem`/`PresupuestoItem`/`PresupuestoBulkItem` + endpoints `/cachets-config/{id}` GET/PUT + `/cachets-base` GET/PUT + `/cachets-config/{id}/copy-from-base` POST + `/presupuestos` CRUD + `/presupuestos/bulk`.
+- **routes_gestor.py**: 3509 → 3030 líneas (-479, -13.6%).
+- Registro en `server.py`: 3 `include_router(...)` adicionales.
+- Endpoints `/gestion-economica/*`, `/analisis/*`, `/gestion-economica/sepa/*`, `/gestion-economica/export` **se mantienen en routes_gestor.py** porque comparten internamente la lógica de agregación de `/plantillas-definitivas` (mover los helpers compartidos generaría importaciones circulares complejas sin aportar valor).
+
+### ⚠️ No resuelto (baja prioridad)
+- Warning React `<span> cannot be a child of <option>`: buscado exhaustivamente en todo `/app/frontend/src/**` — **no existe ningún `<option>` con `<span>` hijo en el código actual**. Probablemente provenía de una extensión del navegador externa al app (Emergent overlay) o de una iteración previa ya inexistente. No reproducible tras los cambios actuales.
+
+### Resultados de validación (iteración 10 — smoke + curl)
+- Backend: los 4 endpoints clave responden 200 (cachets-base, presupuestos, tareas, incidencias).
+- POST /incidencias sigue funcionando (usuario_nombre "OPUS, Admin" correcto).
+- Frontend `/configuracion/eventos`: convocatoria por instrumento visible por cada ensayo; botón "Copiar del ensayo anterior" aparece correctamente desde el 2º ensayo.

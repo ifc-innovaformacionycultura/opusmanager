@@ -16,6 +16,9 @@ import os
 from routes_auth import router as auth_router
 from routes_portal import router as portal_router
 from routes_gestor import router as gestor_router
+from routes_incidencias import router as incidencias_router
+from routes_tareas import router as tareas_router
+from routes_economia import router as economia_router
 
 # ==================== App Configuration ====================
 
@@ -55,6 +58,9 @@ else:
 app.include_router(auth_router)      # /api/auth/*
 app.include_router(portal_router)    # /api/portal/*
 app.include_router(gestor_router)    # /api/gestor/*
+app.include_router(incidencias_router)  # /api/gestor/incidencias/*
+app.include_router(tareas_router)    # /api/gestor/tareas/*
+app.include_router(economia_router)  # /api/gestor/{cachets-base,cachets-config,presupuestos}/*
 
 # ==================== Health Check ====================
 

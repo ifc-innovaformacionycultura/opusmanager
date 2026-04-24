@@ -685,7 +685,9 @@ const SeguimientoConvocatorias = () => {
                       return (
                         <React.Fragment key={ev.id}>
                           {ev.ensayos.map(e => {
-                            const d = asig.disponibilidad[e.id];
+                            const d = Array.isArray(asig.disponibilidad)
+                              ? asig.disponibilidad.find(x => x.ensayo_id === e.id)
+                              : (asig.disponibilidad ? asig.disponibilidad[e.id] : null);
                             return (
                               <td key={e.id} className="px-1 py-1.5 text-center" data-testid={`cell-disp-${m.id}-${e.id}`}>
                                 {isPub ? <DispCell asiste={d?.asiste} convocado={d?.convocado} /> : <span className="text-slate-300">-</span>}

@@ -431,12 +431,22 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
           </div>
-          {rehearsal.id && (rehearsal.tipo || 'ensayo') === 'ensayo' && (
-            <ConvocatoriaInstrumentosPanel
-              ensayoId={rehearsal.id}
-              api={api}
-            />
-          )}
+          {rehearsal.id && (rehearsal.tipo || 'ensayo') === 'ensayo' && (() => {
+            // Ensayo anterior: rehearsal persistido más cercano con tipo ensayo
+            const prev = rehearsals
+              .slice(0, index)
+              .reverse()
+              .find(r => r.id && (r.tipo || 'ensayo') === 'ensayo');
+            const prevLabel = prev ? `${prev.date || ''} ${prev.start || ''}${prev.lugar ? ' · ' + prev.lugar : ''}`.trim() : null;
+            return (
+              <ConvocatoriaInstrumentosPanel
+                ensayoId={rehearsal.id}
+                api={api}
+                ensayoAnteriorId={prev?.id}
+                ensayoAnteriorLabel={prevLabel}
+              />
+            );
+          })()}
           </div>
         ))}
         <button

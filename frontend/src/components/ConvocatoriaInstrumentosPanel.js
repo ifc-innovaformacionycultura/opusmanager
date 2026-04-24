@@ -14,10 +14,11 @@ const SECCIONES = [
 
 const ALL_INSTRUMENTOS = SECCIONES.flatMap(s => s.instrumentos);
 
-const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, onSaved }) => {
+const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, ensayoAnteriorId, ensayoAnteriorLabel, onSaved }) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [state, setState] = useState({}); // { instrumento: true/false }
   const [msg, setMsg] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -64,6 +65,24 @@ const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, onSaved }) => {
     });
   };
 
+  const copiarEnsayoAnterior = async () => {
+    if (!ensayoAnteriorId) return;
+    try {
+      setCopying(true); setMsg(null);
+      const r = await api.get(`/api/gestor/ensayos/${ensayoAnteriorId}/instrumentos`);
+      const next = {};
+      (r.data?.instrumentos || []).forEach(row => {
+        next[row.instrumento] = !!row.convocado;
+      });
+      ALL_INSTRUMENTOS.forEach(i => { if (!(i in next)) next[i] = true; });
+      setState(next);
+      setMsg({ type: 'info', text: '📋 Convocatoria copiada del ensayo anterior. Pulsa "Guardar convocatoria" para persistir.' });
+      setTimeout(() => setMsg(null), 4000);
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || err.message });
+    } finally { setCopying(false); }
+  };
+
   const guardar = async () => {
     try {
       setSaving(true); setMsg(null);
@@ -106,6 +125,14 @@ const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, onSaved }) => {
                 <button type="button" onClick={() => toggleTodos(false)}
                         data-testid={`btn-all-off-${ensayoId}`}
                         className="px-2 py-0.5 border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 rounded">Desconvocar todos</button>
+                {ensayoAnteriorId && (
+                  <button type="button" onClick={copiarEnsayoAnterior} disabled={copying}
+                          data-testid={`btn-copy-prev-${ensayoId}`}
+                          title={ensayoAnteriorLabel ? `Copia la convocatoria de: ${ensayoAnteriorLabel}` : 'Copia la convocatoria del ensayo anterior'}
+                          className="px-2 py-0.5 border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded disabled:opacity-50">
+                    {copying ? 'Copiando…' : '📋 Copiar del ensayo anterior'}
+                  </button>
+                )}
               </div>
 
               {/* Acciones por sección */}
