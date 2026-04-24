@@ -1,0 +1,58 @@
+{
+  "summary": "Bloque D (seguimiento v2 + plantillas-definitivas + cachets-config + portal mis-eventos filtrado + disponibilidad/bulk + upload justificantes) testeado end-to-end. 9/9 pytest backend PASS y 3/3 flujos UI críticos verificados (Seguimiento tabla pivot + bulk bar, Plantillas definitivas con edición reactiva, Portal Mi disponibilidad Sí/No/reset + guardar).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/gestor/cachets-config/{evento_id}", "issue": "Si el payload envía nivel_estudios=null (como permite el contrato del problema 'nivel_estudios?'), devuelve 500 por NOT NULL constraint en la columna. El backend debería mapear None→'' o similar antes del UPSERT, o la columna debe permitir NULL y el UNIQUE debe llevar COALESCE. Workaround: el frontend envía siempre string (usar 'Profesional' etc.)."},
+      {"endpoint": "GET /api/gestor/seguimiento", "issue": "La estructura de 'disponibilidad' en la asignación coloca porcentaje_disponibilidad y porcentaje_asistencia_real al MISMO NIVEL que 'disponibilidad' (dict), no DENTRO del dict como dice el spec del problema. Es más limpio arquitectónicamente pero diverge del contrato documentado; actualizar docs o mover campos dentro del dict. Tests toleran ambos."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MiDisponibilidadPanel", "issue": "Tras click en btn-guardar-disponibilidad el backend guarda correctamente, pero [data-testid=disponibilidad-msg] no aparece en el DOM (verificado tras esperar 3.5s). Falta feedback visual de éxito al músico.", "selector": "[data-testid=disponibilidad-msg]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/gestor/seguimiento: estructura correcta (eventos con estado in borrador/abierto, fechas[], ensayos[{id,tipo,fecha,obligatorio}], musicos con asignaciones anidadas)",
+    "POST /api/gestor/seguimiento/publicar: publica/despublica correctamente, respuesta {publicados,creados,despublicados}; evento aparece inmediatamente en /api/portal/mis-eventos del músico publicado",
+    "POST /api/gestor/seguimiento/bulk-accion: acepta estados pendiente,confirmado,rechazado,no_disponible,excluido; devuelve {actualizados, creados}",
+    "GET /api/gestor/plantillas-definitivas: solo eventos con >=1 confirmado; secciones en orden correcto (Cuerda → Viento Madera → Viento Metal → Percusión → Teclados → Coro); Jesús (Violín) agrupado en Cuerda; totales completos (cache_previsto, cache_real, extras, transporte, alojamiento, otros, total)",
+    "GET/PUT /api/gestor/cachets-config/{evento_id}: GET devuelve {cachets:[]}; PUT upsert OK con nivel_estudios='Profesional' (3 filas Violín/Chelo/Piano escritas)",
+    "GET /api/portal/mis-eventos (músico): estructura {asignaciones:[{... evento:{}, ensayos:[{id,fecha,hora,tipo,lugar,obligatorio,mi_disponibilidad}]}]}; solo eventos con publicado_musico=true; ensayos con mi_disponibilidad calculado; no expone campo 'notas' interno",
+    "POST /api/portal/disponibilidad/bulk: UPSERT + BORRADO (asiste=null) funcionan; respuesta {ok, actualizados, creados, borrados}; tras 2 Sí + 1 No + 1 null el % disponibilidad de Jesús en /api/gestor/seguimiento = 50%",
+    "PUT /api/gestor/plantillas-definitivas/guardar: UPSERT asistencias por (usuario,ensayo), UPSERT gastos por (usuario,evento), UPDATE anotaciones (numero_atril/letra/comentario); devuelve {ok, resumen:{asistencias,gastos,anotaciones}}",
+    "POST /api/gestor/plantillas-definitivas/justificante: multipart field 'archivo', sube a bucket 'justificantes' con path '{evento_id}/{usuario_id}/transporte_{ts}.txt'; devuelve {url,path}",
+    "Frontend /seguimiento: tabla pivot OK con seguimiento-table + 3 filtros + 4 block-evento-* + 6 subcol-ensayo-* + 32 toggle-publicar-* + 8 check-musico-*; bulk-bar oculta sin selección, visible con >=1 seleccionado, con bulk-evento/bulk-accion/btn-aplicar-bulk",
+    "Frontend /plantillas-definitivas: plantillas-page OK; btn-guardar disabled inicial, se habilita tras editar extra-*; se renderizan evento-acordeon-* (2), evento-seccion-* (3), extra-* (4), asist-* (12), total-* (4), cache-real-* (4), pct-real-* (3), file-transp-* (4); secciones Cuerda+Teclados con datos reales de Jesús (380€ prev / 95€ real / extras 50€ / transp 45,50€ / aloj 120€ / 50% disp / 25% real)",
+    "Frontend /portal: header slate-900 con avatar purple OK; tabs con Convocatorias activa; al click en card de evento aparece mi-disponibilidad-panel con 4 disp-row-* + 4 Sí/4 No/4 reset; btn-guardar-disponibilidad disabled inicial, se habilita tras cambiar un valor real"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_bloque_d.py",
+    "/app/test_reports/pytest/bloque_d_results.xml"
+  ],
+  "action_items": [
+    "[BACKEND/MINOR] cachets-config: manejar nivel_estudios=None en PUT (convertir a '' o hacer la columna nullable con UNIQUE COALESCE) para cumplir el contrato documentado del problema.",
+    "[FRONTEND/MEDIUM] MiDisponibilidadPanel: mostrar [data-testid=disponibilidad-msg] verde con 'X cambios guardados' tras success del POST bulk (actualmente la guardado es silenciosa)."
+  ],
+  "critical_code_review_comments": [
+    "routes_gestor.py plantillas-definitivas GET: buena separación por secciones pero Cache previsto tiene fallback triple (cachets_config → asignaciones.cache_presupuestado → importe); documentar el orden en un comentario para evitar confusión futura.",
+    "routes_portal.py mis-eventos: el filtro debe ser 'publicado_musico=true AND estado != excluido' — verificar índice compuesto en (usuario_id, publicado_musico) en Supabase para evitar seqscans cuando crezca.",
+    "MiDisponibilidadPanel.js: el estado `pendingChanges` compara contra initial — si no hay diff, el botón queda disabled. Esto es correcto pero conviene mostrar un hint '(sin cambios)' en lugar de solo grayed-out, para evitar confusión del usuario.",
+    "Hay divergencia mini entre spec y realidad: seguimiento.asignaciones.disponibilidad según spec incluye porcentaje_*; la implementación los pone fuera. Actualizar docs o mover."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bloque_d.py (nuevo, 9 tests pytest)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (3/3 flujos)"},
+  "test_credentials": {
+    "gestor": {"email": "admin@convocatorias.com", "password": "Admin123!"},
+    "musico": {"email": "jesusalonsodirector@gmail.com", "password": "Musico123!", "id": "8bf521fa-dc27-4c5b-8069-d36d3d4eaad3"},
+    "evento_probe": {"id": "4b50bfe5-fdf4-48b9-92ec-34c4a7d88f27", "nombre": "Concierto de Temporada", "ensayos": 4}
+  },
+  "seed_data_creation": "Sin seed residual. Todos los cambios del test se revierten: (a) bulk-accion deja Jesús en 'confirmado' (estado original), (b) disponibilidad/bulk restaura estado previo (Sí,Sí,No,—), (c) cachets-config re-escribe los mismos importes (Violín 380, Chelo 380, Piano 420 — con nivel 'Profesional' en lugar de null), (d) justificante subido se borra vía supabase.storage.remove() al final de test_upload_justificante, (e) gastos de plantillas-guardar sobre-escriben los previos con los mismos valores (45.5/120/50). UI: el flujo de reset+guardar en portal restauró el primer ensayo a 'Sí' al final.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Para reejecutar: cd /app/backend && python -m pytest tests/test_bloque_d.py -v. El evento probe '4b50bfe5-...' tiene exactamente 4 ensayos en BD. El bucket 'justificantes' de Supabase Storage está público y operativo. El login músico requiere hacer click en el tab 'Músico' antes de submit. El panel Mi disponibilidad SOLO aparece tras seleccionar la card del evento en /portal (no es siempre visible). Los toggles sr-only de Seguimiento se clickean correctamente con force=True sobre el [data-testid=toggle-publicar-*] en su contenedor. Issue pendiente: (a) fix backend cachets nivel_estudios null, (b) frontend portal disponibilidad-msg no se muestra tras save."
+}
