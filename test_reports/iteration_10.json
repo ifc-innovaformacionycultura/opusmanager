@@ -1,0 +1,109 @@
+{
+  "summary": "Iteración 10: regresión completa post-iter 12 sobre los 15 bloques funcionales (refactor de routers, presupuestos matriz, cachets, convocatoria instrumentos, propagación convocado, logística con confirmaciones, incidencias con prioridad, tareas CRUD, economía, portal músico, eliminación de GuiaPruebas). Backend: 22/23 PASS, 1 SKIP (músico sin eventos asignados). Frontend: dashboard, sidebar, eliminación de GuiaPruebas, plantillas-definitivas (Caché Prev + celdas naranja), incidencias con selector de prioridad verificados.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PUT /api/gestor/eventos/{id}/logistica",
+        "issue": "El check-constraint `evento_logistica_tipo_check` sólo admite 'transporte_ida' | 'transporte_vuelta' | 'alojamiento'. La documentación del review mencionaba 'transporte' y 'alojamiento' — convendría documentar los valores exactos o añadir alias. Un POST con tipo='transporte' devuelve 500 (no 400) con mensaje crudo de Postgres."
+      },
+      {
+        "endpoint": "GET /api/portal/mis-eventos",
+        "issue": "El usuario jesusalonsodirector@gmail.com devuelve {eventos: {}} (dict vacío en vez de lista []). No es crítico porque se comporta bien cuando hay datos, pero es inconsistente. Impidió validar companeros_confirmados/total y ensayos[].convocado en esta iteración (faltan datos para ese músico)."
+      },
+      {
+        "endpoint": "GET /api/gestor/seguimiento vs /api/gestor/plantillas-definitivas",
+        "issue": "Heredado de iter 9. /plantillas-definitivas → disponibilidad/asistencia son LISTAS. /seguimiento → asignaciones es DICT {evento_id: {...}} y dentro disponibilidad es LISTA. Asimetría entre endpoints hermanos."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "/configuracion/presupuestos (matriz dinámica)",
+        "issue": "La página fue rediseñada en iter 10+ (nuevo título 💰 Presupuestos, matriz por temporada con botones 'Configurar plantilla base / Precargar estándar / Aplicar a todos los eventos / Guardar todos'). Los data-testids ESPERADOS por el review (select-scope-cachets, btn-precargar-cachets, btn-save-cachets-base, btn-copiar-plantilla-base) YA NO EXISTEN — fueron reemplazados por (select-temporada-presup, btn-cfg-plantilla-base, btn-precargar-presup, btn-guardar-presup). La funcionalidad está intacta pero el review_request quedó desactualizado respecto a los nombres.",
+        "affected_selectors": ["select-scope-cachets","btn-precargar-cachets","btn-save-cachets-base","btn-copiar-plantilla-base"]
+      },
+      {
+        "flow": "/admin/incidencias — creación desde gestor",
+        "issue": "La página lista incidencias y permite cambiar estado/prioridad (selector sel-prio-{id} por fila ✅) pero NO hay botón 'Crear incidencia' ni modal de creación desde el lado gestor. El gestor sólo puede crearlas vía API. Verificar si eso está por diseño o si falta el CTA en UI."
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Global",
+        "issues": [
+          "Persiste warning del navegador sobre fuentes cabinet-grotesk de cdnfonts.com que no decodifican (OTS parsing error invalid sfntVersion). No bloqueante pero ensucia la consola. Considerar alojar la fuente local o usar variantes Google Fonts."
+        ]
+      },
+      {
+        "screen": "/configuracion/presupuestos con temporada sin eventos",
+        "issues": [
+          "Mensaje 'No hay eventos publicados (estado abierto) en esta temporada.' aparece en la temporada por defecto 2024-2025 — útil, pero el usuario tiene que adivinar que hay otra temporada con datos. Convendría preseleccionar la temporada que SÍ tiene eventos abiertos (Temporada actual)."
+        ]
+      },
+      {
+        "screen": "Plantillas definitivas",
+        "issues": [
+          "Etiqueta 'Caché Prev' en lugar de 'Caché Previsto' (heredado de iter 8/9). Se confirman 14 celdas con text-orange-600 (fallback)."
+        ]
+      }
+    ]
+  },
+  "passed_tests": [
+    "[Backend] POST /api/auth/login con admin gestor, gestor equipo (palvarez@netmetrix.es/Opus2026!) y músico jesús 200",
+    "[Backend] GET /api/gestor/eventos 200",
+    "[Backend] GET /api/gestor/presupuestos-matriz 200 con eventos+cachets",
+    "[Backend] POST /api/gestor/presupuestos-matriz/bulk con factor_ponderacion=120 — creados/actualizados y persistido tras GET",
+    "[Backend] GET/PUT /api/gestor/cachets-config/{evento_id} (lista directa) y POST .../copy-from-base",
+    "[Backend] GET /api/gestor/ensayos/{id}/instrumentos: 19 instrumentos convocado=true por defecto",
+    "[Backend] PUT /api/gestor/ensayos/{id}/instrumentos (lista directa) con Piano convocado=false y re-GET confirma",
+    "[Backend] GET /api/gestor/plantillas-definitivas → secciones[].musicos[].disponibilidad[].convocado y .asistencia[].convocado",
+    "[Backend] GET /api/gestor/seguimiento → musicos[].asignaciones{evento_id}.disponibilidad[].convocado presente",
+    "[Backend] GET /api/gestor/eventos/{id}/logistica y PUT bulk (tipo='transporte_ida')",
+    "[Backend] POST /api/portal/logistica/{id}/confirmar (200/400/403 aceptable)",
+    "[Backend] POST /api/gestor/incidencias y POST /api/portal/incidencias con prioridad alta/baja; GET expone 'prioridad'",
+    "[Backend] CRUD tareas /api/gestor/tareas",
+    "[Backend] GET /api/gestor/gestion-economica 200 (routes_economia OK)",
+    "[Frontend] Dashboard gestor carga sin errores críticos; sidebar NO muestra link a GuiaPruebas",
+    "[Frontend] /admin/guia-pruebas NO renderiza la página (ruta no existe en el router)",
+    "[Frontend] /configuracion/presupuestos carga con matriz dinámica y botones de bulk/precargar/aplicar",
+    "[Frontend] /plantillas-definitivas muestra 'Caché Prev' y 14 celdas con text-orange-600",
+    "[Frontend] /admin/incidencias lista incidencias con selector per-row de prioridad (🔴 Alta / 🟡 Media / 🟢 Baja)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_regression.py",
+    "/app/test_reports/pytest/iter10.xml"
+  ],
+  "action_items": [
+    "[BACKEND/MINOR] Validar el campo `tipo` en PUT /api/gestor/eventos/{id}/logistica antes de golpear la BD: devolver 400 con lista de valores admitidos en vez de 500 con el error crudo de Postgres. Valores válidos: 'transporte_ida' | 'transporte_vuelta' | 'alojamiento'.",
+    "[FRONTEND/MINOR] Actualizar doc/handoff: los testids de Presupuestos fueron renombrados en iter 10+ (select-temporada-presup, btn-cfg-plantilla-base, btn-precargar-presup, btn-guardar-presup). Si se necesita mantener retro-compat, añadir los aliases antiguos.",
+    "[FRONTEND/MINOR] /configuracion/presupuestos: preseleccionar la temporada que tiene eventos abiertos (o mostrar badge con conteo por temporada).",
+    "[FRONTEND/MINOR] /admin/incidencias: añadir botón 'Crear incidencia' para que el gestor pueda reportar sin necesidad de hacerlo por API.",
+    "[BACKEND/LOW - heredado] Unificar shape de 'disponibilidad' entre /plantillas-definitivas y /seguimiento.",
+    "[FRONTEND/LOW - heredado] Etiqueta 'Caché Prev' → 'Caché Previsto' y corregir warning de fuente cabinet-grotesk (OTS parsing error)."
+  ],
+  "critical_code_review_comments": [
+    "routes_gestor.py put_logistica_evento (3125): no valida `tipo` contra la enumeración permitida; deja que Postgres rompa con 500. Añadir `if it.tipo not in ('transporte_ida','transporte_vuelta','alojamiento'): raise HTTPException(400, ...)`.",
+    "routes_economia.py put_cachets_config (97-121): sigue re-consultando TODAS las filas del evento dentro del loop (O(n²)). Mover el select fuera del loop y mantener idx en memoria. La versión put_cachets_base (140) ya lo hace bien — replicar ese patrón.",
+    "routes_economia.py bulk_presupuestos_matriz (356): por fila hace 3 operaciones (buscar+update/insert). Para cientos de filas (matriz completa 19 instr × N eventos × 3 niveles) podría convertirse en cuello de botella. Considerar carga masiva con `upsert` nativo de Supabase o índice único (evento_id, instrumento, nivel_estudios) para un único upsert.",
+    "routes_incidencias.py: `_crear_incidencia_y_notificar` no valida que `prioridad` esté en ('alta','media','baja'). Aunque Pydantic acepta Optional[str], podría aceptar valores arbitrarios. Añadir Literal['alta','media','baja'].",
+    "routes_tareas.py create_tarea (53): Literal['baja','media','alta','urgente'] no está tipado en `prioridad`; admite cualquier string. Tipar mejor con Enum/Literal.",
+    "Tabla evento_logistica: el error 500 en tipo inválido expone detalle interno de Postgres al cliente, incluida la fila fallida. Evitar filtrar este nivel de detalle en producción."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter10_regression.py (nuevo, 23 tests pytest, 22 PASS 1 SKIP)"
+  ],
+  "success_rate": {"backend": "96% (22/23, 1 skip por ausencia de datos)", "frontend": "85% (ruteo, sidebar y prioridad en incidencias verificados; los testids específicos de Presupuestos del review_request están desactualizados)"},
+  "test_credentials": {
+    "gestor_admin": "admin@convocatorias.com / Admin123!",
+    "gestor_equipo": "palvarez@netmetrix.es / Opus2026!",
+    "musico": "jesusalonsodirector@gmail.com / Musico123!"
+  },
+  "seed_data_creation": "TestIncidencias creó 2 incidencias TEST_iter10 (alta + baja). TestTareas creó 1 tarea TEST_iter10 y la borró. TestPresupuestosMatriz dejó 1 fila Violín/Superior importe=500 factor=120 en el primer evento abierto. TestLogistica dejó 1 fila tipo=transporte_ida 'TEST_Bus Ida ...'. Ninguno de ellos se purgó automáticamente.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-ejecutar: cd /app && python -m pytest backend/tests/test_iter10_regression.py -v. Los testids de /configuracion/presupuestos son: select-temporada-presup, btn-cfg-plantilla-base, btn-precargar-presup, btn-guardar-presup, btn-aplicar-todos-presup (no los del review original). Para validar end-to-end /portal/mis-eventos asignar al menos un evento con ensayos al músico jesusalonsodirector@gmail.com — actualmente devuelve lista vacía. El PUT de logistica exige tipo ∈ {transporte_ida, transporte_vuelta, alojamiento}.",
+  "rca_of_the_issue": "Único fallo relevante: validación laxa en PUT /api/gestor/eventos/{id}/logistica — aceptar cualquier `tipo` y delegar la validación al check constraint de Postgres hace que un payload con tipo='transporte' devuelva 500 con mensaje filtrado de BD. Fix: validar el campo con Literal['transporte_ida','transporte_vuelta','alojamiento'] en Pydantic o en el handler antes del insert/update."
+}
