@@ -235,6 +235,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
         { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
         { id: "tareas", label: "Planificador de tareas", path: "/admin/tareas" },
+        { id: "incidencias", label: "Feedback e incidencias", path: "/admin/incidencias" },
         { id: "recordatorios", label: "Recordatorios auto.", path: "/admin/recordatorios" },
         { id: "emails", label: "Historial de emails", path: "/admin/emails" },
         { id: "config-email", label: "Configuración de email", path: "/admin/emails/configuracion" },
@@ -466,7 +467,7 @@ const Layout = ({ children }) => {
         <NotificacionesBell />
         {children}
         {/* Botón flotante de feedback - visible en todas las páginas */}
-        <FeedbackButton currentPage={pageInfo.page} currentSection={pageInfo.section} />
+        <FeedbackButton />
       </main>
     </div>
   );
@@ -723,6 +724,7 @@ import GestionReportes from "./pages/GestionReportes";
 import GestorMusicos from "./pages/GestorMusicos";
 import GestorMusicoDetalle from "./pages/GestorMusicoDetalle";
 import GestorTareas from "./pages/GestorTareas";
+import GestorIncidencias from "./pages/GestorIncidencias";
 import GestorRecordatorios from "./pages/GestorRecordatorios";
 import GestorEmailLog from "./pages/GestorEmailLog";
 import GestorReclamaciones from "./pages/GestorReclamaciones";
@@ -778,6 +780,7 @@ function App() {
                         <Route path="/admin/musicos" element={<GestorMusicos />} />
                         <Route path="/admin/musicos/:id" element={<GestorMusicoDetalle />} />
                         <Route path="/admin/tareas" element={<GestorTareas />} />
+                        <Route path="/admin/incidencias" element={<GestorIncidencias />} />
                         <Route path="/admin/recordatorios" element={<GestorRecordatorios />} />
                         <Route path="/admin/emails" element={<GestorEmailLog />} />
                         <Route path="/admin/emails/configuracion" element={<ConfiguracionEmail />} />

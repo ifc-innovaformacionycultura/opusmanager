@@ -22,20 +22,34 @@ const StatCard = ({ label, value, emphasis, testid }) => (
 const AnalisisEconomico = () => {
   const { api } = useAuth();
   const [resumen, setResumen] = useState(null);
+  const [detalle, setDetalle] = useState({ eventos: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [temporada, setTemporada] = useState('');
   const [temporadas, setTemporadas] = useState([]);
+  const [openSet, setOpenSet] = useState(new Set());
 
   const cargar = async (tempSel = temporada) => {
     try {
       setLoading(true); setError(null);
       const qs = tempSel ? `?temporada=${encodeURIComponent(tempSel)}` : '';
-      const r = await api.get(`/api/gestor/analisis/resumen${qs}`);
-      setResumen(r.data);
+      const [rRes, dRes] = await Promise.all([
+        api.get(`/api/gestor/analisis/resumen${qs}`),
+        api.get(`/api/gestor/gestion-economica${qs}`),
+      ]);
+      setResumen(rRes.data);
+      setDetalle(dRes.data || { eventos: [] });
     } catch (err) {
       setError(err.response?.data?.detail || err.message);
     } finally { setLoading(false); }
+  };
+
+  const toggleAcc = (evId) => {
+    setOpenSet(prev => {
+      const n = new Set(prev);
+      if (n.has(evId)) n.delete(evId); else n.add(evId);
+      return n;
+    });
   };
 
   useEffect(() => {
@@ -176,33 +190,63 @@ const AnalisisEconomico = () => {
         </div>
       </div>
 
-      {/* Detalle por evento */}
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <div className="bg-slate-800 text-white px-4 py-3 font-semibold">Eventos de la temporada</div>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600 text-xs">
-            <tr>
-              <th className="text-left px-3 py-2">Evento</th>
-              <th className="text-left px-3 py-2">Fecha</th>
-              <th className="text-right px-3 py-2">Músicos</th>
-              <th className="text-right px-3 py-2">% Asist. medio</th>
-              <th className="text-right px-3 py-2">Coste previsto</th>
-              <th className="text-right px-3 py-2">Coste real</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {(resumen.por_evento || []).map(ev => (
-              <tr key={ev.id} className="hover:bg-slate-50">
-                <td className="px-3 py-2 font-medium text-slate-900">{ev.nombre}</td>
-                <td className="px-3 py-2 text-slate-600">{fmtFecha(ev.fecha_inicio)}</td>
-                <td className="px-3 py-2 text-right">{ev.musicos}</td>
-                <td className="px-3 py-2 text-right">{ev.pct_asistencia_medio}%</td>
-                <td className="px-3 py-2 text-right">{fmtEuro(ev.cache_previsto)}</td>
-                <td className="px-3 py-2 text-right font-semibold">{fmtEuro(ev.total)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Detalle por evento - acordeones */}
+      <div className="space-y-2" data-testid="analisis-acordeones">
+        <h2 className="font-semibold text-slate-800 mb-2">Detalle por evento</h2>
+        {(detalle.eventos || []).map(ev => {
+          const open = openSet.has(ev.id);
+          return (
+            <div key={ev.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid={`analisis-evento-${ev.id}`}>
+              <div onClick={() => toggleAcc(ev.id)}
+                   className="bg-slate-700 text-white px-4 py-2 flex items-center justify-between cursor-pointer">
+                <div>
+                  <span className="font-semibold">{ev.nombre}</span>
+                  <span className="text-xs text-slate-300 ml-3">{fmtFecha(ev.fecha_inicio)} · {ev.total_musicos} músicos</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-300">Previsto: {fmtEuro(ev.totales.cache_previsto)}</span>
+                  <span className="text-sm font-bold">Real: {fmtEuro(ev.totales.total)}</span>
+                  <span className="text-xs">{open ? '▼' : '▶'}</span>
+                </div>
+              </div>
+              {open && (ev.secciones || []).map(sec => (
+                <div key={sec.key}>
+                  <div className="bg-slate-100 px-4 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-700">
+                    {sec.label} <span className="text-slate-500 font-normal ml-2">({sec.count} · {fmtEuro(sec.totales.total)})</span>
+                  </div>
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 text-slate-600 text-[10px]">
+                      <tr>
+                        <th className="text-left px-3 py-1">Músico</th>
+                        <th className="text-left px-3 py-1">Instrumento</th>
+                        <th className="text-left px-3 py-1">Nivel</th>
+                        <th className="text-center px-3 py-1">%Asist</th>
+                        <th className="text-right px-3 py-1">Caché Prev</th>
+                        <th className="text-right px-3 py-1">Caché Real</th>
+                        <th className="text-right px-3 py-1">Extras</th>
+                        <th className="text-right px-3 py-1 font-bold">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {sec.musicos.map(m => (
+                        <tr key={m.asignacion_id} className="hover:bg-slate-50">
+                          <td className="px-3 py-1 font-medium">{m.apellidos}, {m.nombre}</td>
+                          <td className="px-3 py-1 text-slate-600">{m.instrumento || '—'}</td>
+                          <td className="px-3 py-1 text-slate-600">{m.nivel_estudios || '—'}</td>
+                          <td className="px-3 py-1 text-center">{m.porcentaje_asistencia_real}%</td>
+                          <td className="px-3 py-1 text-right">{fmtEuro(m.cache_previsto)}</td>
+                          <td className="px-3 py-1 text-right">{fmtEuro(m.cache_real)}</td>
+                          <td className="px-3 py-1 text-right">{fmtEuro(m.cache_extra)}</td>
+                          <td className="px-3 py-1 text-right font-bold">{fmtEuro(m.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -581,20 +581,54 @@ async def seguimiento_bulk_accion(
 
 def _cachet_lookup(cachets_rows: List[dict], instrumento: Optional[str], nivel: Optional[str]) -> Optional[float]:
     """Busca en cachets_config el importe para (instrumento, nivel). Case-insensitive."""
+    res = _cachet_lookup_with_source(cachets_rows, instrumento, nivel)
+    return res[0] if res else None
+
+
+def _cachet_lookup_with_source(cachets_rows: List[dict], instrumento: Optional[str], nivel: Optional[str]):
+    """Igual que _cachet_lookup pero devuelve (importe, fuente) donde fuente indica
+    si fue match exacto, por_instrumento, base_exacto, base_por_instrumento.
+    La lista cachets_rows puede mezclar filas con evento_id (específicas) y evento_id=NULL (base).
+    Prioridad: evento+instrumento+nivel → evento+instrumento → base+instrumento+nivel → base+instrumento."""
     if not instrumento:
         return None
     i = str(instrumento).strip().lower()
     n = str(nivel or '').strip().lower()
-    # Match exacto instrumento+nivel
-    for r in cachets_rows:
-        if (r.get('instrumento') or '').strip().lower() == i and \
-           (r.get('nivel_estudios') or '').strip().lower() == n:
-            return float(r['importe']) if r.get('importe') is not None else None
-    # Fallback: solo instrumento (nivel NULL/vacío en config)
-    for r in cachets_rows:
-        if (r.get('instrumento') or '').strip().lower() == i and \
-           not (r.get('nivel_estudios') or '').strip():
-            return float(r['importe']) if r.get('importe') is not None else None
+
+    # Separar event-specific vs base
+    specific = [r for r in cachets_rows if r.get('evento_id')]
+    base = [r for r in cachets_rows if not r.get('evento_id')]
+
+    def match(rows, want_nivel):
+        for r in rows:
+            if (r.get('instrumento') or '').strip().lower() != i:
+                continue
+            nivel_r = (r.get('nivel_estudios') or '').strip().lower()
+            if want_nivel and nivel_r != n:
+                continue
+            if not want_nivel and nivel_r and n and nivel_r != n:
+                continue
+            if r.get('importe') is None:
+                continue
+            return float(r['importe'])
+        return None
+
+    # 1) evento+instrumento+nivel
+    v = match(specific, True)
+    if v is not None:
+        return (v, 'exacto')
+    # 2) evento+instrumento (cualquier nivel)
+    for r in specific:
+        if (r.get('instrumento') or '').strip().lower() == i and r.get('importe') is not None:
+            return (float(r['importe']), 'por_instrumento')
+    # 3) base+instrumento+nivel
+    v = match(base, True)
+    if v is not None:
+        return (v, 'base_exacto')
+    # 4) base+instrumento
+    for r in base:
+        if (r.get('instrumento') or '').strip().lower() == i and r.get('importe') is not None:
+            return (float(r['importe']), 'base_por_instrumento')
     return None
 
 
@@ -666,6 +700,11 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
         cachets_by_evento = {}
         for c in (cachets_res.data or []):
             cachets_by_evento.setdefault(c['evento_id'], []).append(c)
+        # Cachets base (evento_id IS NULL) — plantilla global
+        cachets_base_res = supabase.table('cachets_config') \
+            .select('id,evento_id,instrumento,nivel_estudios,importe') \
+            .is_('evento_id', 'null').execute()
+        cachets_base = cachets_base_res.data or []
 
         eventos_out = []
         for ev in eventos_raw:
@@ -705,11 +744,15 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 valores_real = [float(x["asistencia_real"]) for x in asist_list if x["asistencia_real"] is not None]
                 pct_real = round(sum(valores_real) / len(valores_real), 2) if valores_real else 0
 
-                # Caché previsto: cachets_config → fallback asignaciones.cache_presupuestado → asignaciones.importe
+                # Caché previsto: cachets_config específico → base → fallback asignaciones
                 nivel_efectivo = a.get('nivel_estudios') or _nivel_estudios_efectivo(u)
-                cache_prev = _cachet_lookup(cachets_by_evento.get(ev['id'], []), u.get('instrumento'), nivel_efectivo)
-                if cache_prev is None:
+                combined_cachets = cachets_by_evento.get(ev['id'], []) + cachets_base
+                lookup = _cachet_lookup_with_source(combined_cachets, u.get('instrumento'), nivel_efectivo)
+                if lookup is not None:
+                    cache_prev, cache_fuente = lookup
+                else:
                     cache_prev = float(a.get('cache_presupuestado') or a.get('importe') or 0)
+                    cache_fuente = 'asignacion' if cache_prev > 0 else 'sin_datos'
 
                 cache_real = round(cache_prev * (pct_real / 100.0), 2)
 
@@ -745,8 +788,8 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                     "porcentaje_disponibilidad": pct_disp,
                     "porcentaje_asistencia_real": pct_real,
                     "cache_previsto": round(cache_prev, 2),
+                    "cache_fuente": cache_fuente,
                     "cache_real": cache_real,
-                    "gastos_adicional_id": g.get('id'),
                     "cache_extra": extras,
                     "motivo_extra": g.get('notas') or '',
                     "transporte_importe": transp,
@@ -1065,6 +1108,56 @@ async def put_cachets_config(
         return {"ok": True, "escritas": written}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar cachets: {str(e)}")
+
+
+# ==================================================================
+# CACHETS BASE (evento_id IS NULL) — plantilla global instrumento+nivel
+# ==================================================================
+
+class CachetBaseItem(BaseModel):
+    instrumento: str
+    nivel_estudios: str
+    importe: Optional[float] = 0
+
+
+@router.get("/cachets-base")
+async def get_cachets_base(current_user: dict = Depends(get_current_gestor)):
+    """Lista los cachets base (evento_id IS NULL)."""
+    try:
+        r = supabase.table('cachets_config').select('*').is_('evento_id', 'null').execute()
+        return {"cachets": r.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al listar cachets base: {str(e)}")
+
+
+@router.put("/cachets-base")
+async def put_cachets_base(data: List[CachetBaseItem], current_user: dict = Depends(get_current_gestor)):
+    """UPSERT de cachets base por (instrumento, nivel_estudios) con evento_id=NULL."""
+    try:
+        now = datetime.now().isoformat()
+        existing = supabase.table('cachets_config').select('*').is_('evento_id', 'null').execute().data or []
+        idx = {(r.get('instrumento'), r.get('nivel_estudios')): r['id'] for r in existing}
+        creados = 0
+        actualizados = 0
+        for row in data:
+            payload = {
+                "evento_id": None,
+                "instrumento": row.instrumento,
+                "nivel_estudios": (row.nivel_estudios or '').strip() or 'General',
+                "importe": float(row.importe or 0),
+                "updated_at": now,
+            }
+            key = (row.instrumento, payload["nivel_estudios"])
+            if key in idx:
+                supabase.table('cachets_config').update(payload).eq('id', idx[key]).execute()
+                actualizados += 1
+            else:
+                supabase.table('cachets_config').insert(payload).execute()
+                creados += 1
+        return {"ok": True, "creados": creados, "actualizados": actualizados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar cachets base: {str(e)}")
+
 
 
 @router.delete("/eventos/{evento_id}")
@@ -2668,6 +2761,7 @@ async def get_gestion_economica(
         cachets_by_evento = {}
         for c in (cachets_res.data or []):
             cachets_by_evento.setdefault(c['evento_id'], []).append(c)
+        cachets_base = (supabase.table('cachets_config').select('*').is_('evento_id', 'null').execute().data or [])
 
         total_temporada = 0.0
         eventos_out = []
@@ -2695,9 +2789,13 @@ async def get_gestion_economica(
                 pct_real = round(sum(vals) / len(vals), 2) if vals else 0
 
                 nivel_efectivo = a.get('nivel_estudios') or _nivel_estudios_efectivo(u)
-                cache_prev = _cachet_lookup(cachets_by_evento.get(ev['id'], []), u.get('instrumento'), nivel_efectivo)
-                if cache_prev is None:
+                combined = cachets_by_evento.get(ev['id'], []) + cachets_base
+                lookup = _cachet_lookup_with_source(combined, u.get('instrumento'), nivel_efectivo)
+                if lookup is not None:
+                    cache_prev, cache_fuente = lookup
+                else:
                     cache_prev = float(a.get('cache_presupuestado') or a.get('importe') or 0)
+                    cache_fuente = 'asignacion' if cache_prev > 0 else 'sin_datos'
                 cache_real = round(cache_prev * (pct_real / 100.0), 2)
                 g = gastos_by_pair.get((u['id'], ev['id'])) or {}
                 extras = float(g.get('cache_extra') or 0)
@@ -2733,6 +2831,7 @@ async def get_gestion_economica(
                     "porcentaje_disponibilidad": pct_disp,
                     "porcentaje_asistencia_real": pct_real,
                     "cache_previsto": round(cache_prev, 2),
+                    "cache_fuente": cache_fuente,
                     "cache_real": cache_real,
                     "cache_extra": extras,
                     "transporte_importe": transp,
@@ -2933,12 +3032,16 @@ async def get_analisis_resumen(
 @router.get("/analisis/sepa-xml")
 async def export_sepa_xml(
     temporada: Optional[str] = None,
+    evento_id: Optional[str] = None,
     current_user: dict = Depends(get_current_gestor),
 ):
-    """Genera XML SEPA pain.001.001.03 con las liquidaciones por músico."""
+    """Genera XML SEPA pain.001.001.03 con las liquidaciones por músico.
+    Si se pasa `evento_id`, sólo incluye músicos de ese evento."""
     from fastapi.responses import Response
     data = await get_gestion_economica(temporada=temporada, current_user=current_user)
     eventos = data.get("eventos", [])
+    if evento_id:
+        eventos = [e for e in eventos if e['id'] == evento_id]
     # Agrupar por músico: acumular el total a percibir
     por_musico = {}
     for ev in eventos:
@@ -3054,7 +3157,20 @@ async def create_tarea(data: TareaCreate, current_user: dict = Depends(get_curre
     try:
         payload = data.model_dump(exclude_none=True)
         r = supabase.table('tareas').insert(payload).execute()
-        return {"tarea": r.data[0] if r.data else None}
+        tarea = r.data[0] if r.data else None
+        # Notificar al responsable si hay uno y es distinto del autor
+        try:
+            if tarea and tarea.get('responsable_id') and tarea['responsable_id'] != current_user['id']:
+                supabase.table('notificaciones_gestor').insert({
+                    "usuario_id": tarea['responsable_id'],
+                    "tipo": "tarea_asignada",
+                    "titulo": "Nueva tarea asignada",
+                    "mensaje": f"Te han asignado la tarea: {tarea.get('titulo')}",
+                    "link": f"/admin/tareas?id={tarea['id']}",
+                }).execute()
+        except Exception:
+            pass  # Notificación opcional — no romper el flujo si tabla no existe
+        return {"tarea": tarea}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
 
@@ -3062,10 +3178,43 @@ async def create_tarea(data: TareaCreate, current_user: dict = Depends(get_curre
 @router.put("/tareas/{tarea_id}")
 async def update_tarea(tarea_id: str, data: TareaUpdate, current_user: dict = Depends(get_current_gestor)):
     try:
+        before = supabase.table('tareas').select('*').eq('id', tarea_id).execute().data or []
+        prev_estado = (before[0].get('estado') if before else None)
+        prev_responsable = (before[0].get('responsable_id') if before else None)
+
         payload = data.model_dump(exclude_none=True)
         payload['updated_at'] = datetime.now().isoformat()
         r = supabase.table('tareas').update(payload).eq('id', tarea_id).execute()
-        return {"tarea": r.data[0] if r.data else None}
+        tarea = r.data[0] if r.data else None
+
+        # Notificar al nuevo responsable si ha cambiado
+        try:
+            new_resp = payload.get('responsable_id')
+            if tarea and new_resp and new_resp != prev_responsable and new_resp != current_user['id']:
+                supabase.table('notificaciones_gestor').insert({
+                    "usuario_id": new_resp,
+                    "tipo": "tarea_asignada",
+                    "titulo": "Tarea reasignada",
+                    "mensaje": f"Se te ha asignado la tarea: {tarea.get('titulo')}",
+                    "link": f"/admin/tareas?id={tarea['id']}",
+                }).execute()
+        except Exception:
+            pass
+
+        # Registrar en registro_actividad si se completó
+        try:
+            if tarea and payload.get('estado') == 'completada' and prev_estado != 'completada':
+                supabase.table('registro_actividad').insert({
+                    "usuario_id": current_user['id'],
+                    "accion": "tarea_completada",
+                    "descripcion": f"Completó la tarea: {tarea.get('titulo')}",
+                    "entidad_tipo": "tarea",
+                    "entidad_id": tarea_id,
+                }).execute()
+        except Exception:
+            pass
+
+        return {"tarea": tarea}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al actualizar tarea: {str(e)}")
 
@@ -3086,4 +3235,68 @@ async def list_gestores(current_user: dict = Depends(get_current_gestor)):
         return {"gestores": r.data or []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al listar gestores: {str(e)}")
+
+
+
+# ==================================================================
+# BLOQUE 6 — Incidencias / Feedback
+# ==================================================================
+
+class IncidenciaCreate(BaseModel):
+    tipo: str  # 'incidencia' | 'mejora' | 'pregunta'
+    descripcion: str
+    pagina: Optional[str] = None
+    screenshot_url: Optional[str] = None
+
+
+class IncidenciaUpdate(BaseModel):
+    estado: Optional[str] = None
+    respuesta: Optional[str] = None
+
+
+@router.post("/incidencias")
+async def create_incidencia(data: IncidenciaCreate, current_user: dict = Depends(get_current_gestor)):
+    try:
+        payload = data.model_dump(exclude_none=True)
+        payload['usuario_id'] = current_user['id']
+        payload['usuario_nombre'] = f"{current_user.get('apellidos','')}, {current_user.get('nombre','')}".strip(', ')
+        r = supabase.table('incidencias').insert(payload).execute()
+        return {"incidencia": r.data[0] if r.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al crear incidencia: {str(e)}")
+
+
+@router.get("/incidencias")
+async def list_incidencias(
+    estado: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor),
+):
+    try:
+        q = supabase.table('incidencias').select('*')
+        if estado:
+            q = q.eq('estado', estado)
+        r = q.order('created_at', desc=True).execute()
+        return {"incidencias": r.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al listar incidencias: {str(e)}")
+
+
+@router.put("/incidencias/{inc_id}")
+async def update_incidencia(inc_id: str, data: IncidenciaUpdate, current_user: dict = Depends(get_current_gestor)):
+    try:
+        payload = data.model_dump(exclude_none=True)
+        payload['updated_at'] = datetime.now().isoformat()
+        r = supabase.table('incidencias').update(payload).eq('id', inc_id).execute()
+        return {"incidencia": r.data[0] if r.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar incidencia: {str(e)}")
+
+
+@router.delete("/incidencias/{inc_id}")
+async def delete_incidencia(inc_id: str, current_user: dict = Depends(get_current_gestor)):
+    try:
+        supabase.table('incidencias').delete().eq('id', inc_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar incidencia: {str(e)}")
 

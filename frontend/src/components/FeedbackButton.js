@@ -1,156 +1,101 @@
-import React, { useState } from "react";
-import axios from "axios";
+// Widget flotante de feedback/incidencias.
+// Envía a POST /api/gestor/incidencias (tabla `incidencias`).
+import React, { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from 'react-router-dom';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const FeedbackButton = () => {
+  const auth = useAuth();
+  const api = auth?.api;
+  const loc = useLocation();
+  const [open, setOpen] = useState(false);
+  const [tipo, setTipo] = useState('incidencia');
+  const [descripcion, setDescripcion] = useState('');
+  const [sending, setSending] = useState(false);
+  const [msg, setMsg] = useState(null);
 
-const FeedbackButton = ({ currentPage, currentSection }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    type: "error",
-    description: ""
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
+  // Solo se muestra si hay un api disponible (= usuario gestor autenticado con AuthContext)
+  if (!api) return null;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
+  const enviar = async () => {
+    if (!descripcion.trim()) { setMsg({ type: 'error', text: 'Descripción obligatoria' }); return; }
     try {
-      await axios.post(`${API}/feedback`, {
-        page: currentPage,
-        section: currentSection || null,
-        type: formData.type,
-        description: formData.description,
-        user_agent: navigator.userAgent
+      setSending(true); setMsg(null);
+      await api.post('/api/gestor/incidencias', {
+        tipo,
+        descripcion: descripcion.trim(),
+        pagina: loc.pathname,
       });
-
-      setSubmitSuccess(true);
-      setFormData({ type: "error", description: "" });
-      
-      setTimeout(() => {
-        setIsOpen(false);
-        setSubmitSuccess(false);
-      }, 2000);
-    } catch (error) {
-      console.error("Error al enviar reporte:", error);
-      alert("Error al enviar el reporte. Por favor, inténtalo de nuevo.");
-    } finally {
-      setIsSubmitting(false);
-    }
+      setMsg({ type: 'success', text: '✅ Gracias por tu feedback. Lo revisaremos pronto.' });
+      setDescripcion('');
+      setTimeout(() => { setOpen(false); setMsg(null); }, 2000);
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || err.message });
+    } finally { setSending(false); }
   };
 
-  if (!isOpen) {
-    return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
-        style={{ zIndex: 9999 }}
-        title="Reportar error o mejora"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <span className="font-medium">Reportar</span>
-      </button>
-    );
-  }
-
   return (
-    <div className="fixed bottom-6 right-6 bg-white rounded-lg shadow-2xl border border-slate-200 p-6 w-96" style={{ zIndex: 9999 }}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-lg text-slate-900">Reportar Problema</h3>
-        <button
-          onClick={() => setIsOpen(false)}
-          className="text-slate-400 hover:text-slate-600"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      {submitSuccess ? (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-          <div className="text-green-600 mb-2">
-            <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <p className="text-sm font-medium text-green-900">¡Reporte enviado con éxito!</p>
-          <p className="text-xs text-green-700 mt-1">Gracias por tu colaboración</p>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="bg-slate-50 rounded p-3 text-sm">
-            <div className="font-medium text-slate-700">Ubicación:</div>
-            <div className="text-slate-600">{currentPage}</div>
-            {currentSection && <div className="text-slate-500 text-xs mt-1">{currentSection}</div>}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Tipo de reporte
-            </label>
-            <div className="flex gap-3">
-              <label className="flex-1">
-                <input
-                  type="radio"
-                  name="type"
-                  value="error"
-                  checked={formData.type === "error"}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  className="mr-2"
-                />
-                <span className="text-sm">🐛 Error</span>
-              </label>
-              <label className="flex-1">
-                <input
-                  type="radio"
-                  name="type"
-                  value="mejora"
-                  checked={formData.type === "mejora"}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  className="mr-2"
-                />
-                <span className="text-sm">💡 Mejora</span>
-              </label>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        data-testid="btn-feedback"
+        className="fixed bottom-6 right-6 z-40 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg px-4 py-2 text-sm font-medium flex items-center gap-1.5"
+        title="Reportar incidencia, mejora o pregunta"
+      >
+        💬 Feedback
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-testid="feedback-modal">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="font-semibold">Reportar feedback</h3>
+              <button onClick={() => setOpen(false)} className="text-slate-500 hover:text-slate-900">×</button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-xs text-slate-600 mb-1 block">Tipo</label>
+                <div className="inline-flex border border-slate-300 rounded-md overflow-hidden text-sm">
+                  {[
+                    { v: 'incidencia', label: '🐞 Incidencia' },
+                    { v: 'mejora',     label: '✨ Mejora' },
+                    { v: 'pregunta',   label: '❓ Pregunta' },
+                  ].map(o => (
+                    <button key={o.v} type="button"
+                            onClick={() => setTipo(o.v)}
+                            data-testid={`feedback-tipo-${o.v}`}
+                            className={`px-3 py-1.5 ${tipo === o.v ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-600 mb-1 block">Descripción *</label>
+                <textarea value={descripcion} onChange={(e) => setDescripcion(e.target.value)} rows={5}
+                          data-testid="feedback-descripcion"
+                          placeholder="Describe lo que ocurre, qué esperabas, y cualquier detalle útil..."
+                          className="w-full px-3 py-2 border border-slate-300 rounded text-sm" />
+              </div>
+              <div className="text-xs text-slate-500">📍 Página: <code className="bg-slate-100 px-1">{loc.pathname}</code></div>
+              {msg && (
+                <div className={`text-sm p-2 rounded ${msg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}
+                     data-testid="feedback-msg">
+                  {msg.text}
+                </div>
+              )}
+            </div>
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center gap-2">
+              <button onClick={() => setOpen(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
+              <button onClick={enviar} disabled={sending}
+                      data-testid="btn-feedback-enviar"
+                      className="ml-auto px-4 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700 disabled:opacity-50">
+                {sending ? 'Enviando...' : 'Enviar'}
+              </button>
             </div>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Descripción
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              rows="4"
-              placeholder="Describe el problema o la mejora propuesta..."
-              required
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 text-sm font-medium"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
-            >
-              {isSubmitting ? "Enviando..." : "Enviar Reporte"}
-            </button>
-          </div>
-        </form>
+        </div>
       )}
-    </div>
+    </>
   );
 };
 

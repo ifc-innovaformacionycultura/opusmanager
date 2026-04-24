@@ -97,6 +97,23 @@ const AsistenciaPagos = () => {
     }
   };
 
+  const exportSepaEvento = async (eventoId) => {
+    try {
+      const qs = new URLSearchParams();
+      qs.set('evento_id', eventoId);
+      if (temporada) qs.set('temporada', temporada);
+      const r = await api.get(`/api/gestor/analisis/sepa-xml?${qs}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sepa_evento_${eventoId.slice(0, 8)}.xml`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Error SEPA: ' + err.message);
+    }
+  };
+
   const totalTemporada = data.total_temporada || 0;
 
   if (loading) {
@@ -154,13 +171,18 @@ const AsistenciaPagos = () => {
                 <span className="font-semibold text-base">{ev.nombre}</span>
                 <span className="text-xs text-slate-300 ml-3">{fmtFecha(ev.fecha_inicio)} · {ev.total_musicos} músicos</span>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <span className="text-lg font-bold">{fmtEuro(ev.totales.total)}</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); exportXlsx(ev.id); }}
                   className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-xs rounded"
                   data-testid={`btn-export-ev-${ev.id}`}
-                >Excel</button>
+                >📥 Excel</button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); exportSepaEvento(ev.id); }}
+                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-xs rounded"
+                  data-testid={`btn-sepa-ev-${ev.id}`}
+                >🏦 SEPA XML</button>
                 <span className="text-xs">{open ? '▼' : '▶'}</span>
               </div>
             </div>
@@ -180,6 +202,21 @@ const AsistenciaPagos = () => {
                         <th className="px-2 py-2 text-left font-medium">SWIFT</th>
                         <th className="px-2 py-2 text-center font-medium">%Disp</th>
                         <th className="px-2 py-2 text-center font-medium">%Real</th>
+                        {(() => {
+                          const counters = { ensayo: 0, concierto: 0, funcion: 0 };
+                          return (ev.ensayos || []).map(e => {
+                            const tipo = (e.tipo || 'ensayo').toLowerCase();
+                            counters[tipo] = (counters[tipo] || 0) + 1;
+                            const abbr = tipo === 'concierto' ? 'Conc' : tipo === 'funcion' ? 'Func' : 'Ens';
+                            const label = `${abbr}.${counters[tipo]}`;
+                            return (
+                              <th key={e.id} className="px-1 py-2 text-center font-normal text-[10px] text-slate-500 bg-slate-100 min-w-[48px]" title={`${label} ${e.fecha}`}>
+                                <div className="font-semibold text-slate-700">{label}</div>
+                                <div>{e.fecha ? new Date(e.fecha).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : ''}</div>
+                              </th>
+                            );
+                          });
+                        })()}
                         <th className="px-2 py-2 text-right font-medium">Caché Prev.</th>
                         <th className="px-2 py-2 text-right font-medium">Caché Real</th>
                         <th className="px-2 py-2 text-right font-medium">Extras</th>
@@ -201,7 +238,18 @@ const AsistenciaPagos = () => {
                           <td className="px-2 py-1.5 font-mono text-[11px]">{m.swift || '—'}</td>
                           <td className="px-2 py-1.5 text-center">{m.porcentaje_disponibilidad}%</td>
                           <td className="px-2 py-1.5 text-center font-semibold">{m.porcentaje_asistencia_real}%</td>
-                          <td className="px-2 py-1.5 text-right">{fmtEuro(m.cache_previsto)}</td>
+                          {(ev.ensayos || []).map(e => {
+                            const asis = (m.asistencia || []).find(x => x.ensayo_id === e.id);
+                            const v = asis?.asistencia_real;
+                            return (
+                              <td key={e.id} className="px-1 py-1.5 text-center text-[11px] bg-slate-50">
+                                {v === null || v === undefined ? '—' : `${v}%`}
+                              </td>
+                            );
+                          })}
+                          <td className="px-2 py-1.5 text-right">
+                            <span className={m.cache_fuente === 'asignacion' ? 'text-orange-600 font-semibold' : m.cache_fuente === 'sin_datos' ? 'text-slate-400' : ''} title={`Fuente: ${m.cache_fuente || '-'}`}>{fmtEuro(m.cache_previsto)}</span>
+                          </td>
                           <td className="px-2 py-1.5 text-right">{fmtEuro(m.cache_real)}</td>
                           <td className="px-2 py-1.5 text-right">{fmtEuro(m.cache_extra)}</td>
                           <td className="px-2 py-1.5 text-right">{fmtEuro(m.transporte_importe)}</td>
@@ -219,17 +267,27 @@ const AsistenciaPagos = () => {
                               {m.estado_pago === 'pagado' ? '✓ Pagado' : m.estado_pago === 'anulado' ? '✗ Anulado' : 'Pendiente'}
                             </button>
                           </td>
-                          <td className="px-2 py-1.5 text-[10px] text-slate-500 max-w-[180px]">
+                          <td className="px-2 py-1.5 text-[10px] text-slate-500 max-w-[240px]">
                             {(m.titulaciones || []).length === 0 ? '—' : (m.titulaciones || []).map((t, i) => (
-                              <div key={i} className="truncate" title={`${t.titulo}${t.institucion ? ' · ' + t.institucion : ''}${t.anio ? ' · ' + t.anio : ''}`}>
-                                {t.titulo}{t.institucion ? ` · ${t.institucion}` : ''}
+                              <div key={i} className="flex items-center gap-1 mb-0.5" title={`${t.titulo}${t.institucion ? ' · ' + t.institucion : ''}${t.anio ? ' · ' + t.anio : ''}`}>
+                                <span className="truncate">
+                                  {t.titulo}{t.institucion ? ` · ${t.institucion}` : ''}{t.anio ? ` · ${t.anio}` : ''}
+                                </span>
+                                {t.archivo_url && (
+                                  <a href={t.archivo_url} target="_blank" rel="noreferrer"
+                                     className="shrink-0 text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded"
+                                     onClick={(e) => e.stopPropagation()}
+                                     data-testid={`titulo-link-${m.asignacion_id}-${i}`}>
+                                    📄 Ver
+                                  </a>
+                                )}
                               </div>
                             ))}
                           </td>
                         </tr>
                       ))}
                       <tr className="bg-slate-200 font-semibold">
-                        <td colSpan={7} className="px-2 py-1.5 text-right uppercase text-[11px]">Subtotal {sec.label}</td>
+                        <td colSpan={7 + (ev.ensayos || []).length} className="px-2 py-1.5 text-right uppercase text-[11px]">Subtotal {sec.label}</td>
                         <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.cache_previsto)}</td>
                         <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.cache_real)}</td>
                         <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.extras)}</td>

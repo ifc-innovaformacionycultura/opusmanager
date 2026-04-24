@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
+import CachetsBaseSection from "./CachetsBaseSection";
 
 // Orchestra sections and study levels
 const SECTIONS = [
@@ -321,6 +322,15 @@ const Presupuestos = () => {
           )}
         </div>
       </header>
+
+      {/* Sección A — Cachets base por instrumento y nivel */}
+      <CachetsBaseSection api={api} />
+
+      {/* Sección B — Otros gastos e ingresos por evento */}
+      <div className="bg-slate-100 px-4 py-2 rounded-t-lg border border-slate-300 border-b-0 mb-0">
+        <h2 className="font-semibold text-slate-800">📊 Sección B · Otros gastos e ingresos por evento</h2>
+        <p className="text-xs text-slate-600 mt-0.5">Partidas complementarias (sala, técnico, publicidad, viajes, etc.) por evento.</p>
+      </div>
 
       {events.length === 0 ? (
         <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">

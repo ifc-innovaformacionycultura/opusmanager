@@ -1,7 +1,8 @@
-// Planificador de tareas — vista Lista + Gantt
+// Planificador de tareas — vista Lista + Gantt + Calendario
 // Backend: /api/gestor/tareas (CRUD)
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import ComentariosPanel from '../components/ComentariosPanel';
 
 const CATEGORIAS = [
   { value: 'artistico',    label: 'Artístico',     color: 'bg-purple-100 text-purple-800' },
@@ -136,8 +137,13 @@ const GestorTareas = () => {
             </button>
             <button onClick={() => setVista('gantt')}
                     data-testid="btn-vista-gantt"
-                    className={`px-3 py-1.5 text-sm ${vista === 'gantt' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}>
+                    className={`px-3 py-1.5 text-sm border-l border-slate-300 ${vista === 'gantt' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}>
               📊 Gantt
+            </button>
+            <button onClick={() => setVista('calendario')}
+                    data-testid="btn-vista-calendario"
+                    className={`px-3 py-1.5 text-sm border-l border-slate-300 ${vista === 'calendario' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}>
+              📅 Calendario
             </button>
           </div>
           <button onClick={() => { setEdit(null); setShowForm(true); }}
@@ -225,8 +231,10 @@ const GestorTareas = () => {
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : vista === 'gantt' ? (
         <GanttView tareas={tareasFiltradas} onOpen={(t) => { setEdit(t); setShowForm(true); }} />
+      ) : (
+        <CalendarView tareas={tareasFiltradas} onOpen={(t) => { setEdit(t); setShowForm(true); }} />
       )}
 
       {showForm && (
@@ -352,6 +360,11 @@ const TareaForm = ({ tarea, gestores, eventos, onSave, onClose }) => {
             </button>
           </div>
         </form>
+        {tarea?.id && (
+          <div className="px-5 pb-5 pt-0 border-t border-slate-200">
+            <ComentariosPanel tipo="tarea" entidadId={tarea.id} title="💬 Comentarios del equipo" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -437,3 +450,166 @@ const GanttView = ({ tareas, onOpen }) => {
 };
 
 export default GestorTareas;
+
+// ------------------ Calendar View (Mensual/Semanal/Anual) ------------------
+const CalendarView = ({ tareas, onOpen }) => {
+  const [sub, setSub] = useState('mensual'); // 'mensual' | 'semanal' | 'anual'
+  const [ref, setRef] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+
+  // Color por prioridad
+  const priColor = (p) => p === 'alta' ? 'bg-red-500' : p === 'media' ? 'bg-amber-500' : 'bg-emerald-500';
+
+  const tareasByDate = useMemo(() => {
+    const m = {};
+    (tareas || []).forEach(t => {
+      if (!t.fecha_limite) return;
+      const k = String(t.fecha_limite).slice(0, 10);
+      if (!m[k]) m[k] = [];
+      m[k].push(t);
+    });
+    return m;
+  }, [tareas]);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid="calendar-view">
+      <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between">
+        <div className="inline-flex border border-slate-600 rounded overflow-hidden text-xs">
+          {['mensual', 'semanal', 'anual'].map(v => (
+            <button key={v} onClick={() => setSub(v)}
+                    className={`px-3 py-1 capitalize ${sub === v ? 'bg-white text-slate-900' : 'bg-slate-700'}`}
+                    data-testid={`cal-sub-${v}`}>
+              {v}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => {
+            const d = new Date(ref);
+            if (sub === 'mensual') d.setMonth(d.getMonth() - 1);
+            else if (sub === 'semanal') d.setDate(d.getDate() - 7);
+            else d.setFullYear(d.getFullYear() - 1);
+            setRef(d);
+          }} className="px-2 py-1 hover:bg-slate-700 rounded">←</button>
+          <span className="font-semibold">
+            {sub === 'mensual' && ref.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
+            {sub === 'semanal' && `Sem. de ${ref.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+            {sub === 'anual' && ref.getFullYear()}
+          </span>
+          <button onClick={() => {
+            const d = new Date(ref);
+            if (sub === 'mensual') d.setMonth(d.getMonth() + 1);
+            else if (sub === 'semanal') d.setDate(d.getDate() + 7);
+            else d.setFullYear(d.getFullYear() + 1);
+            setRef(d);
+          }} className="px-2 py-1 hover:bg-slate-700 rounded">→</button>
+        </div>
+      </div>
+      {sub === 'mensual' && <CalMensual ref_={ref} tareasByDate={tareasByDate} onOpen={onOpen} priColor={priColor} />}
+      {sub === 'semanal' && <CalSemanal ref_={ref} tareasByDate={tareasByDate} onOpen={onOpen} priColor={priColor} />}
+      {sub === 'anual' && <CalAnual ref_={ref} tareas={tareas} setSub={setSub} setRef={setRef} />}
+    </div>
+  );
+};
+
+const CalMensual = ({ ref_, tareasByDate, onOpen, priColor }) => {
+  const y = ref_.getFullYear(), m = ref_.getMonth();
+  const firstDay = new Date(y, m, 1);
+  const days = new Date(y, m + 1, 0).getDate();
+  const startWeekday = (firstDay.getDay() + 6) % 7; // lunes=0
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= days; d++) cells.push(new Date(y, m, d));
+  const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  return (
+    <div className="p-3">
+      <div className="grid grid-cols-7 gap-1 mb-1 text-center text-xs font-semibold text-slate-600">
+        {weekDays.map(w => <div key={w}>{w}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} className="min-h-[80px] bg-slate-50 rounded" />;
+          const k = d.toISOString().slice(0, 10);
+          const ts = tareasByDate[k] || [];
+          return (
+            <div key={i} className="min-h-[80px] border border-slate-200 rounded p-1 text-xs">
+              <div className="text-[10px] text-slate-500 mb-0.5">{d.getDate()}</div>
+              {ts.slice(0, 3).map(t => (
+                <div key={t.id} onClick={() => onOpen(t)}
+                     className={`${priColor(t.prioridad)} text-white px-1 py-0.5 rounded truncate cursor-pointer mb-0.5 text-[10px]`}
+                     title={t.titulo} data-testid={`cal-chip-${t.id}`}>
+                  {t.titulo}
+                </div>
+              ))}
+              {ts.length > 3 && <div className="text-[9px] text-slate-500">+{ts.length - 3} más</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const CalSemanal = ({ ref_, tareasByDate, onOpen, priColor }) => {
+  // Calcular lunes de la semana del ref_
+  const start = new Date(ref_);
+  const dow = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - dow);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start); d.setDate(start.getDate() + i); return d;
+  });
+  return (
+    <div className="p-3">
+      <div className="grid grid-cols-7 gap-2">
+        {days.map((d, idx) => {
+          const k = d.toISOString().slice(0, 10);
+          const ts = tareasByDate[k] || [];
+          return (
+            <div key={idx} className="border border-slate-200 rounded p-2 min-h-[200px]">
+              <div className="text-xs font-semibold text-slate-700 mb-1 capitalize">
+                {d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })}
+              </div>
+              {ts.map(t => (
+                <div key={t.id} onClick={() => onOpen(t)}
+                     className={`${priColor(t.prioridad)} text-white p-1 rounded mb-1 cursor-pointer text-xs`}>
+                  <div className="font-medium truncate">{t.titulo}</div>
+                  {t.responsable_nombre && <div className="text-[10px] opacity-80 truncate">{t.responsable_nombre}</div>}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const CalAnual = ({ ref_, tareas, setSub, setRef }) => {
+  const y = ref_.getFullYear();
+  const counts = Array.from({ length: 12 }, (_, m) => {
+    const c = tareas.filter(t => {
+      if (!t.fecha_limite) return false;
+      const d = new Date(t.fecha_limite);
+      return d.getFullYear() === y && d.getMonth() === m && t.estado !== 'completada' && t.estado !== 'cancelada';
+    }).length;
+    return c;
+  });
+  const nombres = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  return (
+    <div className="p-3 grid grid-cols-4 gap-3">
+      {nombres.map((n, i) => (
+        <div key={i}
+             onClick={() => { setRef(new Date(y, i, 1)); setSub('mensual'); }}
+             className="border border-slate-200 rounded-lg p-4 text-center hover:bg-slate-50 cursor-pointer"
+             data-testid={`cal-anual-${i}`}>
+          <div className="font-semibold text-slate-900">{n}</div>
+          <div className="text-xs text-slate-500">{y}</div>
+          <div className="mt-2 flex items-center justify-center gap-1">
+            <span className={`w-3 h-3 rounded-full ${counts[i] > 0 ? 'bg-red-500' : 'bg-slate-200'}`}></span>
+            <span className="text-xs font-medium">{counts[i]} pendientes</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
