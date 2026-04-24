@@ -204,16 +204,23 @@ const SeguimientoConvocatorias = () => {
     // Optimista
     setData(prev => ({
       ...prev,
-      musicos: prev.musicos.map(m => m.id === musicoId
-        ? { ...m, asignaciones: {
-            ...m.asignaciones,
-            [eventoId]: {
-              ...(m.asignaciones[eventoId] || { estado: null, disponibilidad: {}, porcentaje_disponibilidad: 0 }),
-              publicado_musico: next,
-              estado: (m.asignaciones[eventoId]?.estado) || (next ? 'pendiente' : null),
-            }
-          }}
-        : m)
+      musicos: prev.musicos.map(m => {
+        if (m.id !== musicoId) return m;
+        const asigs = Array.isArray(m.asignaciones) ? m.asignaciones : [];
+        const idx = asigs.findIndex(a => a.evento_id === eventoId);
+        const base = idx >= 0
+          ? asigs[idx]
+          : { evento_id: eventoId, estado: null, disponibilidad: [], porcentaje_disponibilidad: 0 };
+        const nextAsig = {
+          ...base,
+          publicado_musico: next,
+          estado: base.estado || (next ? 'pendiente' : null),
+        };
+        const nextList = idx >= 0
+          ? asigs.map((a, i) => (i === idx ? nextAsig : a))
+          : [...asigs, nextAsig];
+        return { ...m, asignaciones: nextList };
+      })
     }));
     try {
       await api.post('/api/gestor/seguimiento/publicar', {
@@ -232,15 +239,19 @@ const SeguimientoConvocatorias = () => {
     // Optimista
     setData(prev => ({
       ...prev,
-      musicos: prev.musicos.map(m => m.id === musicoId
-        ? { ...m, asignaciones: {
-            ...m.asignaciones,
-            [eventoId]: {
-              ...(m.asignaciones[eventoId] || { publicado_musico: false, disponibilidad: {}, porcentaje_disponibilidad: 0 }),
-              estado: accion,
-            }
-          }}
-        : m)
+      musicos: prev.musicos.map(m => {
+        if (m.id !== musicoId) return m;
+        const asigs = Array.isArray(m.asignaciones) ? m.asignaciones : [];
+        const idx = asigs.findIndex(a => a.evento_id === eventoId);
+        const base = idx >= 0
+          ? asigs[idx]
+          : { evento_id: eventoId, publicado_musico: false, disponibilidad: [], porcentaje_disponibilidad: 0 };
+        const nextAsig = { ...base, estado: accion };
+        const nextList = idx >= 0
+          ? asigs.map((a, i) => (i === idx ? nextAsig : a))
+          : [...asigs, nextAsig];
+        return { ...m, asignaciones: nextList };
+      })
     }));
     try {
       await api.post('/api/gestor/seguimiento/bulk-accion', {
@@ -680,7 +691,10 @@ const SeguimientoConvocatorias = () => {
                       <td className="px-2 py-1.5 text-slate-700 border-r-2 border-slate-300">{m.localidad || '—'}</td>
                     )}
                     {eventosVisibles.map(ev => {
-                      const asig = m.asignaciones[ev.id] || { publicado_musico: false, estado: null, disponibilidad: {}, porcentaje_disponibilidad: 0 };
+                      const asig = (Array.isArray(m.asignaciones)
+                        ? m.asignaciones.find(a => a.evento_id === ev.id)
+                        : (m.asignaciones || {})[ev.id])
+                        || { publicado_musico: false, estado: null, disponibilidad: [], porcentaje_disponibilidad: 0 };
                       const isPub = Boolean(asig.publicado_musico);
                       return (
                         <React.Fragment key={ev.id}>

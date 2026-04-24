@@ -914,10 +914,19 @@ async def delete_cv(current_user: dict = Depends(get_current_user)):
 
 @router.get("/mi-historial/eventos")
 async def get_historial_eventos(current_user: dict = Depends(get_current_user)):
-    """Historial de eventos: lista todas las asignaciones del músico con info de ensayos."""
-    usuario_id = (current_user.get("profile") or {}).get("id")
+    """Historial de eventos: lista todas las asignaciones del músico con info de ensayos.
+
+    Cada asignación incluye:
+      - ensayos[]: lista de ensayos del evento con `mi_disponibilidad` y `convocado`
+        (mismo shape que /portal/mis-eventos para que el frontend pueda compartir lógica)
+      - ensayos_total: nº de ensayos del evento
+      - ensayos_confirmados: nº de ensayos del evento donde el músico marcó asiste=True
+    """
+    profile = current_user.get("profile") or {}
+    usuario_id = profile.get("id")
     if not usuario_id:
         raise HTTPException(status_code=400, detail="Perfil no encontrado")
+    instrumento_musico = profile.get('instrumento')
 
     asigs_res = supabase.table('asignaciones') \
         .select('*, evento:eventos(*)') \
@@ -926,19 +935,64 @@ async def get_historial_eventos(current_user: dict = Depends(get_current_user)):
         .execute()
     asignaciones = asigs_res.data or []
 
-    # Para cada asignación, contar ensayos del evento
+    evento_ids = list({a.get('evento_id') for a in asignaciones if a.get('evento_id')})
+    ensayos_by_evento = {}
+    disp_map = {}
+    ei_conv_map = {}
+    if evento_ids:
+        ens_res = supabase.table('ensayos') \
+            .select('id,evento_id,tipo,fecha,hora,hora_fin,obligatorio,lugar') \
+            .in_('evento_id', evento_ids) \
+            .order('fecha', desc=False) \
+            .execute()
+        for e in (ens_res.data or []):
+            ensayos_by_evento.setdefault(e['evento_id'], []).append(e)
+        for evid, lst in ensayos_by_evento.items():
+            lst.sort(key=lambda x: (0 if (x.get('tipo') or 'ensayo') == 'ensayo' else 1,
+                                     x.get('fecha') or '', x.get('hora') or ''))
+        ensayo_ids = [e['id'] for evs in ensayos_by_evento.values() for e in evs]
+        if ensayo_ids:
+            d_res = supabase.table('disponibilidad') \
+                .select('ensayo_id,asiste,asistencia_real') \
+                .eq('usuario_id', usuario_id) \
+                .in_('ensayo_id', ensayo_ids) \
+                .execute()
+            for d in (d_res.data or []):
+                disp_map[d['ensayo_id']] = d
+            if instrumento_musico:
+                ei_res = supabase.table('ensayo_instrumentos') \
+                    .select('ensayo_id,convocado') \
+                    .in_('ensayo_id', ensayo_ids) \
+                    .eq('instrumento', instrumento_musico) \
+                    .execute()
+                for row in (ei_res.data or []):
+                    ei_conv_map[row['ensayo_id']] = bool(row.get('convocado', True))
+
     for a in asignaciones:
         eid = a.get('evento_id')
-        if not eid:
-            a['ensayos_total'] = 0
-            a['ensayos_confirmados'] = 0
-            continue
-        ens_res = supabase.table('ensayos').select('id', count='exact').eq('evento_id', eid).execute()
-        a['ensayos_total'] = ens_res.count or 0
-        dis_res = supabase.table('disponibilidad').select('id', count='exact') \
-            .eq('usuario_id', usuario_id).eq('asiste', True).execute()
-        # Note: disponibilidad no filtra por evento, contamos solo total confirmados del músico
-        a['ensayos_confirmados'] = dis_res.count or 0
+        ensayos = ensayos_by_evento.get(eid, [])
+        ensayos_enriched = []
+        confirmados = 0
+        for e in ensayos:
+            d = disp_map.get(e['id']) or {}
+            convocado = ei_conv_map.get(e['id'], True)
+            ensayos_enriched.append({
+                "id": e['id'],
+                "fecha": e.get('fecha'),
+                "hora": e.get('hora'),
+                "hora_fin": e.get('hora_fin'),
+                "tipo": e.get('tipo'),
+                "lugar": e.get('lugar'),
+                "obligatorio": e.get('obligatorio'),
+                "mi_disponibilidad": d.get('asiste'),
+                "asistencia_real": d.get('asistencia_real'),
+                "convocado": convocado,
+            })
+            if convocado and d.get('asiste') is True:
+                confirmados += 1
+        a['ensayos'] = ensayos_enriched
+        a['ensayos_total'] = len(ensayos)
+        a['ensayos_confirmados'] = confirmados
 
     return {"asignaciones": asignaciones}
 

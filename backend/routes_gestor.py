@@ -433,7 +433,9 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
                 "baremo": u.get('baremo'),
                 "localidad": _localidad_efectiva(u),
                 "anos_experiencia": u.get('anos_experiencia'),
-                "asignaciones": {}
+                # Shape unificado con /plantillas-definitivas: lista ordenada por evento.
+                # Cada item incluye `evento_id` para lookup directo en el frontend.
+                "asignaciones": []
             }
             for ev in eventos_raw:
                 asig = asig_index.get((u['id'], ev['id']))
@@ -464,14 +466,15 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
                 pct_disp = round((si_disp / convocados_count) * 100) if convocados_count else 0
                 pct_real = round((si_real / convocados_count) * 100) if convocados_count else 0
 
-                m["asignaciones"][ev['id']] = {
+                m["asignaciones"].append({
+                    "evento_id": ev['id'],
                     "asignacion_id": asig['id'] if asig else None,
                     "estado": asig['estado'] if asig else None,
                     "publicado_musico": bool(asig.get('publicado_musico')) if asig else False,
                     "disponibilidad": disp_list,
                     "porcentaje_disponibilidad": pct_disp,
                     "porcentaje_asistencia_real": pct_real,
-                }
+                })
             musicos_out.append(m)
 
         return {"eventos": eventos_out, "musicos": musicos_out}

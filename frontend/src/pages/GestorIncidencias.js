@@ -1,6 +1,7 @@
 // Gestión de incidencias / feedback enviado por el equipo y los músicos.
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from 'react-router-dom';
 
 const TIPO_BADGE = {
   incidencia: { label: '🐞 Incidencia', cls: 'bg-red-100 text-red-800' },
@@ -17,9 +18,11 @@ const PRIO_BADGE = {
   media: { label: '🟡 Media', cls: 'bg-amber-100 text-amber-800' },
   baja:  { label: '🟢 Baja',  cls: 'bg-emerald-100 text-emerald-800' },
 };
+const MIN_DESC = 20;
 
 const GestorIncidencias = () => {
   const { api } = useAuth();
+  const loc = useLocation();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState('');
@@ -27,6 +30,15 @@ const GestorIncidencias = () => {
   const [filtroDesde, setFiltroDesde] = useState('');
   const [filtroHasta, setFiltroHasta] = useState('');
   const [respuestas, setRespuestas] = useState({});
+
+  // Modal de creación
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newTipo, setNewTipo] = useState('incidencia');
+  const [newPrio, setNewPrio] = useState('media');
+  const [newPagina, setNewPagina] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -38,6 +50,39 @@ const GestorIncidencias = () => {
   }, [api, filtroEstado]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  const abrirCrear = () => {
+    setNewTipo('incidencia');
+    setNewPrio('media');
+    setNewPagina(loc.pathname || '');
+    setNewDesc('');
+    setCreateError(null);
+    setCreateOpen(true);
+  };
+
+  const crearIncidencia = async () => {
+    const txt = newDesc.trim();
+    if (txt.length < MIN_DESC) {
+      setCreateError(`Mínimo ${MIN_DESC} caracteres (actuales: ${txt.length})`);
+      return;
+    }
+    try {
+      setCreating(true);
+      setCreateError(null);
+      await api.post('/api/gestor/incidencias', {
+        tipo: newTipo,
+        descripcion: txt,
+        pagina: newPagina || null,
+        prioridad: newPrio,
+      });
+      setCreateOpen(false);
+      await cargar();
+    } catch (err) {
+      setCreateError(err?.response?.data?.detail || err.message || 'Error al crear');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const cambiarEstado = async (inc, nuevo) => {
     await api.put(`/api/gestor/incidencias/${inc.id}`, { estado: nuevo });
@@ -73,6 +118,14 @@ const GestorIncidencias = () => {
           <p className="text-sm text-slate-600 mt-1">Sugerencias y problemas reportados por el equipo y los músicos.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={abrirCrear}
+            data-testid="btn-create-incidencia"
+            className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 shadow-sm"
+          >
+            + Crear incidencia
+          </button>
           <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}
                   className="px-2 py-1.5 border border-slate-300 rounded-md text-sm bg-white"
                   data-testid="filter-tipo-inc">
@@ -97,6 +150,106 @@ const GestorIncidencias = () => {
                  className="px-2 py-1.5 border border-slate-300 rounded-md text-sm bg-white" title="Hasta" />
         </div>
       </header>
+
+      {createOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4"
+          data-testid="modal-create-incidencia"
+          onClick={() => !creating && setCreateOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-cabinet text-xl font-bold text-slate-900 mb-1">Crear incidencia</h2>
+            <p className="text-xs text-slate-500 mb-4">Reporta una incidencia, mejora o pregunta del sistema.</p>
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <label className="text-xs font-medium text-slate-700">
+                Tipo
+                <select
+                  value={newTipo}
+                  onChange={(e) => setNewTipo(e.target.value)}
+                  data-testid="new-inc-tipo"
+                  className="mt-1 w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm bg-white"
+                >
+                  <option value="incidencia">🐞 Incidencia</option>
+                  <option value="mejora">✨ Mejora</option>
+                  <option value="pregunta">❓ Pregunta</option>
+                </select>
+              </label>
+              <label className="text-xs font-medium text-slate-700">
+                Prioridad
+                <select
+                  value={newPrio}
+                  onChange={(e) => setNewPrio(e.target.value)}
+                  data-testid="new-inc-prio"
+                  className="mt-1 w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm bg-white"
+                >
+                  <option value="alta">🔴 Alta</option>
+                  <option value="media">🟡 Media</option>
+                  <option value="baja">🟢 Baja</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="block text-xs font-medium text-slate-700 mb-3">
+              Página relacionada (opcional)
+              <input
+                type="text"
+                value={newPagina}
+                onChange={(e) => setNewPagina(e.target.value)}
+                placeholder="/admin/incidencias"
+                data-testid="new-inc-pagina"
+                className="mt-1 w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm font-mono"
+              />
+            </label>
+
+            <label className="block text-xs font-medium text-slate-700">
+              Descripción <span className="text-slate-400">(mínimo {MIN_DESC} caracteres)</span>
+              <textarea
+                rows={5}
+                value={newDesc}
+                onChange={(e) => setNewDesc(e.target.value)}
+                data-testid="new-inc-desc"
+                placeholder="Describe la incidencia o sugerencia con el mayor detalle posible..."
+                className="mt-1 w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm"
+              />
+              <span className={`text-[10px] ${newDesc.trim().length < MIN_DESC ? 'text-red-500' : 'text-emerald-600'}`}>
+                {newDesc.trim().length}/{MIN_DESC}
+              </span>
+            </label>
+
+            {createError && (
+              <div className="mt-3 px-3 py-2 bg-red-50 text-red-700 text-xs rounded-md" data-testid="new-inc-error">
+                {createError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                disabled={creating}
+                data-testid="btn-cancel-inc"
+                className="px-3 py-1.5 rounded-md text-sm text-slate-600 hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={crearIncidencia}
+                disabled={creating || newDesc.trim().length < MIN_DESC}
+                data-testid="btn-submit-inc"
+                className="px-4 py-1.5 rounded-md text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? 'Enviando…' : 'Enviar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading ? <div className="text-slate-500">Cargando...</div> : (
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
           <table className="w-full text-sm">

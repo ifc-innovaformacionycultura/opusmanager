@@ -462,3 +462,27 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - P1: Google OAuth (diferido por el usuario).
 - P1: Mejoras a emails Resend (diferido).
 - Backlog: refactor cuellos O(n²) en `put_cachets_config` y `bulk_presupuestos_matriz` (`upsert` nativo Supabase).
+
+
+## Iteración 14 (Feb 2026) — Pulido post-regresión
+
+### ✅ "Crear incidencia" desde UI gestor
+- Botón verde "**+ Crear incidencia**" en `/admin/incidencias` (`data-testid="btn-create-incidencia"`).
+- Modal con selector de tipo (incidencia/mejora/pregunta), prioridad (alta/media/baja), página relacionada (autorrellenado con la ruta actual) y descripción (mínimo 20 caracteres con contador en vivo).
+- POSTea a `/api/gestor/incidencias` y refresca la lista; valida client-side antes de enviar.
+
+### ✅ Cabinet Grotesk auto-hospedado
+- Descargados `CabinetGrotesk-Medium.woff` y `CabinetGrotesk-Bold.woff` desde fontshare/cdnfonts y guardados en `/app/frontend/src/fonts/`.
+- `App.css`: `@font-face` ahora usa `url('./fonts/CabinetGrotesk-*.woff') format('woff')`. Adiós al **OTS parsing error: invalid sfntVersion**.
+
+### ✅ Shape unificado en `/api/gestor/seguimiento`
+- `musicos[].asignaciones` pasa de DICT `{evento_id: {...}}` a **LISTA** ordenada por evento, con `evento_id` dentro de cada item.
+- `SeguimientoConvocatorias.js` actualizado para usar `.find(a => a.evento_id === ev.id)` (con fallback retrocompatible).
+
+### ✅ `/api/portal/mi-historial/eventos` enriquecido
+- Cada asignación trae ahora `ensayos[]` con shape idéntico a `/portal/mis-eventos`: `id, fecha, hora, hora_fin, tipo, lugar, obligatorio, mi_disponibilidad, asistencia_real, convocado`.
+- **Bug fix**: `ensayos_confirmados` ya no cuenta confirmaciones globales del músico — ahora cuenta sólo las del evento concreto y sólo si está convocado.
+
+### Tests
+- pytest `test_iter10_regression.py`: 22/22 PASS, 0 regresiones.
+- Frontend verificado con screenshots end-to-end (lista, modal, incidencia creada).

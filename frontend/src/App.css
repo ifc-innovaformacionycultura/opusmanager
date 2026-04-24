@@ -1,10 +1,19 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
-/* Cabinet Grotesk - Custom font */
+/* Cabinet Grotesk - Self-hosted to avoid CDN OTS parsing warnings */
 @font-face {
   font-family: 'Cabinet Grotesk';
-  src: url('https://fonts.cdnfonts.com/css/cabinet-grotesk') format('woff2');
-  font-weight: 500 700;
+  src: local('Cabinet Grotesk Medium'),
+       url('./fonts/CabinetGrotesk-Medium.woff') format('woff');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cabinet Grotesk';
+  src: local('Cabinet Grotesk Bold'),
+       url('./fonts/CabinetGrotesk-Bold.woff') format('woff');
+  font-weight: 600 900;
   font-style: normal;
   font-display: swap;
 }
