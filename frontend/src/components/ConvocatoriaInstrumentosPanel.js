@@ -1,0 +1,176 @@
+// Panel colapsable para gestionar los instrumentos convocados a un ensayo.
+// Se usa dentro de ConfiguracionEventos.js por cada ensayo persistido.
+// API: GET/PUT /api/gestor/ensayos/{ensayo_id}/instrumentos
+import React, { useState, useEffect, useCallback } from 'react';
+
+const SECCIONES = [
+  { key: 'cuerda',        label: 'Cuerda',        instrumentos: ['Violín', 'Viola', 'Violonchelo', 'Contrabajo'] },
+  { key: 'viento_madera', label: 'Viento Madera', instrumentos: ['Flauta', 'Oboe', 'Clarinete', 'Fagot'] },
+  { key: 'viento_metal',  label: 'Viento Metal',  instrumentos: ['Trompa', 'Trompeta', 'Trombón', 'Tuba'] },
+  { key: 'percusion',     label: 'Percusión',     instrumentos: ['Percusión'] },
+  { key: 'teclados',      label: 'Teclados',      instrumentos: ['Piano', 'Órgano'] },
+  { key: 'coro',          label: 'Coro',          instrumentos: ['Soprano', 'Alto', 'Tenor', 'Barítono'] },
+];
+
+const ALL_INSTRUMENTOS = SECCIONES.flatMap(s => s.instrumentos);
+
+const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, onSaved }) => {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [state, setState] = useState({}); // { instrumento: true/false }
+  const [msg, setMsg] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const cargar = useCallback(async () => {
+    if (!ensayoId) return;
+    try {
+      setLoading(true);
+      const r = await api.get(`/api/gestor/ensayos/${ensayoId}/instrumentos`);
+      const map = {};
+      (r.data?.instrumentos || []).forEach(row => {
+        map[row.instrumento] = !!row.convocado;
+      });
+      // Asegurar que todos los estándar están presentes (default true)
+      ALL_INSTRUMENTOS.forEach(i => { if (!(i in map)) map[i] = true; });
+      setState(map);
+      setLoaded(true);
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || err.message });
+    } finally { setLoading(false); }
+  }, [ensayoId, api]);
+
+  useEffect(() => {
+    if (open && !loaded) cargar();
+  }, [open, loaded, cargar]);
+
+  const toggleInstrumento = (instr) => {
+    setState(prev => ({ ...prev, [instr]: !prev[instr] }));
+  };
+
+  const toggleSeccion = (instrs, value) => {
+    setState(prev => {
+      const next = { ...prev };
+      instrs.forEach(i => { next[i] = value; });
+      return next;
+    });
+  };
+
+  const toggleTodos = (value) => {
+    setState(prev => {
+      const next = { ...prev };
+      ALL_INSTRUMENTOS.forEach(i => { next[i] = value; });
+      return next;
+    });
+  };
+
+  const guardar = async () => {
+    try {
+      setSaving(true); setMsg(null);
+      const payload = ALL_INSTRUMENTOS.map(i => ({ instrumento: i, convocado: state[i] !== false }));
+      await api.put(`/api/gestor/ensayos/${ensayoId}/instrumentos`, payload);
+      setMsg({ type: 'success', text: '✅ Convocatoria guardada' });
+      setTimeout(() => setMsg(null), 2500);
+      if (onSaved) onSaved();
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || err.message });
+    } finally { setSaving(false); }
+  };
+
+  const totalConvocados = ALL_INSTRUMENTOS.filter(i => state[i] !== false).length;
+
+  return (
+    <div className="border border-slate-200 rounded bg-slate-50/60 mt-1" data-testid={`convocatoria-panel-${ensayoId}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+        data-testid={`btn-toggle-convocatoria-${ensayoId}`}
+      >
+        <span>🎼 Instrumentos convocados {loaded && <span className="ml-2 text-slate-500 font-normal">({totalConvocados}/{ALL_INSTRUMENTOS.length})</span>}</span>
+        <span className="text-slate-400">{open ? '▾' : '▸'}</span>
+      </button>
+
+      {open && (
+        <div className="p-3 border-t border-slate-200 space-y-3">
+          {loading ? (
+            <div className="text-xs text-slate-500">Cargando convocatoria…</div>
+          ) : (
+            <>
+              {/* Acciones masivas globales */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-semibold text-slate-600 mr-1">Todos:</span>
+                <button type="button" onClick={() => toggleTodos(true)}
+                        data-testid={`btn-all-on-${ensayoId}`}
+                        className="px-2 py-0.5 border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded">Convocar todos</button>
+                <button type="button" onClick={() => toggleTodos(false)}
+                        data-testid={`btn-all-off-${ensayoId}`}
+                        className="px-2 py-0.5 border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 rounded">Desconvocar todos</button>
+              </div>
+
+              {/* Acciones por sección */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="font-semibold text-slate-600 mr-1">Por sección:</span>
+                {SECCIONES.map(sec => {
+                  const allOn = sec.instrumentos.every(i => state[i] !== false);
+                  return (
+                    <div key={sec.key} className="inline-flex border border-slate-300 rounded overflow-hidden">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-medium">{sec.label}</span>
+                      <button type="button" onClick={() => toggleSeccion(sec.instrumentos, true)}
+                              data-testid={`btn-seccion-on-${sec.key}-${ensayoId}`}
+                              title="Convocar toda la sección"
+                              className={`px-2 py-0.5 ${allOn ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 hover:bg-emerald-50'}`}>✓</button>
+                      <button type="button" onClick={() => toggleSeccion(sec.instrumentos, false)}
+                              data-testid={`btn-seccion-off-${sec.key}-${ensayoId}`}
+                              title="Desconvocar toda la sección"
+                              className="px-2 py-0.5 bg-white text-red-600 hover:bg-red-50 border-l border-slate-200">✗</button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Grid por instrumento */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1.5">
+                {SECCIONES.map(sec => (
+                  <div key={sec.key} className="border border-slate-200 rounded bg-white p-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1">{sec.label}</div>
+                    <div className="space-y-1">
+                      {sec.instrumentos.map(instr => {
+                        const on = state[instr] !== false;
+                        return (
+                          <label key={instr} className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-slate-50 px-1 py-0.5 rounded"
+                                 data-testid={`chk-instr-${instr}-${ensayoId}`}>
+                            <input type="checkbox" checked={on}
+                                   onChange={() => toggleInstrumento(instr)}
+                                   className="w-3.5 h-3.5 accent-emerald-600" />
+                            <span className={on ? 'text-slate-800' : 'text-slate-400 line-through'}>{instr}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button type="button" onClick={guardar} disabled={saving}
+                        data-testid={`btn-save-convocatoria-${ensayoId}`}
+                        className="px-3 py-1 bg-slate-800 hover:bg-slate-900 text-white text-xs rounded disabled:opacity-50">
+                  {saving ? 'Guardando…' : 'Guardar convocatoria'}
+                </button>
+                {msg && (
+                  <span className={`text-xs ${msg.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
+                        data-testid={`msg-convocatoria-${ensayoId}`}>
+                    {msg.text}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ConvocatoriaInstrumentosPanel;

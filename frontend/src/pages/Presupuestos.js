@@ -323,8 +323,8 @@ const Presupuestos = () => {
         </div>
       </header>
 
-      {/* Sección A — Cachets base por instrumento y nivel */}
-      <CachetsBaseSection api={api} />
+      {/* Sección A — Cachets base por instrumento y nivel (con selector de alcance) */}
+      <CachetsBaseSection api={api} eventos={events} />
 
       {/* Sección B — Otros gastos e ingresos por evento */}
       <div className="bg-slate-100 px-4 py-2 rounded-t-lg border border-slate-300 border-b-0 mb-0">

@@ -183,6 +183,7 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
         evento_ids = list({a.get('evento_id') for a in asignaciones if a.get('evento_id')})
         ensayos_by_evento = {}
         disp_map = {}  # ensayo_id -> mi_disponibilidad
+        ei_conv_map = {}  # ensayo_id -> convocado (bool)
         if evento_ids:
             ens_res = supabase.table('ensayos') \
                 .select('id,evento_id,tipo,fecha,hora,hora_fin,obligatorio,lugar') \
@@ -204,6 +205,15 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
                     .execute()
                 for d in (d_res.data or []):
                     disp_map[d['ensayo_id']] = d.get('asiste')
+                # Convocatoria para el instrumento del músico actual
+                if instrumento_musico:
+                    ei_res = supabase.table('ensayo_instrumentos') \
+                        .select('ensayo_id,convocado') \
+                        .in_('ensayo_id', ensayo_ids) \
+                        .eq('instrumento', instrumento_musico) \
+                        .execute()
+                    for row in (ei_res.data or []):
+                        ei_conv_map[row['ensayo_id']] = bool(row.get('convocado', True))
 
         for asig in asignaciones:
             ensayos = ensayos_by_evento.get(asig.get('evento_id'), [])
@@ -218,6 +228,7 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
                     "lugar": e.get('lugar'),
                     "obligatorio": e.get('obligatorio'),
                     "mi_disponibilidad": disp_map.get(e['id']),
+                    "convocado": ei_conv_map.get(e['id'], True),
                 })
             asig['ensayos'] = ensayos_enriched
         
@@ -376,6 +387,7 @@ async def get_ensayos_evento(
 ):
     """
     Get all ensayos for a specific evento.
+    Añade `convocado` al instrumento del músico (current_user). Default True.
     """
     try:
         response = supabase.table('ensayos') \
@@ -384,11 +396,24 @@ async def get_ensayos_evento(
             .order('fecha', desc=False) \
             .order('hora', desc=False) \
             .execute()
-        
-        return {
-            "ensayos": response.data or []
-        }
-        
+        ensayos = response.data or []
+
+        # Instrumento del músico actual
+        user_profile = current_user.get("profile", {}) or {}
+        instrumento = user_profile.get('instrumento')
+        ensayo_ids = [e['id'] for e in ensayos]
+        ei_map = {}
+        if ensayo_ids and instrumento:
+            ei_res = supabase.table('ensayo_instrumentos') \
+                .select('ensayo_id,instrumento,convocado') \
+                .in_('ensayo_id', ensayo_ids) \
+                .eq('instrumento', instrumento) \
+                .execute()
+            for row in (ei_res.data or []):
+                ei_map[row['ensayo_id']] = bool(row.get('convocado', True))
+        for e in ensayos:
+            e['convocado'] = ei_map.get(e['id'], True)  # default True si no hay override
+        return {"ensayos": ensayos}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

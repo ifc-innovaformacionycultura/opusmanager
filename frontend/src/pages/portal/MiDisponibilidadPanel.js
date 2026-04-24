@@ -124,46 +124,56 @@ const MiDisponibilidadPanel = ({ ensayos = [], onSaved }) => {
             {ensayos.map((e) => {
               const v = values[e.id] ?? null;
               const t = tipoLabel(e.tipo);
+              const noConv = e.convocado === false;
               return (
-                <tr key={e.id} className="hover:bg-slate-50" data-testid={`disp-row-${e.id}`}>
+                <tr key={e.id} className={`hover:bg-slate-50 ${noConv ? 'bg-slate-50/70' : ''}`} data-testid={`disp-row-${e.id}`}>
                   <td className="px-3 py-2">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${t.cls}`}>
                       {t.label}
                     </span>
-                    {e.obligatorio && (
+                    {e.obligatorio && !noConv && (
                       <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
                         Obligatorio
                       </span>
                     )}
+                    {noConv && (
+                      <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-200 text-slate-600" title="Tu instrumento no está convocado a este ensayo">
+                        No convocado
+                      </span>
+                    )}
                   </td>
-                  <td className="px-3 py-2 text-slate-900 capitalize">{fmtFecha(e.fecha)}</td>
-                  <td className="px-3 py-2 text-slate-700 tabular-nums">
+                  <td className={`px-3 py-2 capitalize ${noConv ? 'text-slate-400' : 'text-slate-900'}`}>{fmtFecha(e.fecha)}</td>
+                  <td className={`px-3 py-2 tabular-nums ${noConv ? 'text-slate-400' : 'text-slate-700'}`}>
                     {e.hora ? fmtHora(e.hora) : '—'}
                     {e.hora_fin ? ` – ${fmtHora(e.hora_fin)}` : ''}
                   </td>
-                  <td className="px-3 py-2 text-slate-600">{e.lugar || '—'}</td>
+                  <td className={`px-3 py-2 ${noConv ? 'text-slate-400' : 'text-slate-600'}`}>{e.lugar || '—'}</td>
                   <td className="px-3 py-2">
-                    <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden bg-slate-50" role="group">
-                      <button
-                        type="button"
-                        onClick={() => setVal(e.id, true)}
-                        data-testid={`btn-si-${e.id}`}
-                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${v === true ? 'bg-green-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
-                      >Sí</button>
-                      <button
-                        type="button"
-                        onClick={() => setVal(e.id, false)}
-                        data-testid={`btn-no-${e.id}`}
-                        className={`px-3 py-1.5 text-xs font-medium border-l border-slate-200 transition-colors ${v === false ? 'bg-red-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
-                      >No</button>
-                      <button
-                        type="button"
-                        onClick={() => setVal(e.id, null)}
-                        data-testid={`btn-reset-${e.id}`}
-                        className={`px-2 py-1.5 text-xs border-l border-slate-200 transition-colors ${v === null ? 'bg-slate-200 text-slate-700' : 'bg-white text-slate-400 hover:bg-slate-100'}`}
-                        title="Sin respuesta"
-                      >—</button>
-                    </div>
+                    {noConv ? (
+                      <span className="text-xs text-slate-400 italic" data-testid={`no-conv-${e.id}`}>— (sin asistencia requerida)</span>
+                    ) : (
+                      <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden bg-slate-50" role="group">
+                        <button
+                          type="button"
+                          onClick={() => setVal(e.id, true)}
+                          data-testid={`btn-si-${e.id}`}
+                          className={`px-3 py-1.5 text-xs font-medium transition-colors ${v === true ? 'bg-green-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+                        >Sí</button>
+                        <button
+                          type="button"
+                          onClick={() => setVal(e.id, false)}
+                          data-testid={`btn-no-${e.id}`}
+                          className={`px-3 py-1.5 text-xs font-medium border-l border-slate-200 transition-colors ${v === false ? 'bg-red-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+                        >No</button>
+                        <button
+                          type="button"
+                          onClick={() => setVal(e.id, null)}
+                          data-testid={`btn-reset-${e.id}`}
+                          className={`px-2 py-1.5 text-xs border-l border-slate-200 transition-colors ${v === null ? 'bg-slate-200 text-slate-700' : 'bg-white text-slate-400 hover:bg-slate-100'}`}
+                          title="Sin respuesta"
+                        >—</button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

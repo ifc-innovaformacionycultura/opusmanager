@@ -35,6 +35,15 @@ const BoolDot = ({ v }) => {
   return <span title="Sin datos" className="inline-block w-4 h-4 rounded-full bg-slate-200" />;
 };
 
+// Badge para ensayos a los que el instrumento del músico NO está convocado
+const NoConvBadge = () => (
+  <span
+    title="El instrumento de este músico no está convocado a este ensayo"
+    className="inline-block px-1.5 py-0.5 text-[9px] rounded bg-slate-300 text-slate-600 font-medium">
+    No conv.
+  </span>
+);
+
 // Select Sí / No / — para asistencia real editable
 // Input numérico 0..100 para asistencia real (%). NULL = vacío.
 const PctInput = ({ value, onChange, dataTestId }) => (
@@ -190,8 +199,18 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust }) => {
                 </td>
                 {ensayos.map(e => {
                   const disp = m.disponibilidad.find(x => x.ensayo_id === e.id) || {};
-                  const asistFallback = (m.asistencia.find(x => x.ensayo_id === e.id) || {}).asistencia_real;
+                  const asist = m.asistencia.find(x => x.ensayo_id === e.id) || {};
+                  const convocado = disp.convocado !== false; // default true si no viene
+                  const asistFallback = asist.asistencia_real;
                   const asistActual = asistenciasEditadas[e.id] !== undefined ? asistenciasEditadas[e.id] : asistFallback;
+                  if (!convocado) {
+                    return (
+                      <React.Fragment key={e.id}>
+                        <td className="px-1 py-1 text-center bg-slate-100/60"><NoConvBadge /></td>
+                        <td className="px-1 py-1 text-center bg-slate-100/60 text-slate-400 text-[10px]">—</td>
+                      </React.Fragment>
+                    );
+                  }
                   return (
                     <React.Fragment key={e.id}>
                       <td className="px-1 py-1 text-center"><BoolDot v={disp.asiste} /></td>
@@ -211,7 +230,7 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust }) => {
                     <td className="px-1 py-1 text-center text-slate-900 font-semibold border-r-2 border-slate-300" data-testid={`pct-real-${m.usuario_id}-${evento.id}`}>{pctReal}%</td>
                   </>
                 )}
-                <td className="px-1 py-1 text-right text-amber-900 bg-amber-50/40">{fmtEuro(cachePrev)}</td>
+                <td className={`px-1 py-1 text-right ${m.cache_fuente && (m.cache_fuente.startsWith('base') || m.cache_fuente === 'asignacion') ? 'text-orange-600 font-semibold' : 'text-amber-900'} bg-amber-50/40`} title={`Fuente: ${m.cache_fuente || '—'}`} data-testid={`cache-prev-${m.usuario_id}-${evento.id}`}>{fmtEuro(cachePrev)}</td>
                 <td className="px-1 py-1 text-right text-amber-900 bg-amber-50/40 font-medium" data-testid={`cache-real-${m.usuario_id}-${evento.id}`}>{fmtEuro(cacheReal)}</td>
                 <td className="px-1 py-1 bg-amber-50/40">
                   <input

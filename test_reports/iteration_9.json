@@ -1,0 +1,76 @@
+{
+  "summary": "Iteración 9: validación de las nuevas features (cachets por alcance, convocatoria por instrumento, propagación de 'convocado' en plantillas/seguimiento/portal). Backend 8/8 pytest PASS. Frontend verificado: Presupuestos con selector de scope + precargar + copiar-plantilla-base; Plantillas Definitivas con columna Caché Prev. en naranja; panel de convocatoria integrado en Configuración de Eventos (verificación sólo por código/backend - no se pudo expandir un evento por UI).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/gestor/seguimiento",
+        "issue": "El campo 'disponibilidad' viene como dict {ensayo_id: cell} en lugar de lista, a diferencia de /plantillas-definitivas donde es lista. Inconsistencia de contrato entre endpoints hermanos. Cada cell SÍ incluye 'convocado' correctamente."
+      },
+      {
+        "endpoint": "GET /api/portal/mi-historial/eventos",
+        "issue": "Endpoint devuelve asignaciones con 'ensayos_total'/'ensayos_confirmados' pero NO la lista de ensayos en ese endpoint (sólo /portal/mis-eventos). El campo 'convocado' se encuentra únicamente en /portal/mis-eventos y /portal/evento/{id}/ensayos. Si el spec pretende usar /mi-historial, revisar que devuelva ensayos."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Global",
+        "issues": [
+          "Persiste el hydration warning '<span> cannot be a child of <option>' ya reportado en iteración 8 — no resuelto todavía. Aparece al navegar por cualquier ruta gestor."
+        ]
+      },
+      {
+        "screen": "Plantillas definitivas",
+        "issues": [
+          "Columna rotulada como 'Caché Prev.' (abreviada) frente al 'Caché Previsto' del spec. Reincidencia de iteración 8."
+        ]
+      }
+    ]
+  },
+  "passed_tests": [
+    "[Backend] POST /api/auth/login gestor+músico 200",
+    "[Backend] GET /api/gestor/ensayos/{id}/instrumentos → 19 instrumentos con convocado=true por defecto, ha_custom=false",
+    "[Backend] PUT /api/gestor/ensayos/{id}/instrumentos (lista directa) → {ok:true, creados/actualizados}; re-GET refleja ha_custom=true y Piano=false",
+    "[Backend] GET /api/gestor/cachets-config/{evento_id} → {cachets:[]} 200",
+    "[Backend] PUT /api/gestor/cachets-config/{evento_id} (lista directa) → {ok:true, escritas:N}; persiste tras GET; UPDATE del mismo registro actualiza importe",
+    "[Backend] POST /api/gestor/cachets-config/{evento_id}/copy-from-base → {ok:true, copiados:N}",
+    "[Backend] GET /api/gestor/plantillas-definitivas → disponibilidad[].convocado y asistencia[].convocado presentes; porcentaje_disponibilidad/porcentaje_asistencia_real presentes por músico",
+    "[Backend] GET /api/gestor/seguimiento → musicos[].asignaciones[].disponibilidad{ensayo_id: {..., convocado}} presentes",
+    "[Backend] GET /api/gestor/gestion-economica 200",
+    "[Backend] GET /api/portal/mis-eventos → asignaciones[].ensayos[].convocado presente",
+    "[Frontend /configuracion/presupuestos] data-testid='select-scope-cachets' con 7 opciones (🌐 Plantilla base + 6 🎯 eventos). btn-precargar-cachets y btn-save-cachets-base presentes. btn-copiar-plantilla-base OCULTO cuando scope=base y VISIBLE cuando scope=evento. Cabecera cambia a 'Evento específico: Pruebas 3'",
+    "[Frontend /plantillas-definitivas] texto 'Caché Prev' visible y al menos una celda con clase text-orange-600 (fallback base_*/asignacion)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_convocatoria.py",
+    "/app/test_reports/pytest/iter9.xml"
+  ],
+  "action_items": [
+    "[BACKEND/LOW] Unificar shape de 'disponibilidad' entre /plantillas-definitivas (lista) y /seguimiento (dict). Recomendado: lista ordenada por fecha del ensayo para que el frontend pueda recorrerla por índice.",
+    "[BACKEND/LOW] Incluir lista de ensayos con campo 'convocado' dentro de asignaciones en /portal/mi-historial/eventos para que el spec del Portal Músico se cumpla también en esa vista (hoy sólo lo expone /portal/mis-eventos y /portal/evento/{id}/ensayos).",
+    "[FRONTEND/LOW - heredado] Resolver hydration warning '<span> cannot be a child of <option>' (probablemente select con emoji icon en un <option>).",
+    "[DOC/LOW - heredado] Alinear etiqueta UI 'Caché Prev.' con el spec 'Caché Previsto'."
+  ],
+  "critical_code_review_comments": [
+    "routes_gestor.py put_cachets_config (línea 1129): re-consulta TODAS las filas del evento en cada iteración del for; O(n²) innecesario. Mover el select fuera del loop y mantener el idx en memoria como ya hace put_cachets_base.",
+    "routes_gestor.py get_ensayo_instrumentos (1269): ALL_INSTR_FLAT determina 19 instrumentos estándar; si el catálogo cambia (nuevo instrumento) esos overrides guardados antes quedan huérfanos. Considerar que el endpoint devuelva también overrides de instrumentos NO en la lista estándar (para que el gestor los pueda revertir).",
+    "Inconsistencia de formatos entre /plantillas-definitivas (disponibilidad lista) y /seguimiento (disponibilidad dict) genera acoplamiento frágil en el frontend y obliga a dos ramas de código."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_convocatoria.py (nuevo, 8 tests pytest)"
+  ],
+  "success_rate": {"backend": "100% (8/8 pytest)", "frontend": "~90% (Presupuestos y Plantillas verificados por UI; panel convocatoria en /configuracion/eventos no fue expandible con los selectores disponibles pero la funcionalidad se validó vía backend)"},
+  "test_credentials": {
+    "gestor": {"email": "admin@convocatorias.com", "password": "Admin123!"},
+    "musico": {"email": "jesusalonsodirector@gmail.com", "password": "Musico123!"}
+  },
+  "seed_data_creation": "Durante TestEnsayoInstrumentos se dejó Piano convocado=false y luego se restauró a true. En TestCachetsConfigEvento se escribieron 2 filas en el primer evento (Violín Superior finalizado 420€ tras update, Piano Profesional cursando 205€) y luego copy-from-base se ejecutó. Verificar con el gestor si esas filas deben purgarse.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-ejecutar: cd /app && python -m pytest backend/tests/test_iter9_convocatoria.py -v. IMPORTANTE: los bodies de PUT /api/gestor/cachets-config/{id} y PUT /api/gestor/ensayos/{id}/instrumentos son LISTAS directas (no envueltas en {cachets:[]} ni {instrumentos:[]}). El endpoint GET /portal/mi-historial/eventos NO incluye lista de ensayos por asignación, hay que usar /portal/mis-eventos. El panel 'Instrumentos convocados (19/19)' en /configuracion/eventos aparece solo al desplegar un evento persistido de tipo ensayo; el test UI automatizado no lo expandió correctamente — el main agent confirmó manualmente que funciona.",
+  "rca_of_the_issue": "N/A — No se encontraron bugs críticos. Las 5 feature-classes nuevas (cachets por alcance, convocatoria por instrumento, propagación convocado en plantillas/seguimiento/portal) están implementadas correctamente y expuestas en el backend. Únicos hallazgos: inconsistencia de shape entre /plantillas-definitivas y /seguimiento (lista vs dict), y que /mi-historial/eventos no trae ensayos (sólo /mis-eventos lo hace). Ambos son de prioridad baja."
+}

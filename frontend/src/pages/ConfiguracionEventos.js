@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 import ComentariosPanel from "../components/ComentariosPanel";
+import ConvocatoriaInstrumentosPanel from "../components/ConvocatoriaInstrumentosPanel";
 
 // Accordion Component
 const Accordion = ({ title, subtitle, isOpen, onToggle, children }) => (
@@ -150,6 +151,7 @@ const InstrumentationSection = ({ instrumentation, onChange }) => {
 
 // Event Form
 const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
+  const { api } = useGestorAuth();
   const [rehearsals, setRehearsals] = useState([]);
   const [rehearsalsInitial, setRehearsalsInitial] = useState([]); // snapshot para diff
   const [program, setProgram] = useState(event.program || []);
@@ -362,8 +364,8 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
       </p>
       <div className="space-y-2">
         {rehearsals.map((rehearsal, index) => (
+          <div key={rehearsal.id || `new-${index}`} data-testid={`ensayo-wrapper-${index}`}>
           <div
-            key={rehearsal.id || `new-${index}`}
             className="flex items-center gap-2 bg-slate-50 p-2 rounded flex-wrap"
             data-testid={`ensayo-row-${index}`}
           >
@@ -428,6 +430,13 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
+          </div>
+          {rehearsal.id && (rehearsal.tipo || 'ensayo') === 'ensayo' && (
+            <ConvocatoriaInstrumentosPanel
+              ensayoId={rehearsal.id}
+              api={api}
+            />
+          )}
           </div>
         ))}
         <button

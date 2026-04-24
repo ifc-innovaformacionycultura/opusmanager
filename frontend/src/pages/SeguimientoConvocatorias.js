@@ -57,7 +57,16 @@ const fmtFecha = (iso) => {
 const fmtHora = (h) => h ? String(h).slice(0, 5) : '';
 
 // Celda con el estado de disponibilidad que ha indicado el músico para un ensayo
-const DispCell = ({ asiste }) => {
+const DispCell = ({ asiste, convocado }) => {
+  if (convocado === false) {
+    return (
+      <span
+        title="Instrumento no convocado a este ensayo"
+        className="inline-block px-1 py-0.5 text-[9px] rounded bg-slate-300 text-slate-600 font-medium">
+        No conv.
+      </span>
+    );
+  }
   if (asiste === true)  return <span title="Asiste" className="inline-block w-5 h-5 rounded-full bg-green-500" />;
   if (asiste === false) return <span title="No asiste" className="inline-block w-5 h-5 rounded-full bg-red-500" />;
   return <span title="Sin respuesta" className="inline-block w-5 h-5 rounded-full bg-slate-200" />;
@@ -679,7 +688,7 @@ const SeguimientoConvocatorias = () => {
                             const d = asig.disponibilidad[e.id];
                             return (
                               <td key={e.id} className="px-1 py-1.5 text-center" data-testid={`cell-disp-${m.id}-${e.id}`}>
-                                {isPub ? <DispCell asiste={d?.asiste} /> : <span className="text-slate-300">-</span>}
+                                {isPub ? <DispCell asiste={d?.asiste} convocado={d?.convocado} /> : <span className="text-slate-300">-</span>}
                               </td>
                             );
                           })}

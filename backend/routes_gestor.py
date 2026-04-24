@@ -405,6 +405,15 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
             for d in (d_res.data or []):
                 disp_map[(d['usuario_id'], d['ensayo_id'])] = d
 
+        # Convocatoria por instrumento por ensayo
+        ensayo_instr_map = {}
+        if ensayo_ids:
+            ei_res = supabase.table('ensayo_instrumentos') \
+                .select('ensayo_id,instrumento,convocado') \
+                .in_('ensayo_id', ensayo_ids).execute()
+            for row in (ei_res.data or []):
+                ensayo_instr_map.setdefault(row['ensayo_id'], {})[row['instrumento']] = bool(row.get('convocado', True))
+
         # Index asignaciones por (usuario_id, evento_id)
         asig_index = {(a['usuario_id'], a['evento_id']): a for a in asigs_list}
 
@@ -429,24 +438,30 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
             for ev in eventos_raw:
                 asig = asig_index.get((u['id'], ev['id']))
                 ensayos = ensayos_map.get(ev['id'], [])
+                instr_musico = u.get('instrumento')
                 disp_by_ensayo = {}
                 si_disp = 0
                 si_real = 0
+                convocados_count = 0
                 for e in ensayos:
+                    convocado = _is_convocado(ensayo_instr_map, e['id'], instr_musico)
+                    if convocado:
+                        convocados_count += 1
                     d = disp_map.get((u['id'], e['id']))
-                    if d:
-                        disp_by_ensayo[e['id']] = {
-                            "asiste": d.get('asiste'),
-                            "asistencia_real": d.get('asistencia_real'),
-                            "disponibilidad_id": d.get('id'),
-                        }
+                    entry = {
+                        "asiste": d.get('asiste') if d else None,
+                        "asistencia_real": d.get('asistencia_real') if d else None,
+                        "disponibilidad_id": d.get('id') if d else None,
+                        "convocado": convocado,
+                    }
+                    disp_by_ensayo[e['id']] = entry
+                    if convocado and d:
                         if d.get('asiste') is True:
                             si_disp += 1
                         if d.get('asistencia_real') is True:
                             si_real += 1
-                total_e = total_ensayos_por_evento.get(ev['id'], 0) or 0
-                pct_disp = round((si_disp / total_e) * 100) if total_e else 0
-                pct_real = round((si_real / total_e) * 100) if total_e else 0
+                pct_disp = round((si_disp / convocados_count) * 100) if convocados_count else 0
+                pct_real = round((si_real / convocados_count) * 100) if convocados_count else 0
 
                 m["asignaciones"][ev['id']] = {
                     "asignacion_id": asig['id'] if asig else None,
@@ -693,6 +708,15 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
             .execute()
         gastos_by_pair = {(g['usuario_id'], g['evento_id']): g for g in (gastos_res.data or [])}
 
+        # Convocatoria por instrumento por ensayo
+        ensayo_instr_map = {}
+        if ensayo_ids:
+            ei_res = supabase.table('ensayo_instrumentos') \
+                .select('ensayo_id,instrumento,convocado') \
+                .in_('ensayo_id', ensayo_ids).execute()
+            for row in (ei_res.data or []):
+                ensayo_instr_map.setdefault(row['ensayo_id'], {})[row['instrumento']] = bool(row.get('convocado', True))
+
         cachets_res = supabase.table('cachets_config') \
             .select('id,evento_id,instrumento,nivel_estudios,importe') \
             .in_('evento_id', evento_ids) \
@@ -723,25 +747,34 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 u = usuarios_by_id.get(a['usuario_id'])
                 if not u:
                     continue
+                instr_musico = u.get('instrumento')
                 disp_list = []
                 asist_list = []
                 for e in ensayos:
+                    convocado = _is_convocado(ensayo_instr_map, e['id'], instr_musico)
                     d = disp_by_pair.get((u['id'], e['id']))
                     disp_list.append({
                         "ensayo_id": e['id'],
                         "asiste": d.get('asiste') if d else None,
                         "disponibilidad_id": d.get('id') if d else None,
+                        "convocado": convocado,
                     })
                     asist_list.append({
                         "ensayo_id": e['id'],
                         "asistencia_real": d.get('asistencia_real') if d else None,
+                        "convocado": convocado,
                     })
-                si_disp = sum(1 for x in disp_list if x["asiste"] is True)
-                pct_disp = round((si_disp / total_e) * 100) if total_e else 0
+                # % disponibilidad calculado SÓLO sobre ensayos convocados
+                ensayos_convocados = [x for x in disp_list if x["convocado"]]
+                total_convocados = len(ensayos_convocados)
+                si_disp = sum(1 for x in ensayos_convocados if x["asiste"] is True)
+                pct_disp = round((si_disp / total_convocados) * 100) if total_convocados else 0
 
-                # pct_real = promedio de los porcentajes asistencia_real que NO son NULL.
-                # Si todos son NULL → 0.
-                valores_real = [float(x["asistencia_real"]) for x in asist_list if x["asistencia_real"] is not None]
+                # pct_real = promedio de asistencia_real (no NULL) SÓLO en ensayos convocados.
+                valores_real = [
+                    float(x["asistencia_real"]) for x in asist_list
+                    if x["convocado"] and x["asistencia_real"] is not None
+                ]
                 pct_real = round(sum(valores_real) / len(valores_real), 2) if valores_real else 0
 
                 # Caché previsto: cachets_config específico → base → fallback asignaciones
@@ -1157,6 +1190,152 @@ async def put_cachets_base(data: List[CachetBaseItem], current_user: dict = Depe
         return {"ok": True, "creados": creados, "actualizados": actualizados}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar cachets base: {str(e)}")
+
+
+@router.post("/cachets-config/{evento_id}/copy-from-base")
+async def copy_cachets_base_to_evento(
+    evento_id: str,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Copia los cachets base (evento_id IS NULL) como cachets específicos del evento dado.
+    Sobrescribe cualquier cachet del evento con la misma clave (instrumento, nivel_estudios)."""
+    try:
+        base = supabase.table('cachets_config').select('instrumento,nivel_estudios,importe') \
+            .is_('evento_id', 'null').execute().data or []
+        if not base:
+            return {"ok": True, "copiados": 0, "mensaje": "No hay plantilla base configurada"}
+
+        existentes = supabase.table('cachets_config').select('id,instrumento,nivel_estudios') \
+            .eq('evento_id', evento_id).execute().data or []
+        idx = {((r.get('instrumento') or '').strip().lower(), (r.get('nivel_estudios') or '').strip()): r['id'] for r in existentes}
+
+        now = datetime.now().isoformat()
+        copiados = 0
+        actualizados = 0
+        for b in base:
+            payload = {
+                "evento_id": evento_id,
+                "instrumento": b.get('instrumento'),
+                "nivel_estudios": (b.get('nivel_estudios') or '').strip() or 'General',
+                "importe": float(b.get('importe') or 0),
+                "updated_at": now,
+            }
+            key = ((payload['instrumento'] or '').strip().lower(), payload['nivel_estudios'])
+            if key in idx:
+                supabase.table('cachets_config').update(payload).eq('id', idx[key]).execute()
+                actualizados += 1
+            else:
+                supabase.table('cachets_config').insert(payload).execute()
+                copiados += 1
+        return {"ok": True, "copiados": copiados, "actualizados": actualizados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al copiar plantilla base: {str(e)}")
+
+
+# ==================================================================
+# ENSAYO_INSTRUMENTOS — Convocatoria por instrumento
+# ==================================================================
+
+SECCIONES_INSTR = {
+    'cuerda':        ['Violín', 'Viola', 'Violonchelo', 'Contrabajo'],
+    'viento_madera': ['Flauta', 'Oboe', 'Clarinete', 'Fagot'],
+    'viento_metal':  ['Trompa', 'Trompeta', 'Trombón', 'Tuba'],
+    'percusion':     ['Percusión'],
+    'teclados':      ['Piano', 'Órgano'],
+    'coro':          ['Soprano', 'Alto', 'Tenor', 'Barítono'],
+}
+ALL_INSTR_FLAT = [i for lst in SECCIONES_INSTR.values() for i in lst]
+
+
+class EnsayoInstrumentoRow(BaseModel):
+    instrumento: str
+    convocado: bool = True
+
+
+@router.get("/ensayos/{ensayo_id}/instrumentos")
+async def get_ensayo_instrumentos(
+    ensayo_id: str,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Devuelve lista de {instrumento, convocado} para un ensayo.
+    Si no hay filas: todos convocados (default TRUE) para los 18 instrumentos estándar."""
+    try:
+        r = supabase.table('ensayo_instrumentos') \
+            .select('instrumento,convocado') \
+            .eq('ensayo_id', ensayo_id).execute()
+        rows = r.data or []
+        existing = {row['instrumento']: bool(row.get('convocado', True)) for row in rows}
+        out = []
+        for instr in ALL_INSTR_FLAT:
+            out.append({"instrumento": instr, "convocado": existing.get(instr, True)})
+        return {"ensayo_id": ensayo_id, "instrumentos": out, "ha_custom": len(existing) > 0}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener convocatoria: {str(e)}")
+
+
+@router.put("/ensayos/{ensayo_id}/instrumentos")
+async def put_ensayo_instrumentos(
+    ensayo_id: str,
+    rows: List[EnsayoInstrumentoRow],
+    current_user: dict = Depends(get_current_gestor),
+):
+    """UPSERT masivo de la convocatoria del ensayo."""
+    try:
+        existing = supabase.table('ensayo_instrumentos') \
+            .select('id,instrumento').eq('ensayo_id', ensayo_id).execute().data or []
+        idx = {e['instrumento']: e['id'] for e in existing}
+        creados = 0; actualizados = 0
+        for row in rows:
+            payload = {
+                "ensayo_id": ensayo_id,
+                "instrumento": row.instrumento,
+                "convocado": bool(row.convocado),
+            }
+            if row.instrumento in idx:
+                supabase.table('ensayo_instrumentos').update(payload) \
+                    .eq('id', idx[row.instrumento]).execute()
+                actualizados += 1
+            else:
+                supabase.table('ensayo_instrumentos').insert(payload).execute()
+                creados += 1
+        return {"ok": True, "creados": creados, "actualizados": actualizados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar convocatoria: {str(e)}")
+
+
+@router.get("/ensayo-instrumentos-bulk")
+async def get_ensayo_instrumentos_bulk(
+    ensayo_ids: str,  # coma-separada
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Devuelve mapping {ensayo_id: {instrumento: convocado}} para lista de ensayos.
+    Si no hay filas para un ensayo/instrumento → se asume convocado=TRUE.
+    Sólo se devuelven overrides (filas != default), el consumidor interpreta el default."""
+    try:
+        ids = [x.strip() for x in ensayo_ids.split(',') if x.strip()]
+        if not ids:
+            return {"mapping": {}}
+        r = supabase.table('ensayo_instrumentos') \
+            .select('ensayo_id,instrumento,convocado') \
+            .in_('ensayo_id', ids).execute()
+        out = {}
+        for row in (r.data or []):
+            eid = row['ensayo_id']
+            out.setdefault(eid, {})[row['instrumento']] = bool(row.get('convocado', True))
+        return {"mapping": out}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+def _is_convocado(ensayo_instr_map: dict, ensayo_id: str, instrumento: Optional[str]) -> bool:
+    """True si el instrumento está convocado en ese ensayo. Default TRUE."""
+    if not instrumento:
+        return True
+    per_ensayo = ensayo_instr_map.get(ensayo_id)
+    if not per_ensayo:
+        return True  # sin overrides → todos convocados
+    # Si existe clave instrumento, respeta su valor; si no, default TRUE
+    return bool(per_ensayo.get(instrumento, True))
 
 
 
@@ -2756,6 +2935,15 @@ async def get_gestion_economica(
             .in_('evento_id', evento_ids_vistos).in_('usuario_id', usuario_ids).execute()
         gastos_by_pair = {(g['usuario_id'], g['evento_id']): g for g in (gastos_res.data or [])}
 
+        # Convocatoria por instrumento por ensayo
+        ensayo_instr_map = {}
+        if ensayo_ids:
+            ei_res = supabase.table('ensayo_instrumentos') \
+                .select('ensayo_id,instrumento,convocado') \
+                .in_('ensayo_id', ensayo_ids).execute()
+            for row in (ei_res.data or []):
+                ensayo_instr_map.setdefault(row['ensayo_id'], {})[row['instrumento']] = bool(row.get('convocado', True))
+
         cachets_res = supabase.table('cachets_config').select('*') \
             .in_('evento_id', evento_ids_vistos).execute()
         cachets_by_evento = {}
@@ -2776,16 +2964,22 @@ async def get_gestion_economica(
                 u = usuarios_by_id.get(a['usuario_id'])
                 if not u:
                     continue
+                instr_musico = u.get('instrumento')
                 asist_list = []
                 for e in ensayos:
+                    convocado = _is_convocado(ensayo_instr_map, e['id'], instr_musico)
                     d = disp_by_pair.get((u['id'], e['id']))
                     asist_list.append({
                         "ensayo_id": e['id'],
                         "asistencia_real": d.get('asistencia_real') if d else None,
+                        "convocado": convocado,
                     })
-                si_disp = sum(1 for e in ensayos if (disp_by_pair.get((u['id'], e['id'])) or {}).get('asiste') is True)
-                pct_disp = round((si_disp / len(ensayos)) * 100) if ensayos else 0
-                vals = [float(x['asistencia_real']) for x in asist_list if x['asistencia_real'] is not None]
+                # Sólo ensayos convocados cuentan para %
+                convocados_ensayos = [e for e in ensayos if _is_convocado(ensayo_instr_map, e['id'], instr_musico)]
+                total_conv = len(convocados_ensayos)
+                si_disp = sum(1 for e in convocados_ensayos if (disp_by_pair.get((u['id'], e['id'])) or {}).get('asiste') is True)
+                pct_disp = round((si_disp / total_conv) * 100) if total_conv else 0
+                vals = [float(x['asistencia_real']) for x in asist_list if x['convocado'] and x['asistencia_real'] is not None]
                 pct_real = round(sum(vals) / len(vals), 2) if vals else 0
 
                 nivel_efectivo = a.get('nivel_estudios') or _nivel_estudios_efectivo(u)
