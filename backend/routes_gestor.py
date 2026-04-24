@@ -915,12 +915,46 @@ async def guardar_plantillas_definitivas(
         raise HTTPException(status_code=500, detail=f"Error al guardar: {str(e)}")
 
 
-# ==================== Cachets Config ====================
+# ==================== Cachets Config & Upload justificantes ====================
 
 class CachetRow(BaseModel):
     instrumento: str
     nivel_estudios: Optional[str] = None
     importe: float
+
+
+@router.post("/plantillas-definitivas/justificante")
+async def upload_justificante(
+    archivo: UploadFile = File(...),
+    usuario_id: str = "",
+    evento_id: str = "",
+    tipo: str = "otros",  # 'transporte' | 'alojamiento' | 'otros'
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Sube un justificante al bucket `justificantes` y devuelve la URL pública."""
+    import os
+    from supabase import create_client
+    if tipo not in ("transporte", "alojamiento", "otros"):
+        raise HTTPException(status_code=400, detail="Tipo inválido")
+    if not usuario_id or not evento_id:
+        raise HTTPException(status_code=400, detail="usuario_id y evento_id son obligatorios")
+
+    content = await archivo.read()
+    ext = (archivo.filename or "").rsplit(".", 1)[-1].lower() or "bin"
+    ts = int(datetime.now().timestamp())
+    path = f"{evento_id}/{usuario_id}/{tipo}_{ts}.{ext}"
+
+    admin_client = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_KEY'])
+    try:
+        admin_client.storage.from_('justificantes').upload(
+            path, content,
+            {"content-type": archivo.content_type or "application/octet-stream", "upsert": "true"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error subiendo archivo: {str(e)}")
+
+    public_url = admin_client.storage.from_('justificantes').get_public_url(path)
+    return {"url": public_url, "path": path}
 
 
 @router.get("/cachets-config/{evento_id}")

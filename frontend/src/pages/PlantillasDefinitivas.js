@@ -1,624 +1,641 @@
-import React, { useState, useEffect, useMemo } from "react";
+// Plantillas Definitivas — Bloque D
+//
+// - Acordeón por evento (sólo con músicos confirmados)
+// - Dentro de cada evento, músicos agrupados por sección instrumental:
+//   Cuerda → Viento Madera → Viento Metal → Percusión → Teclados → Coro
+// - Cada sección es colapsable y muestra contador + subtotales
+// - Tabla con columnas fijas + 2 columnas por ensayo (disponibilidad y asistencia real)
+//   + columnas económicas (caché previsto, caché real, extras, transporte, alojamiento, otros, TOTAL)
+// - Subida de justificantes a Supabase Storage via backend
+// - Totales por sección y por evento calculados en cliente en tiempo real
+// - Botón "Guardar cambios" sticky arriba con batch update
+//
+// Endpoints:
+//   GET  /api/gestor/plantillas-definitivas
+//   PUT  /api/gestor/plantillas-definitivas/guardar
+//   POST /api/gestor/plantillas-definitivas/justificante (multipart)
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 
-// Availability color helper
-const getAvailabilityColor = (percentage) => {
-  if (percentage <= 30) return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' };
-  if (percentage <= 60) return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' };
-  if (percentage <= 80) return { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200' };
-  return { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' };
+const fmtFecha = (iso) => {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }); }
+  catch { return iso; }
+};
+const fmtHora = (h) => h ? String(h).slice(0, 5) : '';
+const fmtEuro = (n) => {
+  const v = Number(n || 0);
+  return v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '€';
 };
 
-// Communications Panel (same as SeguimientoConvocatorias)
-const CommunicationsPanel = ({ isOpen, onClose, selectedContacts, templates }) => {
-  const [selectedTemplates, setSelectedTemplates] = useState({});
-  const [sending, setSending] = useState(false);
+// Celda display para disponibilidad / asistencia (bool|null)
+const BoolDot = ({ v }) => {
+  if (v === true)  return <span title="Sí" className="inline-block w-4 h-4 rounded-full bg-green-500" />;
+  if (v === false) return <span title="No" className="inline-block w-4 h-4 rounded-full bg-red-500" />;
+  return <span title="Sin datos" className="inline-block w-4 h-4 rounded-full bg-slate-200" />;
+};
 
-  const toggleTemplate = (templateId) => {
-    setSelectedTemplates(prev => ({ ...prev, [templateId]: !prev[templateId] }));
-  };
+// Select Sí / No / — para asistencia real editable
+const TriSelect = ({ value, onChange, dataTestId }) => (
+  <select
+    value={value === true ? 'si' : value === false ? 'no' : ''}
+    onChange={(e) => {
+      const v = e.target.value;
+      onChange(v === 'si' ? true : v === 'no' ? false : null);
+    }}
+    data-testid={dataTestId}
+    className="text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white w-14"
+  >
+    <option value="">—</option>
+    <option value="si">Sí</option>
+    <option value="no">No</option>
+  </select>
+);
 
-  const handleSend = async () => {
-    if (selectedContacts.length === 0) {
-      alert('Selecciona al menos un contacto');
-      return;
-    }
-    const selected = Object.keys(selectedTemplates).filter(k => selectedTemplates[k]);
-    if (selected.length === 0) {
-      alert('Selecciona al menos una plantilla');
-      return;
-    }
-    setSending(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    alert(`Comunicaciones enviadas a ${selectedContacts.length} contactos`);
-    setSending(false);
-    setSelectedTemplates({});
-  };
-
-  if (!isOpen) return null;
-
+// ==========================================================================
+// Tabla de una sección de un evento
+// ==========================================================================
+const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust }) => {
+  const ensayos = evento.ensayos || [];
   return (
-    <div className="fixed right-0 top-0 h-full w-80 bg-white border-l border-slate-200 shadow-lg z-50 flex flex-col" data-testid="communications-panel-plantillas">
-      <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-        <h3 className="font-semibold text-slate-900">Comunicaciones</h3>
-        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded">
-          <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-      
-      <div className="flex-1 p-4 overflow-y-auto">
-        <p className="text-sm text-slate-600 mb-4">
-          {selectedContacts.length} contacto(s) seleccionado(s)
-        </p>
-        
-        <div className="space-y-3">
-          {templates.map(template => (
-            <label key={template.id || template.type} className="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={selectedTemplates[template.type] || false}
-                onChange={() => toggleTemplate(template.type)}
-                className="mt-0.5 w-4 h-4 rounded border-slate-300"
-              />
-              <div>
-                <span className="text-sm font-medium text-slate-900">
-                  {template.type === 'convocatoria_temporada' && 'Convocatoria de temporada'}
-                  {template.type === 'convocatoria_individual' && 'Convocatoria individual'}
-                  {template.type === 'envio_partituras' && 'Envío de partituras'}
-                </span>
-              </div>
-            </label>
-          ))}
-        </div>
-      </div>
-      
-      <div className="p-4 border-t border-slate-200">
-        <button
-          onClick={handleSend}
-          disabled={sending || selectedContacts.length === 0}
-          className="w-full py-2 px-4 bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors font-medium disabled:opacity-50"
-        >
-          {sending ? 'Enviando...' : 'Enviar comunicaciones'}
-        </button>
-      </div>
-    </div>
-  );
-};
+    <div className="overflow-x-auto border-t border-slate-200" data-testid={`seccion-${evento.id}-${seccion.key}`}>
+      <table className="w-full text-xs border-collapse">
+        <thead className="bg-slate-50">
+          {/* Fila 1 de cabecera: grupos */}
+          <tr>
+            <th rowSpan={2} className="px-2 py-1.5 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[180px]">Músico</th>
+            <th rowSpan={2} className="px-2 py-1.5 text-left font-normal text-slate-600 border-b border-slate-200 min-w-[100px]">Instrumento</th>
+            <th rowSpan={2} className="px-2 py-1.5 text-left font-normal text-slate-600 border-b border-slate-200 min-w-[90px]">Especialidad</th>
+            <th rowSpan={2} className="px-2 py-1.5 text-center font-normal text-slate-600 border-b border-slate-200 min-w-[40px]" title="Nº atril">Nº</th>
+            <th rowSpan={2} className="px-2 py-1.5 text-center font-normal text-slate-600 border-b border-slate-200 min-w-[40px]" title="Letra">Let.</th>
+            <th rowSpan={2} className="px-2 py-1.5 text-left font-normal text-slate-600 border-b border-r-2 border-slate-400 min-w-[120px]">Comentario</th>
+            {ensayos.length > 0 && (
+              <th colSpan={ensayos.length * 2 + 2} className="px-2 py-1.5 text-center font-semibold text-slate-700 border-b border-r-2 border-slate-400 bg-slate-100">
+                Disponibilidad y asistencia
+              </th>
+            )}
+            <th colSpan={9} className="px-2 py-1.5 text-center font-semibold text-amber-900 border-b border-slate-200 bg-amber-50">
+              Económico (€)
+            </th>
+          </tr>
+          <tr>
+            {ensayos.map(e => (
+              <React.Fragment key={e.id}>
+                <th className="px-1 py-1 text-center text-[10px] text-slate-600 border-b border-slate-200 min-w-[48px]" title={`Disp. ${e.tipo}`}>
+                  <div className="font-semibold capitalize">{e.tipo || 'Ensayo'}</div>
+                  <div className="text-slate-500">{fmtFecha(e.fecha)}</div>
+                  <div className="text-[9px] text-slate-400 normal-case font-normal">Disp.</div>
+                </th>
+                <th className="px-1 py-1 text-center text-[10px] text-slate-600 border-b border-slate-200 min-w-[56px]" title={`Asistencia ${e.tipo}`}>
+                  <div className="font-semibold capitalize">{e.tipo || 'Ensayo'}</div>
+                  <div className="text-slate-500">{fmtFecha(e.fecha)}</div>
+                  <div className="text-[9px] text-slate-400 normal-case font-normal">Asist.</div>
+                </th>
+              </React.Fragment>
+            ))}
+            {ensayos.length > 0 && (
+              <>
+                <th className="px-1 py-1 text-center text-[10px] text-slate-600 border-b border-slate-200">% Prev.</th>
+                <th className="px-1 py-1 text-center text-[10px] text-slate-600 border-b border-r-2 border-slate-400">% Real</th>
+              </>
+            )}
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[72px]">Caché Prev.</th>
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[72px]">Caché Real</th>
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[70px]">Extra</th>
+            <th className="px-1 py-1 text-left  text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[110px]">Motivo</th>
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[80px]">Transporte</th>
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[80px]">Alojam.</th>
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[80px]">Otros</th>
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-100 min-w-[90px]">TOTAL</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {seccion.musicos.map(m => {
+            const key = m.usuario_id + '_' + evento.id;
+            const st = state[key] || {};
+            const asistenciasEditadas = st.asistencias || {};
+            const pctReal = (() => {
+              if (!ensayos.length) return 0;
+              let si = 0;
+              for (const e of ensayos) {
+                const v = asistenciasEditadas[e.id];
+                const fallback = (m.asistencia.find(x => x.ensayo_id === e.id) || {}).asistencia_real;
+                const efectivo = v !== undefined ? v : fallback;
+                if (efectivo === true) si++;
+              }
+              return Math.round((si / ensayos.length) * 100);
+            })();
+            const cachePrev = m.cache_previsto;
+            const cacheReal = +(cachePrev * (pctReal / 100)).toFixed(2);
+            const extra = st.cache_extra !== undefined ? +st.cache_extra || 0 : +m.cache_extra || 0;
+            const transp = st.transporte_importe !== undefined ? +st.transporte_importe || 0 : +m.transporte_importe || 0;
+            const aloj = st.alojamiento_importe !== undefined ? +st.alojamiento_importe || 0 : +m.alojamiento_importe || 0;
+            const otros = st.otros_importe !== undefined ? +st.otros_importe || 0 : +m.otros_importe || 0;
+            const total = +(cacheReal + extra + transp + aloj + otros).toFixed(2);
 
-// Instrument sections
-const INSTRUMENT_SECTIONS = [
-  { id: 'cuerda', name: 'Cuerda', instruments: ['Violín', 'Viola', 'Violonchelo', 'Contrabajo'] },
-  { id: 'viento_madera', name: 'Viento Madera', instruments: ['Flauta', 'Oboe', 'Clarinete', 'Fagot'] },
-  { id: 'viento_metal', name: 'Viento Metal', instruments: ['Trompeta', 'Trompa', 'Trombón', 'Tuba'] },
-  { id: 'percusion', name: 'Percusión', instruments: ['Percusión', 'Timbales'] },
-  { id: 'teclados', name: 'Teclados', instruments: ['Piano', 'Órgano', 'Clave', 'Celesta'] },
-  { id: 'coralistas', name: 'Coralistas', instruments: ['Soprano', 'Contralto', 'Tenor', 'Bajo'] },
-  { id: 'otros', name: 'Otros', instruments: ['Arpa', 'Guitarra', 'Solista'] }
-];
+            const transpUrl = st.transporte_justificante_url ?? m.transporte_justificante_url;
+            const alojUrl   = st.alojamiento_justificante_url ?? m.alojamiento_justificante_url;
+            const otrosUrl  = st.otros_justificante_url ?? m.otros_justificante_url;
 
-// Helper function to get section ID from instrument
-const getSectionFromInstrument = (instrument) => {
-  if (!instrument) return 'otros';
-  
-  const section = INSTRUMENT_SECTIONS.find(s => 
-    s.instruments.some(inst => 
-      instrument.toLowerCase().includes(inst.toLowerCase())
-    )
-  );
-  
-  return section ? section.id : 'otros';
-};
+            const motivo = st.motivo_extra !== undefined ? st.motivo_extra : m.motivo_extra;
+            const nAtril = st.numero_atril !== undefined ? st.numero_atril : m.numero_atril;
+            const letra = st.letra !== undefined ? st.letra : m.letra;
+            const comentario = st.comentario !== undefined ? st.comentario : m.comentario;
 
-// Helper function to calculate cache from budget data
-const calculateCacheFromBudget = (budgetData, sectionId, studyLevel, eventId, attendancePercentage) => {
-  if (!budgetData || !budgetData[sectionId]) {
-    return 100; // Fallback to base cache if no budget data
-  }
-  
-  // Default to 'superior_finalizado' if no study level specified
-  const level = studyLevel || 'superior_finalizado';
-  
-  const budgetCell = budgetData[sectionId]?.[level]?.[eventId];
-  
-  if (!budgetCell) {
-    return 100; // Fallback if no budget configured
-  }
-  
-  // Formula: cache_total × (weight / 100) × (attendance / 100)
-  const cacheTotal = budgetCell.cache_total || 0;
-  const weight = budgetCell.weight || 100;
-  const finalCache = cacheTotal * (weight / 100) * (attendancePercentage / 100);
-  
-  return Math.round(finalCache);
-};
-
-// Contact Row Component
-const ContactRow = ({ contact, event, eventResponses, contactData, onDataChange, isSelected, onSelect, budgetData }) => {
-  const data = contactData || {
-    atril_numero: '',
-    atril_letra: '',
-    atril_comentarios: '',
-    asistencia_real: {},
-    cache_extra: 0,
-    cache_extra_comentario: ''
-  };
-
-  // Calculate attendance percentages
-  const responses = eventResponses.find(r => r.contact_id === contact.id)?.responses || {};
-  const totalDates = Object.keys(responses).length || 1;
-  const previstoYes = Object.values(responses).filter(v => v === 'si').length;
-  const previstoPct = Math.round((previstoYes / totalDates) * 100);
-  
-  const realValues = Object.values(data.asistencia_real || {});
-  const realPct = realValues.length > 0 
-    ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
-    : 0;
-
-  // Calculate cache using budget data
-  const sectionId = getSectionFromInstrument(contact.especialidad);
-  const studyLevel = contact.nivel_estudios || 'superior_finalizado'; // Default if not specified
-  
-  const cachePrevisto = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, previstoPct);
-  const cacheReal = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
-
-  const previstoColors = getAvailabilityColor(previstoPct);
-  const realColors = getAvailabilityColor(realPct);
-
-  return (
-    <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-      {/* Checkbox */}
-      <td className="px-2 py-2 sticky left-0 bg-white">
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={() => onSelect(contact.id)}
-          className="w-4 h-4 rounded border-slate-300"
-        />
-      </td>
-
-      {/* Personal Data */}
-      <td className="px-3 py-2 text-sm">{contact.apellidos}</td>
-      <td className="px-3 py-2 text-sm">{contact.nombre}</td>
-      <td className="px-3 py-2 text-sm">{contact.especialidad}</td>
-      <td className="px-3 py-2 text-sm">{contact.categoria}</td>
-
-      {/* Atril Assignment */}
-      <td className="px-2 py-2">
-        <input
-          type="number"
-          value={data.atril_numero}
-          onChange={(e) => onDataChange(contact.id, 'atril_numero', e.target.value)}
-          className="w-12 px-1 py-1 border border-slate-200 rounded text-xs text-center"
-          placeholder="Nº"
-        />
-      </td>
-      <td className="px-2 py-2">
-        <input
-          type="text"
-          value={data.atril_letra}
-          onChange={(e) => onDataChange(contact.id, 'atril_letra', e.target.value)}
-          className="w-10 px-1 py-1 border border-slate-200 rounded text-xs text-center uppercase"
-          placeholder="A/B"
-          maxLength={1}
-        />
-      </td>
-      <td className="px-2 py-2">
-        <input
-          type="text"
-          value={data.atril_comentarios}
-          onChange={(e) => onDataChange(contact.id, 'atril_comentarios', e.target.value)}
-          className="w-24 px-1 py-1 border border-slate-200 rounded text-xs"
-          placeholder="Comentario"
-        />
-      </td>
-
-      {/* Attendance per rehearsal/function */}
-      {Object.entries(responses).map(([key, value]) => (
-        <React.Fragment key={key}>
-          <td className="px-2 py-2 text-center">
-            <span className={`px-2 py-1 rounded text-xs ${value === 'si' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-              {value === 'si' ? 'Sí' : 'No'}
-            </span>
-          </td>
-          <td className="px-2 py-2">
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={data.asistencia_real?.[key] || ''}
-              onChange={(e) => onDataChange(contact.id, `asistencia_real.${key}`, e.target.value)}
-              className="w-14 px-1 py-1 border border-slate-200 rounded text-xs text-center"
-              placeholder="%"
-            />
-          </td>
-        </React.Fragment>
-      ))}
-
-      {/* Attendance Percentages */}
-      <td className="px-2 py-2 text-center">
-        <span className={`inline-flex px-2 py-1 rounded text-xs font-mono ${previstoColors.bg} ${previstoColors.text} border ${previstoColors.border}`}>
-          {previstoPct}%
-        </span>
-      </td>
-      <td className="px-2 py-2 text-center">
-        <span className={`inline-flex px-2 py-1 rounded text-xs font-mono ${realColors.bg} ${realColors.text} border ${realColors.border}`}>
-          {realPct}%
-        </span>
-      </td>
-
-      {/* Cache */}
-      <td className="px-2 py-2 text-center font-mono text-sm">{cachePrevisto}€</td>
-      <td className="px-2 py-2 text-center font-mono text-sm font-medium">{cacheReal}€</td>
-      <td className="px-2 py-2">
-        <input
-          type="number"
-          min="0"
-          value={data.cache_extra || ''}
-          onChange={(e) => onDataChange(contact.id, 'cache_extra', e.target.value)}
-          className="w-16 px-1 py-1 border border-slate-200 rounded text-xs text-center"
-          placeholder="€"
-        />
-      </td>
-      <td className="px-2 py-2">
-        <input
-          type="text"
-          value={data.cache_extra_comentario || ''}
-          onChange={(e) => onDataChange(contact.id, 'cache_extra_comentario', e.target.value)}
-          className="w-28 px-1 py-1 border border-slate-200 rounded text-xs"
-          placeholder="Motivo extra"
-          required={parseFloat(data.cache_extra) > 0}
-        />
-      </td>
-    </tr>
-  );
-};
-
-// Section Component
-const InstrumentSection = ({ section, contacts, event, eventResponses, contactsData, onDataChange, selectedContacts, onSelectContact, isExpanded, onToggle, budgetData }) => {
-  const sectionContacts = contacts.filter(c => 
-    section.instruments.some(inst => 
-      c.especialidad?.toLowerCase().includes(inst.toLowerCase())
-    )
-  );
-
-  if (sectionContacts.length === 0) return null;
-
-  // Get response keys for headers
-  const sampleResponse = eventResponses[0]?.responses || {};
-  const responseKeys = Object.keys(sampleResponse);
-
-  return (
-    <div className="border-l-2 border-slate-300 ml-4">
-      <button
-        onClick={onToggle}
-        className="w-full px-4 py-2 flex items-center gap-2 bg-slate-100 hover:bg-slate-200 transition-colors text-left"
-      >
-        <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path d="M9 5l7 7-7 7"/>
-        </svg>
-        <span className="font-medium text-slate-700">{section.name}</span>
-        <span className="text-xs text-slate-500">({sectionContacts.length} contactos)</span>
-      </button>
-      
-      {isExpanded && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-xs">
-                <th className="px-2 py-2 sticky left-0 bg-slate-50"></th>
-                <th className="px-3 py-2 text-left font-medium text-slate-600">Apellidos</th>
-                <th className="px-3 py-2 text-left font-medium text-slate-600">Nombre</th>
-                <th className="px-3 py-2 text-left font-medium text-slate-600">Instrumento</th>
-                <th className="px-3 py-2 text-left font-medium text-slate-600">Categoría</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600" title="Número de atril">Nº</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600" title="Letra de atril">Letra</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">Comentario</th>
-                {responseKeys.map(key => (
-                  <React.Fragment key={key}>
-                    <th className="px-2 py-2 text-center font-medium text-slate-600 bg-blue-50" title={`${key} - Prevista`}>
-                      <div className="text-xs">{key.replace('_', ' ')}</div>
-                      <div className="text-[10px] text-slate-400">Prev.</div>
-                    </th>
-                    <th className="px-2 py-2 text-center font-medium text-slate-600 bg-green-50" title={`${key} - Real`}>
-                      <div className="text-xs">{key.replace('_', ' ')}</div>
-                      <div className="text-[10px] text-slate-400">Real %</div>
-                    </th>
-                  </React.Fragment>
-                ))}
-                <th className="px-2 py-2 text-center font-medium text-slate-600">% Prev.</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">% Real</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">Caché Prev.</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">Caché Real</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">Extra €</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">Motivo</th>
+            return (
+              <tr key={m.asignacion_id} className="hover:bg-slate-50" data-testid={`row-plantilla-${m.usuario_id}-${evento.id}`}>
+                <td className="px-2 py-1 font-medium text-slate-900 whitespace-nowrap">
+                  {m.apellidos}, {m.nombre}
+                </td>
+                <td className="px-2 py-1 text-slate-700">{m.instrumento || '—'}</td>
+                <td className="px-2 py-1 text-slate-700">{m.especialidad || '—'}</td>
+                <td className="px-1 py-1">
+                  <input
+                    type="number" min="0"
+                    value={nAtril ?? ''}
+                    onChange={(e) => onChange(m, evento.id, { numero_atril: e.target.value === '' ? null : parseInt(e.target.value, 10) })}
+                    data-testid={`numero-atril-${m.usuario_id}-${evento.id}`}
+                    className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs"
+                  />
+                </td>
+                <td className="px-1 py-1">
+                  <input
+                    type="text" maxLength={2}
+                    value={letra ?? ''}
+                    onChange={(e) => onChange(m, evento.id, { letra: e.target.value.toUpperCase() || null })}
+                    data-testid={`letra-${m.usuario_id}-${evento.id}`}
+                    className="w-10 px-1 py-0.5 border border-slate-300 rounded text-xs uppercase"
+                  />
+                </td>
+                <td className="px-1 py-1 border-r-2 border-slate-300">
+                  <input
+                    type="text"
+                    value={comentario ?? ''}
+                    onChange={(e) => onChange(m, evento.id, { comentario: e.target.value })}
+                    data-testid={`comentario-${m.usuario_id}-${evento.id}`}
+                    className="w-full px-1 py-0.5 border border-slate-300 rounded text-xs"
+                  />
+                </td>
+                {ensayos.map(e => {
+                  const disp = m.disponibilidad.find(x => x.ensayo_id === e.id) || {};
+                  const asistFallback = (m.asistencia.find(x => x.ensayo_id === e.id) || {}).asistencia_real;
+                  const asistActual = asistenciasEditadas[e.id] !== undefined ? asistenciasEditadas[e.id] : asistFallback;
+                  return (
+                    <React.Fragment key={e.id}>
+                      <td className="px-1 py-1 text-center"><BoolDot v={disp.asiste} /></td>
+                      <td className="px-1 py-1 text-center">
+                        <TriSelect
+                          value={asistActual}
+                          onChange={(v) => onChange(m, evento.id, { asistenciaEnsayoId: e.id, asistenciaValor: v })}
+                          dataTestId={`asist-${m.usuario_id}-${e.id}`}
+                        />
+                      </td>
+                    </React.Fragment>
+                  );
+                })}
+                {ensayos.length > 0 && (
+                  <>
+                    <td className="px-1 py-1 text-center text-slate-600 font-medium">{m.porcentaje_disponibilidad}%</td>
+                    <td className="px-1 py-1 text-center text-slate-900 font-semibold border-r-2 border-slate-300" data-testid={`pct-real-${m.usuario_id}-${evento.id}`}>{pctReal}%</td>
+                  </>
+                )}
+                <td className="px-1 py-1 text-right text-amber-900 bg-amber-50/40">{fmtEuro(cachePrev)}</td>
+                <td className="px-1 py-1 text-right text-amber-900 bg-amber-50/40 font-medium" data-testid={`cache-real-${m.usuario_id}-${evento.id}`}>{fmtEuro(cacheReal)}</td>
+                <td className="px-1 py-1 bg-amber-50/40">
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={extra || ''}
+                    onChange={(e) => onChange(m, evento.id, { cache_extra: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
+                    data-testid={`extra-${m.usuario_id}-${evento.id}`}
+                    className="w-16 px-1 py-0.5 border border-slate-300 rounded text-xs text-right"
+                  />
+                </td>
+                <td className="px-1 py-1 bg-amber-50/40">
+                  <input
+                    type="text"
+                    value={motivo || ''}
+                    onChange={(e) => onChange(m, evento.id, { motivo_extra: e.target.value })}
+                    className="w-full px-1 py-0.5 border border-slate-300 rounded text-xs"
+                  />
+                </td>
+                <td className="px-1 py-1 bg-amber-50/40">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={transp || ''}
+                      onChange={(e) => onChange(m, evento.id, { transporte_importe: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
+                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right"
+                    />
+                    <FileButton
+                      url={transpUrl}
+                      onFile={(f) => onUploadJust(m.usuario_id, evento.id, 'transporte', f)}
+                      testId={`file-transp-${m.usuario_id}-${evento.id}`}
+                    />
+                  </div>
+                </td>
+                <td className="px-1 py-1 bg-amber-50/40">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={aloj || ''}
+                      onChange={(e) => onChange(m, evento.id, { alojamiento_importe: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
+                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right"
+                    />
+                    <FileButton
+                      url={alojUrl}
+                      onFile={(f) => onUploadJust(m.usuario_id, evento.id, 'alojamiento', f)}
+                      testId={`file-aloj-${m.usuario_id}-${evento.id}`}
+                    />
+                  </div>
+                </td>
+                <td className="px-1 py-1 bg-amber-50/40">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={otros || ''}
+                      onChange={(e) => onChange(m, evento.id, { otros_importe: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
+                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right"
+                    />
+                    <FileButton
+                      url={otrosUrl}
+                      onFile={(f) => onUploadJust(m.usuario_id, evento.id, 'otros', f)}
+                      testId={`file-otros-${m.usuario_id}-${evento.id}`}
+                    />
+                  </div>
+                </td>
+                <td className="px-1 py-1 text-right bg-amber-100 font-bold text-amber-900" data-testid={`total-${m.usuario_id}-${evento.id}`}>{fmtEuro(total)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {sectionContacts.map(contact => (
-                <ContactRow
-                  key={contact.id}
-                  contact={contact}
-                  event={event}
-                  eventResponses={eventResponses}
-                  contactData={contactsData[contact.id]}
-                  onDataChange={onDataChange}
-                  isSelected={selectedContacts.includes(contact.id)}
-                  onSelect={onSelectContact}
-                  budgetData={budgetData}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            );
+          })}
+          {/* Fila de totales por sección (calculada client-side para incluir edits pendientes) */}
+        </tbody>
+      </table>
     </div>
   );
 };
 
-// Event Accordion Component
-const EventAccordion = ({ event, index, contacts, eventResponses, contactsData, onDataChange, selectedContacts, onSelectContact, isExpanded, onToggle, budgetData }) => {
-  const [expandedSections, setExpandedSections] = useState({});
-
-  const toggleSection = (sectionId) => {
-    setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
-  };
-
-  // Calculate event totals using budget data
-  const eventContacts = contacts;
-  let totalCachePrevisto = 0;
-  let totalCacheReal = 0;
-  let totalCacheExtra = 0;
-
-  eventContacts.forEach(contact => {
-    const responses = eventResponses.find(r => r.contact_id === contact.id)?.responses || {};
-    const totalDates = Object.keys(responses).length || 1;
-    const previstoYes = Object.values(responses).filter(v => v === 'si').length;
-    const previstoPct = Math.round((previstoYes / totalDates) * 100);
-    
-    const data = contactsData[contact.id] || {};
-    const realValues = Object.values(data.asistencia_real || {});
-    const realPct = realValues.length > 0 
-      ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
-      : 0;
-
-    const sectionId = getSectionFromInstrument(contact.especialidad);
-    const studyLevel = contact.nivel_estudios || 'superior_finalizado';
-    
-    totalCachePrevisto += calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, previstoPct);
-    totalCacheReal += calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
-    totalCacheExtra += parseFloat(data.cache_extra) || 0;
-  });
-
+// ==========================================================================
+// Botón de subida + enlace "Ver"
+// ==========================================================================
+const FileButton = ({ url, onFile, testId }) => {
+  const inputRef = useRef();
   return (
-    <div className="border border-slate-200 rounded-lg mb-4 overflow-hidden">
+    <div className="inline-flex items-center gap-1">
       <button
-        onClick={onToggle}
-        className="w-full px-4 py-3 flex items-center justify-between bg-slate-800 text-white hover:bg-slate-700 transition-colors"
-        data-testid={`event-accordion-${event.id}`}
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        data-testid={testId}
+        className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-[10px] whitespace-nowrap"
+        title={url ? 'Reemplazar justificante' : 'Subir justificante'}
       >
-        <div className="flex items-center gap-3">
-          <svg className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M9 5l7 7-7 7"/>
-          </svg>
-          <span className="font-semibold">Evento {index + 1}</span>
-          <span className="text-slate-300">—</span>
-          <span>{event.name}</span>
-          <span className="text-slate-400 text-sm">({event.date})</span>
-        </div>
-        <div className="flex items-center gap-6 text-sm">
-          <div className="text-slate-300">
-            <span className="text-slate-400">Prev:</span> {Math.round(totalCachePrevisto)}€
-          </div>
-          <div className="text-green-400 font-medium">
-            <span className="text-slate-400">Real:</span> {Math.round(totalCacheReal)}€
-          </div>
-          <div className="text-yellow-400">
-            <span className="text-slate-400">Extra:</span> {Math.round(totalCacheExtra)}€
-          </div>
-        </div>
+        📎
       </button>
-
-      {isExpanded && (
-        <div className="bg-white">
-          {INSTRUMENT_SECTIONS.map(section => (
-            <InstrumentSection
-              key={section.id}
-              section={section}
-              contacts={contacts}
-              event={event}
-              eventResponses={eventResponses}
-              contactsData={contactsData}
-              onDataChange={onDataChange}
-              selectedContacts={selectedContacts}
-              onSelectContact={onSelectContact}
-              isExpanded={expandedSections[section.id]}
-              onToggle={() => toggleSection(section.id)}
-              budgetData={budgetData}
-            />
-          ))}
-        </div>
+      {url && (
+        <a href={url} target="_blank" rel="noopener noreferrer"
+          className="text-[10px] text-blue-600 hover:text-blue-800 underline">
+          Ver
+        </a>
       )}
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFile(f);
+          e.target.value = '';
+        }}
+      />
     </div>
   );
 };
 
-// Main Component
+// ==========================================================================
+// Componente principal
+// ==========================================================================
 const PlantillasDefinitivas = () => {
-  const [events, setEvents] = useState([]);
-  const [contacts, setContacts] = useState([]);
-  const [eventResponses, setEventResponses] = useState({});
-  const [templates, setTemplates] = useState([]);
-  const [contactsData, setContactsData] = useState({});
-  const [selectedContacts, setSelectedContacts] = useState([]);
-  const [expandedEvents, setExpandedEvents] = useState({});
-  const [showCommunications, setShowCommunications] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [budgetData, setBudgetData] = useState(null);
-  const [seasons, setSeasons] = useState([]);
   const { api } = useGestorAuth();
+  const [data, setData] = useState({ eventos: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [feedback, setFeedback] = useState(null);
 
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Estado de edición (diffs pendientes de guardar)
+  // state[usuario_id + '_' + evento_id] = { numero_atril?, letra?, comentario?,
+  //   asistencias: {ensayo_id: bool|null}, cache_extra?, motivo_extra?,
+  //   transporte_importe?, transporte_justificante_url?, alojamiento_importe?, ... }
+  const [state, setState] = useState({});
+  const [openEvents, setOpenEvents] = useState({}); // {evento_id: bool}
+  const [openSections, setOpenSections] = useState({}); // {evento_id_seckey: bool}
+  const [saving, setSaving] = useState(false);
 
-  const loadData = async () => {
+  const showFeedback = (type, text) => {
+    setFeedback({ type, text });
+    setTimeout(() => setFeedback(null), 3500);
+  };
+
+  const cargar = useCallback(async () => {
     try {
-      const [eventsRes, contactsRes, templatesRes] = await Promise.all([
-        api.get('/api/gestor/eventos').catch(() => ({ data: { eventos: [] } })),
-        api.get('/api/gestor/musicos').catch(() => ({ data: { musicos: [] } })),
-        api.get('/api/email-templates').catch(() => ({ data: [] }))
-      ]);
-
-      const eventsList = eventsRes.data?.eventos || [];
-      const contactsList = contactsRes.data?.musicos || [];
-
-      setEvents(eventsList);
-      setContacts(contactsList);
-      setTemplates(templatesRes.data || []);
-
-      // Temporadas derivadas de eventos
-      const temporadas = Array.from(new Set(eventsList.map(e => e.temporada).filter(Boolean)));
-      setSeasons(temporadas.map(t => ({ id: t, nombre: t })));
-
-      // Budget endpoint no implementado
-      setBudgetData({});
-
-      // Asignaciones por evento (reemplaza event-responses)
-      const responsesMap = {};
-      for (const event of eventsList) {
-        try {
-          const asigRes = await api.get(`/api/gestor/asignaciones/evento/${event.id}`);
-          responsesMap[event.id] = (asigRes.data?.asignaciones || []).map(a => ({
-            contact_id: a.usuario_id,
-            responses: { [event.id]: a.estado === 'confirmado' ? 'si' : (a.estado === 'rechazado' ? 'no' : '') },
-            observaciones: a.comentarios || '',
-            importe: a.importe,
-            estado_pago: a.estado_pago
-          }));
-        } catch { responsesMap[event.id] = []; }
-      }
-      setEventResponses(responsesMap);
-
-      if (eventsList.length > 0) {
-        setExpandedEvents({ [eventsList[0].id]: true });
-      }
+      setLoading(true); setError(null);
+      const r = await api.get('/api/gestor/plantillas-definitivas');
+      setData(r.data || { eventos: [] });
+      // Al cargar, abrimos todos los eventos y secciones por defecto
+      const e0 = {}; const s0 = {};
+      (r.data?.eventos || []).forEach(ev => {
+        e0[ev.id] = true;
+        (ev.secciones || []).forEach(sec => { s0[ev.id + '_' + sec.key] = true; });
+      });
+      setOpenEvents(e0);
+      setOpenSections(s0);
+      setState({});
     } catch (err) {
-      console.error("Error loading data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      setError(err.response?.data?.detail || err.message);
+    } finally { setLoading(false); }
+  }, [api]);
 
-  const toggleEvent = (eventId) => {
-    setExpandedEvents(prev => ({ ...prev, [eventId]: !prev[eventId] }));
-  };
+  useEffect(() => { cargar(); }, [cargar]);
 
-  const toggleContactSelection = (contactId) => {
-    setSelectedContacts(prev => 
-      prev.includes(contactId) 
-        ? prev.filter(id => id !== contactId)
-        : [...prev, contactId]
-    );
-  };
-
-  const handleDataChange = (contactId, field, value) => {
-    setContactsData(prev => {
-      const contactData = { ...(prev[contactId] || {}) };
-      
-      if (field.startsWith('asistencia_real.')) {
-        const key = field.replace('asistencia_real.', '');
-        contactData.asistencia_real = { ...(contactData.asistencia_real || {}), [key]: value };
+  const onChange = (m, eventoId, patch) => {
+    const key = m.usuario_id + '_' + eventoId;
+    setState(prev => {
+      const prevEntry = prev[key] || {};
+      let nextEntry = { ...prevEntry };
+      if (patch.asistenciaEnsayoId !== undefined) {
+        nextEntry.asistencias = {
+          ...(prevEntry.asistencias || {}),
+          [patch.asistenciaEnsayoId]: patch.asistenciaValor,
+        };
       } else {
-        contactData[field] = value;
+        nextEntry = { ...nextEntry, ...patch };
       }
-      
-      return { ...prev, [contactId]: contactData };
+      return { ...prev, [key]: nextEntry };
     });
   };
 
-  const saveData = async () => {
-    // In real implementation, this would save to backend
-    alert('Datos guardados correctamente (simulado)');
+  const onUploadJust = async (usuarioId, eventoId, tipo, file) => {
+    try {
+      const fd = new FormData();
+      fd.append('archivo', file);
+      const url = `/api/gestor/plantillas-definitivas/justificante?usuario_id=${usuarioId}&evento_id=${eventoId}&tipo=${tipo}`;
+      const r = await api.post(url, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const key = usuarioId + '_' + eventoId;
+      setState(prev => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          [`${tipo}_justificante_url`]: r.data?.url,
+        }
+      }));
+      showFeedback('success', `Justificante (${tipo}) subido`);
+    } catch (err) {
+      showFeedback('error', err.response?.data?.detail || err.message);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="p-6 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-800"></div>
-      </div>
-    );
-  }
+  // Totales por sección/evento con edits aplicados
+  const calcularTotalesSeccion = (evento, seccion) => {
+    const t = { cache_previsto: 0, cache_real: 0, extras: 0, transporte: 0, alojamiento: 0, otros: 0, total: 0 };
+    const ensayos = evento.ensayos || [];
+    seccion.musicos.forEach(m => {
+      const key = m.usuario_id + '_' + evento.id;
+      const st = state[key] || {};
+      const asistenciasEditadas = st.asistencias || {};
+      let si = 0;
+      for (const e of ensayos) {
+        const v = asistenciasEditadas[e.id];
+        const fallback = (m.asistencia.find(x => x.ensayo_id === e.id) || {}).asistencia_real;
+        const efectivo = v !== undefined ? v : fallback;
+        if (efectivo === true) si++;
+      }
+      const pctReal = ensayos.length ? Math.round((si / ensayos.length) * 100) : 0;
+      const cachePrev = +m.cache_previsto || 0;
+      const cacheReal = +(cachePrev * (pctReal / 100)).toFixed(2);
+      const extra = st.cache_extra !== undefined ? +st.cache_extra || 0 : +m.cache_extra || 0;
+      const transp = st.transporte_importe !== undefined ? +st.transporte_importe || 0 : +m.transporte_importe || 0;
+      const aloj = st.alojamiento_importe !== undefined ? +st.alojamiento_importe || 0 : +m.alojamiento_importe || 0;
+      const otros = st.otros_importe !== undefined ? +st.otros_importe || 0 : +m.otros_importe || 0;
+      const total = +(cacheReal + extra + transp + aloj + otros).toFixed(2);
+      t.cache_previsto += cachePrev; t.cache_real += cacheReal; t.extras += extra;
+      t.transporte += transp; t.alojamiento += aloj; t.otros += otros; t.total += total;
+    });
+    return t;
+  };
+
+  const totalesEvento = useMemo(() => {
+    const out = {};
+    data.eventos.forEach(ev => {
+      const tot = { cache_previsto: 0, cache_real: 0, extras: 0, transporte: 0, alojamiento: 0, otros: 0, total: 0, musicos: 0 };
+      ev.secciones.forEach(sec => {
+        tot.musicos += sec.musicos.length;
+        const st = calcularTotalesSeccion(ev, sec);
+        for (const k of Object.keys(st)) tot[k] = (tot[k] || 0) + st[k];
+      });
+      out[ev.id] = tot;
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.eventos, state]);
+
+  const dirty = Object.keys(state).length > 0;
+
+  const guardar = async () => {
+    try {
+      setSaving(true);
+      const asistencias = [];
+      const gastos = [];
+      const anotaciones = [];
+      Object.entries(state).forEach(([key, st]) => {
+        const [usuario_id, evento_id] = key.split('_');
+        // asistencias
+        Object.entries(st.asistencias || {}).forEach(([ensayo_id, asistencia_real]) => {
+          asistencias.push({ usuario_id, ensayo_id, asistencia_real });
+        });
+        // gastos (siempre que haya alguna columna tocada)
+        const gastoKeys = ['transporte_importe', 'transporte_justificante_url',
+                           'alojamiento_importe', 'alojamiento_justificante_url',
+                           'otros_importe', 'otros_justificante_url',
+                           'cache_extra', 'motivo_extra'];
+        const hasG = gastoKeys.some(k => st[k] !== undefined);
+        if (hasG) {
+          gastos.push({
+            usuario_id, evento_id,
+            ...(st.transporte_importe !== undefined && { transporte_importe: +st.transporte_importe || 0 }),
+            ...(st.transporte_justificante_url !== undefined && { transporte_justificante_url: st.transporte_justificante_url }),
+            ...(st.alojamiento_importe !== undefined && { alojamiento_importe: +st.alojamiento_importe || 0 }),
+            ...(st.alojamiento_justificante_url !== undefined && { alojamiento_justificante_url: st.alojamiento_justificante_url }),
+            ...(st.otros_importe !== undefined && { otros_importe: +st.otros_importe || 0 }),
+            ...(st.otros_justificante_url !== undefined && { otros_justificante_url: st.otros_justificante_url }),
+            ...(st.cache_extra !== undefined && { cache_extra: +st.cache_extra || 0 }),
+            ...(st.motivo_extra !== undefined && { notas: st.motivo_extra }),
+          });
+        }
+        // anotaciones (num atril, letra, comentario): necesitamos asignacion_id
+        const asigIdMap = {};
+        data.eventos.forEach(ev => ev.secciones.forEach(sec => sec.musicos.forEach(m => {
+          asigIdMap[m.usuario_id + '_' + ev.id] = m.asignacion_id;
+        })));
+        const asigId = asigIdMap[key];
+        if (asigId && (st.numero_atril !== undefined || st.letra !== undefined || st.comentario !== undefined)) {
+          anotaciones.push({
+            asignacion_id: asigId,
+            numero_atril: st.numero_atril ?? null,
+            letra: st.letra ?? null,
+            comentario: st.comentario ?? null,
+          });
+        }
+      });
+
+      const r = await api.put('/api/gestor/plantillas-definitivas/guardar', { asistencias, gastos, anotaciones });
+      showFeedback('success', `Guardado: ${r.data.resumen.asistencias} asistencias, ${r.data.resumen.gastos} gastos, ${r.data.resumen.anotaciones} anotaciones`);
+      await cargar();
+    } catch (err) {
+      showFeedback('error', err.response?.data?.detail || err.message);
+    } finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="p-6" data-testid="plantillas-page"><p className="text-slate-500">Cargando...</p></div>;
 
   return (
-    <div className="p-6" data-testid="plantillas-definitivas-page">
-      <header className="mb-6 flex items-center justify-between">
+    <div className="p-6 pb-20" data-testid="plantillas-page">
+      {/* Barra sticky superior con Guardar */}
+      <div className="sticky top-0 z-30 -mx-6 px-6 py-3 bg-slate-50/95 backdrop-blur border-b border-slate-200 mb-4 flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="font-cabinet text-3xl font-bold text-slate-900">Plantillas Definitivas</h1>
-          <p className="font-ibm text-slate-600 mt-1">Gestión de contactos confirmados, asistencia y cachés por evento</p>
+          <h1 className="font-cabinet text-2xl font-bold text-slate-900">Plantillas definitivas</h1>
+          <p className="text-xs text-slate-600">Confirmados por evento, con asistencia real, cachés y gastos adicionales.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {dirty && <span className="text-xs text-amber-700 font-medium">● Cambios sin guardar</span>}
           <button
-            onClick={saveData}
-            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium"
-            data-testid="save-plantillas-btn"
+            onClick={guardar}
+            disabled={saving || !dirty}
+            data-testid="btn-guardar-plantillas"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Guardar cambios
-          </button>
-          <button
-            onClick={() => setShowCommunications(true)}
-            className="px-4 py-2 bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors text-sm font-medium flex items-center gap-2"
-            data-testid="open-communications-plantillas-btn"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-            </svg>
-            Comunicaciones ({selectedContacts.length})
+            {saving ? 'Guardando...' : 'Guardar cambios'}
           </button>
         </div>
-      </header>
-
-      {/* Events List */}
-      <div className="space-y-4">
-        {events.map((event, index) => (
-          <EventAccordion
-            key={event.id}
-            event={event}
-            index={index}
-            contacts={contacts}
-            eventResponses={eventResponses[event.id] || []}
-            contactsData={contactsData}
-            onDataChange={handleDataChange}
-            selectedContacts={selectedContacts}
-            onSelectContact={toggleContactSelection}
-            isExpanded={expandedEvents[event.id]}
-            onToggle={() => toggleEvent(event.id)}
-            budgetData={budgetData}
-          />
-        ))}
       </div>
 
-      {events.length === 0 && (
-        <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-          <p className="text-slate-500">No hay eventos configurados</p>
+      {feedback && (
+        <div
+          data-testid="plantillas-feedback"
+          className={`fixed top-20 right-4 z-50 px-4 py-3 rounded-lg shadow-lg border max-w-sm text-sm ${
+            feedback.type === 'success' ? 'bg-green-50 border-green-200 text-green-800'
+                                         : 'bg-red-50 border-red-200 text-red-800'
+          }`}
+        >
+          <strong>{feedback.type === 'success' ? '✅ ' : '❌ '}</strong>{feedback.text}
         </div>
       )}
 
-      {/* Communications Panel */}
-      <CommunicationsPanel
-        isOpen={showCommunications}
-        onClose={() => setShowCommunications(false)}
-        selectedContacts={selectedContacts}
-        templates={templates}
-      />
-      
-      {showCommunications && (
-        <div 
-          className="fixed inset-0 bg-black/20 z-40"
-          onClick={() => setShowCommunications(false)}
-        />
+      {error && <div className="p-3 mb-3 bg-red-50 border border-red-200 text-red-800 text-sm rounded">{error}</div>}
+
+      {data.eventos.length === 0 ? (
+        <div className="p-8 bg-white border border-slate-200 rounded-lg text-center text-slate-500" data-testid="plantillas-empty">
+          No hay eventos con músicos confirmados todavía. Confirma músicos desde <strong>Seguimiento de plantillas</strong>.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {data.eventos.map(ev => {
+            const totEv = totalesEvento[ev.id] || { musicos: 0 };
+            const open = !!openEvents[ev.id];
+            return (
+              <div key={ev.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid={`evento-acordeon-${ev.id}`}>
+                {/* Cabecera del acordeón de evento */}
+                <button
+                  onClick={() => setOpenEvents(p => ({ ...p, [ev.id]: !p[ev.id] }))}
+                  className="w-full px-4 py-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between gap-3 hover:from-slate-800 hover:to-slate-700"
+                  data-testid={`toggle-evento-${ev.id}`}
+                >
+                  <div className="flex-1 text-left">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-base font-semibold">{ev.nombre}</h2>
+                      {ev.fechas.map((f, idx) => (
+                        <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-700 text-slate-100">
+                          {fmtFecha(f.fecha)}{f.hora ? ` ${fmtHora(f.hora)}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="text-xs text-slate-300 mt-1 flex items-center gap-4 flex-wrap">
+                      <span>👥 {totEv.musicos} confirmados</span>
+                      <span>💶 Previsto: <strong className="text-white">{fmtEuro(totEv.cache_previsto)}</strong></span>
+                      <span>💶 Real: <strong className="text-white">{fmtEuro(totEv.cache_real)}</strong></span>
+                      <span>➕ Extras: <strong className="text-white">{fmtEuro(totEv.extras + totEv.transporte + totEv.alojamiento + totEv.otros)}</strong></span>
+                      <span>💰 TOTAL: <strong className="text-amber-300">{fmtEuro(totEv.total)}</strong></span>
+                    </div>
+                  </div>
+                  <svg className={`w-5 h-5 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+                  </svg>
+                </button>
+
+                {open && ev.secciones.map(sec => {
+                  const secKey = ev.id + '_' + sec.key;
+                  const secOpen = !!openSections[secKey];
+                  const secTot = calcularTotalesSeccion(ev, sec);
+                  return (
+                    <div key={secKey} className="border-t border-slate-200" data-testid={`evento-seccion-${ev.id}-${sec.key}`}>
+                      <button
+                        onClick={() => setOpenSections(p => ({ ...p, [secKey]: !p[secKey] }))}
+                        className="w-full px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 flex items-center justify-between gap-3"
+                        data-testid={`toggle-seccion-${ev.id}-${sec.key}`}
+                      >
+                        <div className="text-sm font-semibold flex items-center gap-2">
+                          <svg className={`w-4 h-4 transition-transform ${secOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
+                          </svg>
+                          {sec.label}
+                          <span className="text-xs font-normal text-slate-600">({sec.count} músicos)</span>
+                        </div>
+                        <div className="text-xs text-slate-700 flex items-center gap-3 flex-wrap">
+                          <span>Prev: <strong>{fmtEuro(secTot.cache_previsto)}</strong></span>
+                          <span>Real: <strong>{fmtEuro(secTot.cache_real)}</strong></span>
+                          <span>TOTAL: <strong className="text-amber-800">{fmtEuro(secTot.total)}</strong></span>
+                        </div>
+                      </button>
+                      {secOpen && (
+                        <>
+                          <SeccionTable
+                            evento={ev}
+                            seccion={sec}
+                            state={state}
+                            onChange={onChange}
+                            onUploadJust={onUploadJust}
+                          />
+                          {/* Fila de totales por sección */}
+                          <div className="bg-slate-100 border-t border-slate-300 px-4 py-2 flex items-center justify-end gap-6 flex-wrap text-xs">
+                            <span className="font-semibold text-slate-700 mr-auto">Total {sec.label} ({sec.count})</span>
+                            <span>Prev: <strong>{fmtEuro(secTot.cache_previsto)}</strong></span>
+                            <span>Real: <strong>{fmtEuro(secTot.cache_real)}</strong></span>
+                            <span>Extras: <strong>{fmtEuro(secTot.extras)}</strong></span>
+                            <span>Transp: <strong>{fmtEuro(secTot.transporte)}</strong></span>
+                            <span>Aloj: <strong>{fmtEuro(secTot.alojamiento)}</strong></span>
+                            <span>Otros: <strong>{fmtEuro(secTot.otros)}</strong></span>
+                            <span>TOTAL: <strong className="text-amber-800">{fmtEuro(secTot.total)}</strong></span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Totales del evento (fila en azul oscuro) */}
+                {open && (
+                  <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-end gap-6 flex-wrap text-xs" data-testid={`totales-evento-${ev.id}`}>
+                    <span className="font-semibold mr-auto">📊 TOTAL EVENTO ({totEv.musicos} confirmados)</span>
+                    <span>Prev: <strong>{fmtEuro(totEv.cache_previsto)}</strong></span>
+                    <span>Real: <strong>{fmtEuro(totEv.cache_real)}</strong></span>
+                    <span>Extras: <strong>{fmtEuro(totEv.extras)}</strong></span>
+                    <span>Transp: <strong>{fmtEuro(totEv.transporte)}</strong></span>
+                    <span>Aloj: <strong>{fmtEuro(totEv.alojamiento)}</strong></span>
+                    <span>Otros: <strong>{fmtEuro(totEv.otros)}</strong></span>
+                    <span className="text-amber-300 text-sm">TOTAL: <strong>{fmtEuro(totEv.total)}</strong></span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
