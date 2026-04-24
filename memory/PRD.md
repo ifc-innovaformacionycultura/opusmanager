@@ -287,3 +287,43 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - `/asistencia/analisis` — Análisis económico
 - `/admin/tareas` — Planificador de tareas
 - `/admin/incidencias` — Feedback e incidencias
+
+---
+
+## Changelog (Feb 2026 — Iteración 9 / Fork Resume #2)
+
+### ✅ BLOQUE 7 — Presupuestos: Cachets por alcance (base vs evento) (DONE)
+- `CachetsBaseSection.js` ahora tiene selector de alcance: **Plantilla base (global)** ó **Evento específico**.
+- Selector `select-scope-cachets`: opciones = base + cada evento de la temporada.
+- Al seleccionar un evento, carga de `/cachets-config/{evento_id}`; si está vacío, precarga con valores de plantilla base (no guardados).
+- **Botón "Precargar estándar"** (`btn-precargar-cachets`): rellena 76 celdas con valores orientativos para orquesta profesional española (S.Fin 400€, S.Curs 320€, P.Fin 260€, P.Curs 200€).
+- **Botón "Copiar plantilla base"** (`btn-copiar-plantilla-base`): visible sólo en modo evento. Backend: `POST /api/gestor/cachets-config/{evento_id}/copy-from-base`.
+- Guarda como `evento_id=X` (específico) o `evento_id=NULL` (base) según scope.
+
+### ✅ BLOQUE 8 — Convocatoria por instrumento en Ensayos (DONE)
+- **Nueva tabla Supabase**: `ensayo_instrumentos(ensayo_id, instrumento, convocado, UNIQUE(ensayo_id, instrumento))`. SQL en `/app/MIGRATIONS/ensayo_instrumentos.sql`.
+- Endpoints: `GET/PUT /api/gestor/ensayos/{ensayo_id}/instrumentos` + `GET /api/gestor/ensayo-instrumentos-bulk?ensayo_ids=...`
+- Componente `ConvocatoriaInstrumentosPanel.js`: panel colapsable bajo cada ensayo persistido en Configuración de Eventos. Acciones masivas: **Convocar todos**, **Desconvocar todos**, y por sección (✓/✗ por Cuerda/Viento Madera/Viento Metal/Percusión/Teclados/Coro).
+- Toggle individual por instrumento (19 instrumentos totales).
+- **Default**: si no hay filas para un ensayo → todos convocados (TRUE).
+- Helper backend `_is_convocado(ensayo_instr_map, ensayo_id, instrumento)` para uso transversal.
+
+### ✅ BLOQUE 9 — Propagación de `convocado` a vistas consumidoras (DONE)
+- `/plantillas-definitivas`: cada item de disponibilidad/asistencia trae `convocado: bool`. % disponibilidad y % asistencia real se calculan **sólo sobre ensayos convocados**.
+- `/seguimiento`: idem. Badge "No conv." en gris para celdas no convocadas.
+- `/gestion-economica`: idem. % asistencia recalculado excluyendo no convocados.
+- `/portal/evento/{id}/ensayos` + `/portal/mi-historial/eventos` (asig.ensayos): cada ensayo incluye `convocado: bool` para el instrumento del músico actual.
+- Frontend `PlantillasDefinitivas.js`: componente `NoConvBadge`, render condicional de celdas, **color naranja** para `cache_previsto` cuando `cache_fuente` es `base_*` o `asignacion`.
+- Frontend `SeguimientoConvocatorias.js`: `DispCell` acepta prop `convocado`.
+- Frontend `MiDisponibilidadPanel.js` (Portal): badge **"No convocado"**, botones Sí/No reemplazados por texto "— (sin asistencia requerida)".
+
+### ✅ Fixes menores
+- Etiqueta "Caché Prev." → **"Caché Previsto"** aplicada también en `AsistenciaPagos.js` y `AnalisisEconomico.js` (había quedado fuera en it. 8).
+
+### Resultados de validación (iteración 9)
+- Backend 8/8 pytest PASS (100%)
+- Frontend ~90% OK (todos los endpoints y componentes verificados; solo 2 design issues menores heredados)
+- Issues menores pendientes:
+  - [LOW] Warning React `<span> cannot be a child of <option>` — no rompe UX, origen aún no localizado (no es ningún `<option>` actual del código).
+  - [LOW] Shape de `disponibilidad` en `/seguimiento` es dict (frontend ya lo consume así) vs list en `/plantillas-definitivas`. Inconsistencia no breaking.
+  - [LOW] `/portal/mi-historial/eventos` no incluye lista de ensayos (solo conteos). La lista + `convocado` está en `/portal/mis-eventos` y `/portal/evento/{id}/ensayos`.

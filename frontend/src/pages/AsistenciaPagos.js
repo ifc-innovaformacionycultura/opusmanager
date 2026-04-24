@@ -217,7 +217,7 @@ const AsistenciaPagos = () => {
                             );
                           });
                         })()}
-                        <th className="px-2 py-2 text-right font-medium">Caché Prev.</th>
+                        <th className="px-2 py-2 text-right font-medium">Caché Previsto</th>
                         <th className="px-2 py-2 text-right font-medium">Caché Real</th>
                         <th className="px-2 py-2 text-right font-medium">Extras</th>
                         <th className="px-2 py-2 text-right font-medium">Transp.</th>

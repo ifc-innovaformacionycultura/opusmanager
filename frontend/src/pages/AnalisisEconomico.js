@@ -221,7 +221,7 @@ const AnalisisEconomico = () => {
                         <th className="text-left px-3 py-1">Instrumento</th>
                         <th className="text-left px-3 py-1">Nivel</th>
                         <th className="text-center px-3 py-1">%Asist</th>
-                        <th className="text-right px-3 py-1">Caché Prev</th>
+                        <th className="text-right px-3 py-1">Caché Previsto</th>
                         <th className="text-right px-3 py-1">Caché Real</th>
                         <th className="text-right px-3 py-1">Extras</th>
                         <th className="text-right px-3 py-1 font-bold">Total</th>
