@@ -1,9 +1,14 @@
-// /admin/guia-pruebas — Guía interactiva de pruebas para el equipo
+// Guía interactiva de pruebas para el equipo (NO está en el menú de la app —
+// se mantiene como referencia interna fuera del menú lateral).
 // Casos prácticos por gestor + por músico + queries SQL de verificación.
+// Cada paso puede llevar una propiedad `ruta` que muestra un botón "Ir →"
+// con enlace directo a la página correspondiente.
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 // ==================================================================
 // Datos de los casos
+// pasos: array de { texto, ruta? }
 // ==================================================================
 const CASOS_GESTORES = [
   {
@@ -11,14 +16,14 @@ const CASOS_GESTORES = [
     nombre: 'Pablo Álvarez',
     titulo: 'Configuración de un nuevo evento de temporada',
     pasos: [
-      'Entra como gestor con palvarez@netmetrix.es / Opus2026!',
-      'Ve a Configuración → Eventos',
-      'Crea evento: "Concierto de Primavera 2026"\nFecha: 15/06/2026, Lugar: Auditorio Nacional',
-      'Añade 2 ensayos:\n- 01/06/2026 19:00-21:00 Sala Principal\n- 08/06/2026 19:00-21:00 Sala Principal',
-      'En el primer ensayo, desconvoca Percusión',
-      'Añade logística: transporte ida Madrid→Auditorio\n08/06/2026 17:00, punto recogida: Plaza Mayor 16:45',
-      'Guarda el evento',
-      'Ve a Presupuestos y aplica la plantilla base al nuevo evento',
+      { texto: 'Entra como gestor con palvarez@netmetrix.es / Opus2026!', ruta: '/login' },
+      { texto: 'Ve a Configuración → Eventos', ruta: '/configuracion/eventos' },
+      { texto: 'Crea evento: "Concierto de Primavera 2026"\nFecha: 15/06/2026, Lugar: Auditorio Nacional' },
+      { texto: 'Añade 2 ensayos:\n- 01/06/2026 19:00-21:00 Sala Principal\n- 08/06/2026 19:00-21:00 Sala Principal' },
+      { texto: 'En el primer ensayo, desconvoca Percusión' },
+      { texto: 'Añade logística: transporte ida Madrid→Auditorio\n08/06/2026 17:00, punto recogida: Plaza Mayor 16:45' },
+      { texto: 'Guarda el evento' },
+      { texto: 'Ve a Presupuestos y aplica la plantilla base al nuevo evento', ruta: '/configuracion/presupuestos' },
     ],
     sql: `SELECT nombre, estado FROM eventos WHERE nombre LIKE '%Primavera%';
 SELECT count(*) FROM ensayos
@@ -29,12 +34,12 @@ SELECT count(*) FROM ensayos
     nombre: 'María Álvarez',
     titulo: 'Gestión de músicos y seguimiento',
     pasos: [
-      'Entra como gestora con malvarez@e.csmb.es / Opus2026!',
-      'Ve a Base de datos de músicos',
-      'Descarga la plantilla Excel e importa un músico nuevo:\nnombre=Test, apellidos=Importación, email=testimport@test.com, instrumento=Violín',
-      'Ve a Seguimiento de Plantillas',
-      'Publica el "Concierto de Primavera 2026" para los músicos: Pablo Álvarez y Ana Aparicio',
-      'Verifica que aparecen como "Pendiente"',
+      { texto: 'Entra como gestora con malvarez@e.csmb.es / Opus2026!', ruta: '/login' },
+      { texto: 'Ve a Base de datos de músicos', ruta: '/admin/musicos' },
+      { texto: 'Descarga la plantilla Excel e importa un músico nuevo:\nnombre=Test, apellidos=Importación, email=testimport@test.com, instrumento=Violín' },
+      { texto: 'Ve a Seguimiento de Plantillas', ruta: '/seguimiento-convocatorias' },
+      { texto: 'Publica el "Concierto de Primavera 2026" para los músicos: Pablo Álvarez y Ana Aparicio' },
+      { texto: 'Verifica que aparecen como "Pendiente"' },
     ],
     sql: `SELECT u.nombre, u.apellidos, a.estado, a.publicado_musico
 FROM asignaciones a
@@ -47,12 +52,12 @@ WHERE e.nombre LIKE '%Primavera%';`,
     nombre: 'Carmen Álvarez',
     titulo: 'Presupuestos y configuración de cachets',
     pasos: [
-      'Entra como gestora con calvarez@p.csmb.es / Opus2026!',
-      'Ve a Configuración → Presupuestos',
-      'Pulsa "⚙️ Configurar plantilla base" y configura:\nViolín Superior finalizado: 380€\nViolín Profesional finalizado: 280€',
-      'Aplica la plantilla al "Concierto de Primavera" con el botón "📋 Aplicar plantilla base" en la cabecera del evento',
-      'Modifica el caché de Violín Superior para ese evento a 400€ (ponderación 105%)',
-      'Guarda con "Guardar todos"',
+      { texto: 'Entra como gestora con calvarez@p.csmb.es / Opus2026!', ruta: '/login' },
+      { texto: 'Ve a Configuración → Presupuestos', ruta: '/configuracion/presupuestos' },
+      { texto: 'Pulsa "⚙️ Configurar plantilla base" y configura:\nViolín Superior finalizado: 380€\nViolín Profesional finalizado: 280€' },
+      { texto: 'Aplica la plantilla al "Concierto de Primavera" con el botón "📋 Aplicar plantilla base" en la cabecera del evento' },
+      { texto: 'Modifica el caché de Violín Superior para ese evento a 400€ (ponderación 105%)' },
+      { texto: 'Guarda con "Guardar todos"' },
     ],
     sql: `SELECT instrumento, nivel_estudios, importe, factor_ponderacion
 FROM cachets_config
@@ -63,14 +68,14 @@ WHERE evento_id = (SELECT id FROM eventos WHERE nombre LIKE '%Primavera%');`,
     nombre: 'Antonio Álvarez Mellizo',
     titulo: 'Plantillas definitivas y pagos',
     pasos: [
-      'Entra como gestor con antonioalvarez.mellizo@gmail.com / Opus2026!',
-      'Ve a Seguimiento → confirma a Pablo Álvarez y Ana Aparicio para el Concierto de Primavera',
-      'Ve a Plantillas Definitivas',
-      'Introduce asistencia real:\nPablo: Ensayo1=100%, Ensayo2=80%\nAna: Ensayo1=100%, Ensayo2=100%',
-      'Añade extra a Pablo: 50€ "Desplazamiento"',
-      'Guarda cambios',
-      'Ve a Asistencia → Gestión Económica',
-      'Verifica los totales y marca el pago de Ana como "Pagado"',
+      { texto: 'Entra como gestor con antonioalvarez.mellizo@gmail.com / Opus2026!', ruta: '/login' },
+      { texto: 'Ve a Seguimiento → confirma a Pablo Álvarez y Ana Aparicio para el Concierto de Primavera', ruta: '/seguimiento-convocatorias' },
+      { texto: 'Ve a Plantillas Definitivas', ruta: '/plantillas-definitivas' },
+      { texto: 'Introduce asistencia real:\nPablo: Ensayo1=100%, Ensayo2=80%\nAna: Ensayo1=100%, Ensayo2=100%' },
+      { texto: 'Añade extra a Pablo: 50€ "Desplazamiento"' },
+      { texto: 'Guarda cambios' },
+      { texto: 'Ve a Asistencia → Gestión Económica', ruta: '/asistencia/pagos' },
+      { texto: 'Verifica los totales y marca el pago de Ana como "Pagado"' },
     ],
     sql: `SELECT u.nombre, a.porcentaje_asistencia, ga.cache_extra, a.estado_pago
 FROM asignaciones a
@@ -84,11 +89,12 @@ WHERE a.evento_id = (SELECT id FROM eventos WHERE nombre LIKE '%Primavera%');`,
     nombre: 'Ana Aparicio Núñez',
     titulo: 'Planificador de tareas e incidencias',
     pasos: [
-      'Entra como gestora con aaparicio@p.csmb.es / Opus2026!',
-      'Ve a Administración → Tareas',
-      'Crea tarea: "Confirmar técnico de sonido"\nEvento: Concierto de Primavera\nDeadline: 01/06/2026, Prioridad: Alta\nResponsable: Alberto Serrano',
-      'Verifica que aparece en vista Gantt',
-      'Crea un reporte de incidencia con el botón flotante 💬 Feedback:\nTipo: Mejora\nPrioridad: Media\nDescripción: "Añadir campo de notas en la ficha del músico para observaciones internas del equipo gestor"',
+      { texto: 'Entra como gestora con aaparicio@p.csmb.es / Opus2026!', ruta: '/login' },
+      { texto: 'Ve a Administración → Tareas', ruta: '/admin/tareas' },
+      { texto: 'Crea tarea: "Confirmar técnico de sonido"\nEvento: Concierto de Primavera\nDeadline: 01/06/2026, Prioridad: Alta\nResponsable: Alberto Serrano' },
+      { texto: 'Verifica que aparece en vista Gantt' },
+      { texto: 'Crea un reporte de incidencia con el botón flotante 💬 Feedback:\nTipo: Mejora\nPrioridad: Media\nDescripción: "Añadir campo de notas en la ficha del músico para observaciones internas del equipo gestor"' },
+      { texto: 'Verifica en /admin/incidencias que aparece tu reporte', ruta: '/admin/incidencias' },
     ],
     sql: `SELECT titulo, estado, prioridad, responsable_nombre
 FROM tareas WHERE titulo LIKE '%técnico%';
@@ -100,12 +106,12 @@ FROM incidencias ORDER BY created_at DESC LIMIT 1;`,
     nombre: 'Alberto Serrano',
     titulo: 'Recordatorios y comunicaciones',
     pasos: [
-      'Entra como gestor con aserrano@p.csmb.es / Opus2026!',
-      'Ve al evento "Concierto de Primavera"',
-      'Activa recordatorio: "Aviso ensayo 24h antes"',
-      'Personaliza el mensaje:\n"Hola {nombre}, mañana tienes ensayo de {evento} a las {hora} en {lugar}. ¡Te esperamos!"',
-      'Ve a Administración → Historial de emails',
-      'Verifica que aparecen emails previos',
+      { texto: 'Entra como gestor con aserrano@p.csmb.es / Opus2026!', ruta: '/login' },
+      { texto: 'Ve al evento "Concierto de Primavera"', ruta: '/configuracion/eventos' },
+      { texto: 'Activa recordatorio: "Aviso ensayo 24h antes"' },
+      { texto: 'Personaliza el mensaje:\n"Hola {nombre}, mañana tienes ensayo de {evento} a las {hora} en {lugar}. ¡Te esperamos!"' },
+      { texto: 'Ve a Administración → Historial de emails', ruta: '/admin/emails' },
+      { texto: 'Verifica que aparecen emails previos' },
     ],
     sql: `SELECT tipo, activo, mensaje_personalizado
 FROM recordatorios_config
@@ -116,12 +122,12 @@ WHERE evento_id = (SELECT id FROM eventos WHERE nombre LIKE '%Primavera%');`,
     nombre: 'María Sánchez Cortés',
     titulo: 'Análisis económico y exportaciones',
     pasos: [
-      'Entra como gestora con msanchez@p.csmb.es / Opus2026!',
-      'Ve a Asistencia → Análisis Económico',
-      'Revisa las estadísticas de la temporada',
-      'Exporta a Excel toda la temporada',
-      'Ve a Asistencia → Gestión Económica',
-      'Exporta XML SEPA del Concierto de Primavera',
+      { texto: 'Entra como gestora con msanchez@p.csmb.es / Opus2026!', ruta: '/login' },
+      { texto: 'Ve a Asistencia → Análisis Económico', ruta: '/asistencia/analisis' },
+      { texto: 'Revisa las estadísticas de la temporada' },
+      { texto: 'Exporta a Excel toda la temporada' },
+      { texto: 'Ve a Asistencia → Gestión Económica', ruta: '/asistencia/pagos' },
+      { texto: 'Exporta XML SEPA del Concierto de Primavera' },
     ],
     sql: `SELECT COUNT(*) as total_musicos_confirmados,
        AVG(porcentaje_asistencia) as media_asistencia
@@ -134,11 +140,11 @@ WHERE estado='confirmado'
     nombre: 'Sara Díaz Ropero',
     titulo: 'Gestión de reclamaciones y actividad',
     pasos: [
-      'Entra como gestora con sdiaz-ropero@p.csmb.es / Opus2026!',
-      'Ve a Administración → Reclamaciones',
-      'Gestiona la reclamación de prueba existente:\ncambia estado a "En gestión"\nañade respuesta: "Revisando, contactamos en 48h"',
-      'Ve a Administración → Registro de Actividad',
-      'Verifica que aparecen las acciones recientes',
+      { texto: 'Entra como gestora con sdiaz-ropero@p.csmb.es / Opus2026!', ruta: '/login' },
+      { texto: 'Ve a Administración → Reclamaciones', ruta: '/admin/reclamaciones' },
+      { texto: 'Gestiona la reclamación de prueba existente:\ncambia estado a "En gestión"\nañade respuesta: "Revisando, contactamos en 48h"' },
+      { texto: 'Ve a Administración → Registro de Actividad', ruta: '/admin/registro-actividad' },
+      { texto: 'Verifica que aparecen las acciones recientes' },
     ],
     sql: `SELECT estado, respuesta_gestor, gestor_nombre
 FROM reclamaciones ORDER BY created_at DESC LIMIT 1;
@@ -153,14 +159,14 @@ const CASOS_MUSICOS = [
     nombre: 'Pablo Álvarez Rábanos',
     titulo: 'Primer acceso y confirmar convocatoria',
     pasos: [
-      'Entra como músico con pablo_alvarez_rabanos@telefonica.net / Musico2026!',
-      'Te pedirá cambiar contraseña en el primer login',
-      'Establece nueva contraseña: PabloMusico2026!',
-      'Completa tu perfil:\ninstrumento=Violín, nivel=Superior finalizado, teléfono, dirección, IBAN',
-      'Ve a Convocatorias',
-      'Busca el "Concierto de Primavera 2026"',
-      'Indica disponibilidad: Ensayo1=Sí, Ensayo2=Sí',
-      'Confirma asistencia al transporte',
+      { texto: 'Entra como músico con pablo_alvarez_rabanos@telefonica.net / Musico2026!', ruta: '/login' },
+      { texto: 'Te pedirá cambiar contraseña en el primer login' },
+      { texto: 'Establece nueva contraseña: PabloMusico2026!' },
+      { texto: 'Completa tu perfil:\ninstrumento=Violín, nivel=Superior finalizado, teléfono, dirección, IBAN', ruta: '/portal/perfil' },
+      { texto: 'Ve a Convocatorias', ruta: '/portal' },
+      { texto: 'Busca el "Concierto de Primavera 2026"' },
+      { texto: 'Indica disponibilidad: Ensayo1=Sí, Ensayo2=Sí' },
+      { texto: 'Confirma asistencia al transporte' },
     ],
     sql: `SELECT asiste FROM disponibilidad d
 JOIN ensayos e ON e.id = d.ensayo_id
@@ -175,13 +181,13 @@ WHERE d.usuario_id = (
     nombre: 'Ana Aparicio Núñez',
     titulo: 'Perfil completo con titulaciones',
     pasos: [
-      'Entra como música con ana.aparicio.nunez@gmail.com / Musico2026!',
-      'Cambia contraseña en el primer login',
-      'Completa perfil completo:\ninstrumento=Flauta, nivel=Superior finalizado',
-      'Añade titulación:\n"Grado Superior de Música"\nConservatorio Superior de Madrid, 2020',
-      'Sube foto de perfil',
-      'Ve a Mi Historial → Reclamaciones',
-      'Crea reclamación:\ntipo=Pago incorrecto\ndescripción="El caché indicado no coincide con el acordado verbalmente"',
+      { texto: 'Entra como música con ana.aparicio.nunez@gmail.com / Musico2026!', ruta: '/login' },
+      { texto: 'Cambia contraseña en el primer login' },
+      { texto: 'Completa perfil completo:\ninstrumento=Flauta, nivel=Superior finalizado', ruta: '/portal/perfil' },
+      { texto: 'Añade titulación:\n"Grado Superior de Música"\nConservatorio Superior de Madrid, 2020' },
+      { texto: 'Sube foto de perfil' },
+      { texto: 'Ve a Mi Historial → Reclamaciones', ruta: '/portal/historial' },
+      { texto: 'Crea reclamación:\ntipo=Pago incorrecto\ndescripción="El caché indicado no coincide con el acordado verbalmente"' },
     ],
     sql: `SELECT nombre, apellidos, instrumento, nivel_estudios, titulaciones
 FROM usuarios WHERE email='ana.aparicio.nunez@gmail.com';`,
@@ -242,7 +248,7 @@ const CopyableSql = ({ sql, testid }) => {
 };
 
 const CasoAccordion = ({ idx, caso, color, onToggle, isOpen, testidPrefix }) => {
-  const [done, setDone] = useState({});  // pasos hechos en esta sesión
+  const [done, setDone] = useState({});
   return (
     <div className={`border ${color} rounded-lg overflow-hidden`}>
       <button type="button" onClick={onToggle}
@@ -260,15 +266,27 @@ const CasoAccordion = ({ idx, caso, color, onToggle, isOpen, testidPrefix }) => 
           <div>
             <div className="text-xs font-bold text-slate-700 mb-2">PASOS</div>
             <ol className="space-y-2">
-              {caso.pasos.map((p, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <input type="checkbox" checked={!!done[i]} onChange={() => setDone(d => ({ ...d, [i]: !d[i] }))}
-                         className="mt-0.5 w-4 h-4 accent-emerald-600" />
-                  <span className={`text-sm whitespace-pre-line ${done[i] ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                    <strong className="text-slate-500 mr-1">{i+1}.</strong>{p}
-                  </span>
-                </li>
-              ))}
+              {caso.pasos.map((p, i) => {
+                const paso = typeof p === 'string' ? { texto: p } : p;
+                return (
+                  <li key={i} className="flex items-start gap-2">
+                    <input type="checkbox" checked={!!done[i]} onChange={() => setDone(d => ({ ...d, [i]: !d[i] }))}
+                           className="mt-0.5 w-4 h-4 accent-emerald-600" />
+                    <span className={`text-sm whitespace-pre-line flex-1 ${done[i] ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                      <strong className="text-slate-500 mr-1">{i+1}.</strong>{paso.texto}
+                    </span>
+                    {paso.ruta && (
+                      <Link to={paso.ruta}
+                            data-testid={`${testidPrefix}-${idx}-paso-${i}-link`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded">
+                        Ir →
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
             </ol>
           </div>
           <div>
@@ -291,9 +309,8 @@ const GuiaPruebas = () => {
   return (
     <div className="p-6 max-w-5xl mx-auto" data-testid="guia-pruebas-page">
       <h1 className="font-cabinet text-3xl font-bold text-slate-900 mb-1">📋 Guía de pruebas para el equipo</h1>
-      <p className="text-sm text-slate-600 mb-6">Casos prácticos paso a paso, organizados por persona. Marca cada paso al completarlo y copia el SQL para verificar el resultado en Supabase.</p>
+      <p className="text-sm text-slate-600 mb-6">Casos prácticos paso a paso, organizados por persona. Marca cada paso al completarlo, copia el SQL para verificar el resultado en Supabase, y usa los botones <strong>Ir →</strong> para abrir la página correspondiente en una nueva pestaña.</p>
 
-      {/* Sección Gestores */}
       <section className="mb-8">
         <h2 className="text-xl font-bold text-slate-900 mb-3 flex items-center gap-2">
           <span className="inline-block w-2 h-6 bg-blue-600 rounded" />
@@ -307,7 +324,6 @@ const GuiaPruebas = () => {
         </div>
       </section>
 
-      {/* Sección Músicos */}
       <section className="mb-8">
         <h2 className="text-xl font-bold text-slate-900 mb-3 flex items-center gap-2">
           <span className="inline-block w-2 h-6 bg-emerald-600 rounded" />
@@ -321,7 +337,6 @@ const GuiaPruebas = () => {
         </div>
       </section>
 
-      {/* Verificaciones SQL Globales */}
       <section className="mb-8">
         <h2 className="text-xl font-bold text-slate-900 mb-3 flex items-center gap-2">
           <span className="inline-block w-2 h-6 bg-slate-700 rounded" />
