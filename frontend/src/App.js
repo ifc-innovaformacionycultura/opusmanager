@@ -241,8 +241,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
         { id: "config-email", label: "Configuración de email", path: "/admin/emails/configuracion" },
         { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
         { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
-        { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" },
-        { id: "reportes", label: "Reportes del equipo", path: "/admin/reportes" }
+        { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" }
       ]
     },
     { 
@@ -449,8 +448,6 @@ const Layout = ({ children }) => {
       return { page: "Administración", section: "Gestión de permisos" };
     } else if (path.startsWith("/admin/actividad")) {
       return { page: "Administración", section: "Registro de actividad" };
-    } else if (path.startsWith("/admin/reportes")) {
-      return { page: "Administración", section: "Reportes del equipo" };
     } else if (path.startsWith("/ayuda")) {
       return { page: "Manual de Usuario", section: null };
     }
@@ -720,7 +717,6 @@ import GestionUsuarios from "./pages/GestionUsuarios";
 import RegistroActividad from "./pages/RegistroActividad";
 import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
-import GestionReportes from "./pages/GestionReportes";
 import GestorMusicos from "./pages/GestorMusicos";
 import GestorMusicoDetalle from "./pages/GestorMusicoDetalle";
 import GestorTareas from "./pages/GestorTareas";
@@ -787,7 +783,6 @@ function App() {
                         <Route path="/admin/reclamaciones" element={<GestorReclamaciones />} />
                         <Route path="/admin/permisos" element={<GestionPermisos />} />
                         <Route path="/admin/actividad" element={<RegistroActividad />} />
-                        <Route path="/admin/reportes" element={<GestionReportes />} />
                         <Route path="/ayuda" element={<ManualUsuario />} />
                       </Routes>
                     </Layout>

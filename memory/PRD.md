@@ -486,3 +486,41 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 ### Tests
 - pytest `test_iter10_regression.py`: 22/22 PASS, 0 regresiones.
 - Frontend verificado con screenshots end-to-end (lista, modal, incidencia creada).
+
+## Iteración 15 (Feb 2026) — Sistema único de incidencias + adjuntos
+
+### ✅ Captura de pantalla en modal de incidencias
+- Backend: `POST /api/gestor/incidencias/upload-screenshot` y `POST /api/portal/incidencias/upload-screenshot`. Acepta PNG/JPEG/WEBP/GIF (máx 5 MB), valida `Literal` MIME, sube a bucket `justificantes` bajo `incidencias/{user_id}/{ts}.{ext}`, devuelve `{url, path}` con URL pública.
+- Frontend nuevo componente `IncidenciaModal.js`: drag & drop, paste (Ctrl/Cmd+V), preview con badge "✓ Subida", quitar imagen.
+
+### ✅ Modal único compartido
+- `FeedbackButton` (flotante en gestor + portal) y `GestorIncidencias` (`/admin/incidencias`) usan ahora el mismo componente `<IncidenciaModal />`.
+- Eliminado el modal duplicado del antiguo FeedbackButton; una única UX con captura.
+
+### ✅ "Mis incidencias" tab para gestor
+- Pestañas "Todas (N)" / "Mis incidencias (N)" en `/admin/incidencias` con `data-testid="tab-todas"` y `tab-mias`.
+- Filtra por `inc.usuario_id === user.profile.id` (no `user.id`, ver fix abajo).
+- Nueva columna **Captura** en la tabla con thumbnail clicable que abre la imagen en pestaña nueva.
+
+### ✅ Eliminada duplicación con `Reportes del equipo`
+- Borrada entrada del sidebar (`App.js`).
+- Eliminada ruta `/admin/reportes` y su `import GestionReportes`.
+- Borrado el archivo `/app/frontend/src/pages/GestionReportes.js`.
+- `/admin/incidencias` queda como sistema único de reportes.
+
+### ✅ Preselección automática de temporada con eventos abiertos
+- `Presupuestos.js fetchSeasons` ahora cuenta eventos con `estado='abierto'` por temporada y selecciona la que tenga MÁS eventos abiertos. Fallback: temporada más reciente alfabética.
+- Verificado: ahora preselecciona "2025-2026" (con eventos abiertos) en lugar de "2024-2025" (default antiguo).
+
+### 🔧 Bug fix bonus: `usuario_id` correcto en incidencias
+- `_crear_incidencia_y_notificar` ahora resuelve `usuario_id` con tres estrategias en cascada:
+  1. `profile.id` si existe en `usuarios`
+  2. `usuarios.user_id == auth.id` (FK)
+  3. `usuarios.id == auth.id` (legado)
+- Antes, las incidencias del admin se guardaban con `usuario_id=NULL` (porque admin tiene `usuarios.id != auth.id`). Ahora se guardan con el `usuarios.id` correcto y "Mis incidencias" funciona para todos los gestores.
+
+### Tests
+- pytest `test_iter10_regression.py`: 22/22 PASS post-fix.
+- Validación curl: subida 200 con URL pública accesible HTTP 200; rechazo PDF 400; resolución `usuario_id` correcta para admin.
+- Frontend verificado por screenshots end-to-end (8 capturas).
+

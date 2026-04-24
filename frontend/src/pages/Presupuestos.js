@@ -113,8 +113,23 @@ const Presupuestos = () => {
       const all = r.data?.eventos || [];
       const t = Array.from(new Set(all.map(e => e.temporada).filter(Boolean)));
       setSeasons(t);
-      // Auto-seleccionar la más reciente si no hay ninguna
-      if (!selectedSeason && t.length > 0) setSelectedSeason(t[t.length - 1]);
+      if (!selectedSeason && t.length > 0) {
+        // Preferimos la temporada con más eventos en estado "abierto"
+        // (que es la que realmente alimenta la matriz). Si ninguna tiene
+        // eventos abiertos, caemos a la temporada más reciente alfabéticamente.
+        const openCount = {};
+        for (const ev of all) {
+          if (ev.estado === 'abierto' && ev.temporada) {
+            openCount[ev.temporada] = (openCount[ev.temporada] || 0) + 1;
+          }
+        }
+        const sorted = [...t].sort();
+        const seasonsWithOpen = sorted.filter(s => (openCount[s] || 0) > 0);
+        const best = seasonsWithOpen.length > 0
+          ? seasonsWithOpen.reduce((a, b) => (openCount[b] >= openCount[a] ? b : a), seasonsWithOpen[0])
+          : sorted[sorted.length - 1];
+        setSelectedSeason(best);
+      }
     } catch (e) {
       console.error('[Presupuestos] error temporadas', e);
     }
