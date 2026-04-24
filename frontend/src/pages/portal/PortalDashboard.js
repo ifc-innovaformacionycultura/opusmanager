@@ -7,6 +7,7 @@ import CambiarPasswordPrimeraVez from './CambiarPasswordPrimeraVez';
 import PortalCalendar from './PortalCalendar';
 import MiPerfil from './MiPerfil';
 import MiHistorial from './MiHistorial';
+import MiDisponibilidadPanel from './MiDisponibilidadPanel';
 import { computeProfileCompleteness } from '../../lib/profileCompleteness';
 
 const PortalDashboard = () => {
@@ -158,46 +159,59 @@ const PortalDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Portal de Músicos</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              {profile?.nombre} {profile?.apellidos} • {profile?.instrumento || 'Músico'}
-            </p>
+    <div className="min-h-screen bg-slate-50">
+      {/* Header estilo gestor — slate-900 con acentos purple */}
+      <header className="bg-slate-900 text-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Foto de perfil */}
+            <div className="w-11 h-11 rounded-full overflow-hidden bg-purple-600 border-2 border-purple-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+              {profile?.foto_url ? (
+                <img src={profile.foto_url} alt={profile.nombre || 'perfil'} className="w-full h-full object-cover" />
+              ) : (
+                <span>{((profile?.nombre || '')[0] || '') + ((profile?.apellidos || '')[0] || '')}</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <h1 className="font-cabinet text-lg sm:text-xl font-bold text-white truncate">
+                {profile?.nombre} {profile?.apellidos}
+              </h1>
+              <p className="text-xs text-slate-300 font-ibm">
+                <span className="text-purple-300 font-medium">Portal de músicos</span>
+                {profile?.instrumento ? ` · ${profile.instrumento}` : ''}
+              </p>
+            </div>
           </div>
           <button
             onClick={handleSignOut}
             data-testid="portal-logout-btn"
-            className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+            className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 rounded-md transition-colors"
           >
             Cerrar sesión
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="max-w-7xl mx-auto px-6">
+        {/* Tabs con acento purple-500 */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 border-t border-slate-800">
           <nav className="flex gap-6 -mb-px overflow-x-auto">
             <button
               onClick={() => setVista('eventos')}
               data-testid="tab-eventos"
               className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 vista === 'eventos'
-                  ? 'border-slate-900 text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
+                  ? 'border-purple-500 text-white'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              🎵 Mis Eventos
+              🎵 Convocatorias
             </button>
             <button
               onClick={() => setVista('calendario')}
               data-testid="tab-calendario"
               className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 vista === 'calendario'
-                  ? 'border-slate-900 text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
+                  ? 'border-purple-500 text-white'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
               📅 Calendario
@@ -207,8 +221,8 @@ const PortalDashboard = () => {
               data-testid="tab-perfil"
               className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 vista === 'perfil'
-                  ? 'border-slate-900 text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
+                  ? 'border-purple-500 text-white'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
               👤 Mi Perfil
@@ -218,8 +232,8 @@ const PortalDashboard = () => {
               data-testid="tab-historial"
               className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 vista === 'historial'
-                  ? 'border-slate-900 text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
+                  ? 'border-purple-500 text-white'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
               📋 Mi Historial
@@ -433,6 +447,14 @@ const PortalDashboard = () => {
                       </div>
                     );
                   })()}
+
+                  {/* Mi disponibilidad por ensayo — el músico confirma asistencia */}
+                  {(eventoSeleccionado.ensayos || []).length > 0 && (
+                    <MiDisponibilidadPanel
+                      ensayos={eventoSeleccionado.ensayos || []}
+                      onSaved={cargarMisEventos}
+                    />
+                  )}
 
                   {/* Notas para los músicos */}
                   {eventoSeleccionado.evento?.notas_musicos && (

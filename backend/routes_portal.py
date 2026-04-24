@@ -148,12 +148,13 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
         
         asignaciones = response.data or []
         
-        # Filtrar: sólo eventos con estado 'abierto' son visibles para el músico
-        # (borrador/cerrado/cancelado/finalizado/en_curso quedan ocultos aquí;
-        # el historial completo se ve en /mi-historial/eventos)
+        # Filtrar por publicado_musico=TRUE y estado != 'excluido'.
+        # Los eventos ya no son visibles por "estado del evento", sino porque
+        # el gestor ha publicado explícitamente la convocatoria a este músico
+        # desde Seguimiento de Plantillas.
         asignaciones = [
             a for a in asignaciones
-            if (a.get('evento') or {}).get('estado') == 'abierto'
+            if bool(a.get('publicado_musico')) and a.get('estado') != 'excluido'
         ]
 
         # Instrumento principal del músico para filtrar la partitura adecuada
@@ -175,6 +176,43 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
             for k in partitura_keys:
                 evento.pop(k, None)
             asig['evento'] = evento
+
+        # Ensayos del evento + mi_disponibilidad (bool o None)
+        evento_ids = list({a.get('evento_id') for a in asignaciones if a.get('evento_id')})
+        ensayos_by_evento = {}
+        disp_map = {}  # ensayo_id -> mi_disponibilidad
+        if evento_ids:
+            ens_res = supabase.table('ensayos') \
+                .select('id,evento_id,tipo,fecha,hora,obligatorio,lugar') \
+                .in_('evento_id', evento_ids) \
+                .order('fecha', desc=False) \
+                .execute()
+            for e in (ens_res.data or []):
+                ensayos_by_evento.setdefault(e['evento_id'], []).append(e)
+            ensayo_ids = [e['id'] for evs in ensayos_by_evento.values() for e in evs]
+            if ensayo_ids:
+                d_res = supabase.table('disponibilidad') \
+                    .select('ensayo_id,asiste') \
+                    .eq('usuario_id', usuario_id) \
+                    .in_('ensayo_id', ensayo_ids) \
+                    .execute()
+                for d in (d_res.data or []):
+                    disp_map[d['ensayo_id']] = d.get('asiste')
+
+        for asig in asignaciones:
+            ensayos = ensayos_by_evento.get(asig.get('evento_id'), [])
+            ensayos_enriched = []
+            for e in ensayos:
+                ensayos_enriched.append({
+                    "id": e['id'],
+                    "fecha": e.get('fecha'),
+                    "hora": e.get('hora'),
+                    "tipo": e.get('tipo'),
+                    "lugar": e.get('lugar'),
+                    "obligatorio": e.get('obligatorio'),
+                    "mi_disponibilidad": disp_map.get(e['id']),
+                })
+            asig['ensayos'] = ensayos_enriched
         
         # Enriquecer cada asignación con conteo de compañeros confirmados
         # (sin revelar nombres) para cada evento
@@ -528,6 +566,76 @@ async def marcar_disponibilidad(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar disponibilidad: {str(e)}"
         )
+
+
+class DispEntry(BaseModel):
+    ensayo_id: str
+    asiste: Optional[bool] = None
+
+
+class GuardarDisponibilidadRequest(BaseModel):
+    entries: List[DispEntry]
+
+
+@router.post("/disponibilidad/bulk")
+async def guardar_disponibilidad_bulk(
+    data: GuardarDisponibilidadRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    UPSERT de disponibilidad para varios ensayos del músico autenticado.
+    Si `asiste=null` elimina el registro (vuelve a sin respuesta).
+    """
+    try:
+        user_profile = current_user.get("profile", {})
+        usuario_id = user_profile.get("id")
+        if not usuario_id:
+            raise HTTPException(status_code=400, detail="Perfil no encontrado")
+
+        now = datetime.now().isoformat()
+        actualizados = 0
+        creados = 0
+        borrados = 0
+        for entry in data.entries:
+            existing = supabase.table('disponibilidad') \
+                .select('id') \
+                .eq('usuario_id', usuario_id) \
+                .eq('ensayo_id', entry.ensayo_id) \
+                .execute()
+            if entry.asiste is None:
+                if existing.data:
+                    supabase.table('disponibilidad') \
+                        .delete() \
+                        .eq('id', existing.data[0]['id']) \
+                        .execute()
+                    borrados += 1
+                continue
+            if existing.data:
+                supabase.table('disponibilidad') \
+                    .update({"asiste": entry.asiste, "updated_at": now}) \
+                    .eq('id', existing.data[0]['id']) \
+                    .execute()
+                actualizados += 1
+            else:
+                supabase.table('disponibilidad') \
+                    .insert({
+                        "usuario_id": usuario_id,
+                        "ensayo_id": entry.ensayo_id,
+                        "asiste": entry.asiste,
+                    }) \
+                    .execute()
+                creados += 1
+
+        return {
+            "ok": True,
+            "actualizados": actualizados,
+            "creados": creados,
+            "borrados": borrados,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 # ==================== MI PERFIL (Bloque 1) ====================
