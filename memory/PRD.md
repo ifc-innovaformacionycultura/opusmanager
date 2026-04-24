@@ -402,3 +402,38 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - Bloque 3: 6 abiertos vs 7 totales en /eventos (1 cerrado correctamente excluido).
 - Bloque 4: al añadir ensayo nuevo el panel se abre automáticamente con "(19/19)" y muestra mensaje de guardado pendiente.
 - Bloque 5: 0 lint errors en frontend.
+
+---
+
+## Changelog (Feb 2026 — Iteración 12 / Fork Resume #5)
+
+### ✅ BLOQUE 3 — Sistema de Incidencias verificado y mejorado (DONE)
+- **SQL ejecutado**: añadida columna `incidencias.prioridad TEXT CHECK (alta|media|baja) DEFAULT 'media'`.
+- `FeedbackButton.js` reescrito: añadido selector de **Prioridad** (🔴Alta / 🟡Media / 🟢Baja), validación de **mínimo 20 caracteres** con contador en vivo, prop `mode='gestor'|'portal'` para usar el endpoint correcto.
+- **Nuevo endpoint** `POST /api/portal/incidencias` para músicos autenticados.
+- **Notificación automática** al admin gestor (`admin@convocatorias.com`) en `notificaciones_gestor` al crear incidencia.
+- `FeedbackButton` añadido al portal del músico.
+- Página `/admin/incidencias` mejorada: filtros por **tipo** y **rango de fechas**, columna **prioridad** editable inline, **textarea** de respuesta del gestor, botón Eliminar.
+
+### ✅ BLOQUE 2 — Creación masiva de usuarios (DONE)
+- Script `/app/backend/scripts/create_users.py` (Supabase Admin API + tabla `usuarios`).
+- **Resultado**: 15 creados · 0 ya existían · 0 errores.
+  - 8 gestores con `Opus2026!` y `requiere_cambio_password=false`.
+  - 7 músicos con `Musico2026!` y `requiere_cambio_password=true`.
+- Idempotente: si el email ya existe en `auth.users` se sincroniza con `public.usuarios` sin duplicar.
+- Credenciales registradas en `/app/memory/test_credentials.md`.
+
+### ✅ BLOQUE 1 — Plantilla base configurable + botones aplicar (DONE)
+- **Modal "⚙️ Configurar plantilla base"** (`PlantillaBaseModal`): matriz simple de 76 inputs (instrumento × nivel) que lee/guarda en `cachets_config` con `evento_id IS NULL`.
+- **Botón "📋 Precargar estándar" mejorado**: consulta `/api/gestor/cachets-base`; si hay valores configurados los usa; si no, fallback a 400/320/260/200€. Solo rellena celdas vacías.
+- **Botón "📋 Aplicar plantilla base"** en cada cabecera de evento: copia la base a ese evento concreto.
+- **Botón "📋 Aplicar a todos los eventos"** en barra superior: copia a todos los eventos abiertos.
+
+### ✅ BLOQUE 4 — Guía de pruebas /admin/guia-pruebas (DONE)
+- Nueva página accesible desde el menú lateral: **Administración > Guía de pruebas**.
+- 8 acordeones de gestores con casos prácticos (email, contraseña, pasos numerados con checklist, SQL de verificación con botón "📋 copiar").
+- 2 acordeones de músicos.
+- 4 queries SQL globales al final.
+
+### URLs nuevas
+- `/admin/guia-pruebas` — Guía de pruebas para el equipo

@@ -9,6 +9,7 @@ import MiPerfil from './MiPerfil';
 import MiHistorial from './MiHistorial';
 import MiDisponibilidadPanel from './MiDisponibilidadPanel';
 import LogisticaMusicoPanel from './LogisticaMusicoPanel';
+import FeedbackButton from '../../components/FeedbackButton';
 import { computeProfileCompleteness } from '../../lib/profileCompleteness';
 
 const PortalDashboard = () => {
@@ -565,6 +566,8 @@ const PortalDashboard = () => {
           </div>
         )}
       </div>
+      {/* Feedback flotante para músicos */}
+      <FeedbackButton mode="portal" />
     </div>
   );
 };

@@ -174,33 +174,77 @@ const Presupuestos = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventos, cachets]);
 
-  const precargarEstandar = () => {
-    setCachets(prev => {
-      const next = { ...prev };
-      let added = 0;
-      for (const ev of eventos) {
-        for (const sec of SECCIONES) {
-          for (const instr of sec.instrumentos) {
-            for (const niv of NIVELES) {
-              const k = `${ev.id}__${instr}__${niv}`;
-              const cur = next[k];
-              if (!cur || (Number(cur.importe) || 0) === 0) {
-                next[k] = {
-                  ...cur,
-                  importe: PRECARGA_NIVEL[niv],
-                  factor: cur?.factor ?? 100,
-                  _dirty: true,
-                };
-                added++;
+  const precargarEstandar = async () => {
+    try {
+      // Cargar la plantilla base (cachets_config WHERE evento_id IS NULL)
+      const r = await api.get('/api/gestor/cachets-base');
+      const baseRows = r.data?.cachets || [];
+      const baseMap = {};
+      for (const row of baseRows) {
+        baseMap[`${row.instrumento}__${row.nivel_estudios}`] = Number(row.importe) || 0;
+      }
+      setCachets(prev => {
+        const next = { ...prev };
+        let added = 0;
+        for (const ev of eventos) {
+          for (const sec of SECCIONES) {
+            for (const instr of sec.instrumentos) {
+              for (const niv of NIVELES) {
+                const k = `${ev.id}__${instr}__${niv}`;
+                const cur = next[k];
+                if (!cur || (Number(cur.importe) || 0) === 0) {
+                  // Usar plantilla base si existe; si no, fallback a valores estándar
+                  const baseVal = baseMap[`${instr}__${niv}`];
+                  const valor = (baseVal !== undefined && baseVal > 0) ? baseVal : PRECARGA_NIVEL[niv];
+                  next[k] = {
+                    ...cur,
+                    importe: valor,
+                    factor: cur?.factor ?? 100,
+                    _dirty: true,
+                  };
+                  added++;
+                }
               }
             }
           }
         }
+        const fuente = baseRows.length > 0 ? 'plantilla base configurada' : 'valores estándar (no hay plantilla base)';
+        setMsg({ type: 'info', text: `📋 ${added} celdas precargadas desde ${fuente}.` });
+        setTimeout(() => setMsg(null), 4500);
+        return next;
+      });
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
+    }
+  };
+
+  const aplicarPlantillaBaseEvento = async (eventoId) => {
+    try {
+      const r = await api.post(`/api/gestor/cachets-config/${eventoId}/copy-from-base`);
+      const ev = eventos.find(e => e.id === eventoId);
+      setMsg({ type: 'success', text: `✅ ${ev?.nombre || 'Evento'}: ${r.data.copiados || 0} aplicados, ${r.data.actualizados || 0} actualizados` });
+      setTimeout(() => setMsg(null), 4000);
+      await fetchMatriz();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
+    }
+  };
+
+  const aplicarPlantillaTodos = async () => {
+    if (!window.confirm(`¿Aplicar la plantilla base a los ${eventos.length} eventos abiertos? Solo rellenará celdas vacías; no sobrescribirá valores ya guardados.`)) return;
+    try {
+      let totalC = 0; let totalA = 0;
+      for (const ev of eventos) {
+        const r = await api.post(`/api/gestor/cachets-config/${ev.id}/copy-from-base`);
+        totalC += r.data.copiados || 0;
+        totalA += r.data.actualizados || 0;
       }
-      setMsg({ type: 'info', text: `📋 ${added} celdas precargadas con valores estándar (vacías rellenadas).` });
+      setMsg({ type: 'success', text: `✅ Aplicada a ${eventos.length} eventos · ${totalC} creados, ${totalA} actualizados` });
       setTimeout(() => setMsg(null), 4500);
-      return next;
-    });
+      await fetchMatriz();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
+    }
   };
 
   const guardarTodos = async () => {
@@ -243,6 +287,8 @@ const Presupuestos = () => {
 
   const toggleCollapse = (evId) => setCollapsed(prev => ({ ...prev, [evId]: !prev[evId] }));
 
+  const [showBaseModal, setShowBaseModal] = useState(false);
+
   // ==================================================================
   // RENDER
   // ==================================================================
@@ -263,11 +309,23 @@ const Presupuestos = () => {
               {seasons.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
+          <button type="button" onClick={() => setShowBaseModal(true)}
+                  data-testid="btn-cfg-plantilla-base"
+                  title="Configurar la plantilla base de cachets (evento_id NULL)"
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-medium rounded">
+            ⚙️ Configurar plantilla base
+          </button>
           <button type="button" onClick={precargarEstandar}
                   data-testid="btn-precargar-presup"
-                  title="Rellena con 400/320/260/200€ las celdas vacías"
+                  title="Rellena celdas vacías leyendo de la plantilla base; usa 400/320/260/200€ como fallback si no hay plantilla"
                   className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded">
             📋 Precargar estándar
+          </button>
+          <button type="button" onClick={aplicarPlantillaTodos}
+                  data-testid="btn-aplicar-todos"
+                  title="Copia la plantilla base a TODOS los eventos abiertos"
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded">
+            📋 Aplicar a todos los eventos
           </button>
           <button type="button" onClick={guardarTodos} disabled={saving}
                   data-testid="btn-guardar-presup"
@@ -319,6 +377,12 @@ const Presupuestos = () => {
                               <div className="text-[10px] text-slate-500">
                                 {ev.n_ensayos} ens · {ev.n_funciones} func
                               </div>
+                              <button type="button" onClick={() => aplicarPlantillaBaseEvento(ev.id)}
+                                      data-testid={`btn-aplicar-base-${ev.id}`}
+                                      title="Copia la plantilla base a este evento (solo rellena celdas vacías)"
+                                      className="mt-1 text-[10px] px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded">
+                                📋 Aplicar plantilla base
+                              </button>
                             </div>
                           </div>
                         </th>
@@ -438,6 +502,117 @@ const Presupuestos = () => {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Modal de Plantilla Base */}
+      {showBaseModal && (
+        <PlantillaBaseModal api={api} onClose={() => { setShowBaseModal(false); fetchMatriz(); }} />
+      )}
+    </div>
+  );
+};
+
+// ==================================================================
+// Modal: configurar la plantilla base global de cachets
+// ==================================================================
+const PlantillaBaseModal = ({ api, onClose }) => {
+  const [base, setBase] = useState({}); // { 'instr__nivel': importe }
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const r = await api.get('/api/gestor/cachets-base');
+        const m = {};
+        for (const row of (r.data?.cachets || [])) {
+          m[`${row.instrumento}__${row.nivel_estudios}`] = Number(row.importe) || 0;
+        }
+        setBase(m);
+      } finally { setLoading(false); }
+    })();
+  }, [api]);
+
+  const setVal = (instr, niv, v) => setBase(prev => ({ ...prev, [`${instr}__${niv}`]: v === '' ? 0 : Number(v) }));
+
+  const guardar = async () => {
+    try {
+      setSaving(true); setMsg(null);
+      const data = [];
+      for (const sec of SECCIONES) {
+        for (const instr of sec.instrumentos) {
+          for (const niv of NIVELES) {
+            const v = base[`${instr}__${niv}`];
+            if (v !== undefined) {
+              data.push({ instrumento: instr, nivel_estudios: niv, importe: v });
+            }
+          }
+        }
+      }
+      const r = await api.put('/api/gestor/cachets-base', data);
+      setMsg({ type: 'success', text: `✅ Plantilla base guardada · ${r.data.creados || 0} nuevos, ${r.data.actualizados || 0} actualizados` });
+      setTimeout(() => { setMsg(null); onClose(); }, 1800);
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="plantilla-base-modal">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+        <div className="px-4 py-3 border-b flex items-center justify-between">
+          <h3 className="font-semibold text-slate-900">⚙️ Plantilla base de cachets (global)</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-900 text-xl leading-none" data-testid="btn-close-base-modal">×</button>
+        </div>
+        <div className="p-4 overflow-y-auto flex-1">
+          <p className="text-xs text-slate-600 mb-3">Estos valores se usan como referencia para "Precargar estándar" y "Aplicar plantilla base". Se guardan en <code>cachets_config</code> con <code>evento_id IS NULL</code>.</p>
+          {loading ? <div className="text-slate-500">Cargando…</div> : (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-100 text-xs">
+                <tr>
+                  <th className="text-left px-3 py-2">Instrumento</th>
+                  {NIVELES.map(n => <th key={n} className="text-center px-2 py-2">{n}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {SECCIONES.map(sec => (
+                  <React.Fragment key={sec.id}>
+                    <tr className={sec.bg}>
+                      <td colSpan={NIVELES.length + 1} className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">{sec.name}</td>
+                    </tr>
+                    {sec.instrumentos.map(instr => (
+                      <tr key={instr} className="hover:bg-slate-50">
+                        <td className="px-3 py-1.5 font-medium text-slate-800">{instr}</td>
+                        {NIVELES.map(niv => (
+                          <td key={niv} className="px-2 py-1 text-center">
+                            <input type="number" min="0" step="10"
+                                   value={base[`${instr}__${niv}`] ?? ''}
+                                   onChange={(e) => setVal(instr, niv, e.target.value)}
+                                   data-testid={`base-${instr}-${niv.replace(/ /g,'_')}`}
+                                   placeholder="0"
+                                   className="w-20 px-1.5 py-0.5 text-right border border-slate-300 rounded tabular-nums" />
+                            <span className="ml-1 text-slate-400 text-xs">€</span>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="px-4 py-3 bg-slate-50 border-t flex items-center gap-2">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded">Cerrar</button>
+          {msg && <span className={`text-xs ${msg.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`} data-testid="plantilla-base-msg">{msg.text}</span>}
+          <button onClick={guardar} disabled={saving}
+                  data-testid="btn-save-plantilla-base"
+                  className="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded disabled:opacity-50">
+            {saving ? 'Guardando…' : 'Guardar plantilla base'}
+          </button>
+        </div>
       </div>
     </div>
   );

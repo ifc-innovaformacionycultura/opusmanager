@@ -1,31 +1,54 @@
 // Widget flotante de feedback/incidencias.
-// Envía a POST /api/gestor/incidencias (tabla `incidencias`).
+// Funciona en gestor (POST /api/gestor/incidencias) y en portal de músico
+// (POST /api/portal/incidencias).
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
+import { supabase } from '../lib/supabaseClient';
 
-const FeedbackButton = () => {
+const MIN_DESC = 20;
+
+const FeedbackButton = ({ mode = 'gestor' }) => {
   const auth = useAuth();
   const api = auth?.api;
   const loc = useLocation();
   const [open, setOpen] = useState(false);
   const [tipo, setTipo] = useState('incidencia');
+  const [prioridad, setPrioridad] = useState('media');
   const [descripcion, setDescripcion] = useState('');
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  // Solo se muestra si hay un api disponible (= usuario gestor autenticado con AuthContext)
-  if (!api) return null;
+  // En modo gestor exigimos AuthContext (api del gestor).
+  // En modo portal usamos la sesión Supabase directamente.
+  if (mode === 'gestor' && !api) return null;
+
+  const apiUrl = process.env.REACT_APP_BACKEND_URL || '';
 
   const enviar = async () => {
-    if (!descripcion.trim()) { setMsg({ type: 'error', text: 'Descripción obligatoria' }); return; }
+    const txt = descripcion.trim();
+    if (txt.length < MIN_DESC) {
+      setMsg({ type: 'error', text: `Mínimo ${MIN_DESC} caracteres (actuales: ${txt.length})` });
+      return;
+    }
     try {
       setSending(true); setMsg(null);
-      await api.post('/api/gestor/incidencias', {
-        tipo,
-        descripcion: descripcion.trim(),
-        pagina: loc.pathname,
-      });
+      const payload = { tipo, descripcion: txt, pagina: loc.pathname, prioridad };
+      if (mode === 'portal') {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const res = await fetch(`${apiUrl}/api/portal/incidencias`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.detail || 'Error');
+        }
+      } else {
+        await api.post('/api/gestor/incidencias', payload);
+      }
       setMsg({ type: 'success', text: '✅ Gracias por tu feedback. Lo revisaremos pronto.' });
       setDescripcion('');
       setTimeout(() => { setOpen(false); setMsg(null); }, 2000);
@@ -33,6 +56,8 @@ const FeedbackButton = () => {
       setMsg({ type: 'error', text: err.response?.data?.detail || err.message });
     } finally { setSending(false); }
   };
+
+  const charsLeft = Math.max(0, MIN_DESC - descripcion.trim().length);
 
   return (
     <>
@@ -70,11 +95,31 @@ const FeedbackButton = () => {
                 </div>
               </div>
               <div>
-                <label className="text-xs text-slate-600 mb-1 block">Descripción *</label>
+                <label className="text-xs text-slate-600 mb-1 block">Prioridad</label>
+                <div className="inline-flex border border-slate-300 rounded-md overflow-hidden text-sm">
+                  {[
+                    { v: 'alta',  label: '🔴 Alta',  cls: 'bg-red-600 text-white' },
+                    { v: 'media', label: '🟡 Media', cls: 'bg-amber-500 text-white' },
+                    { v: 'baja',  label: '🟢 Baja',  cls: 'bg-emerald-600 text-white' },
+                  ].map(o => (
+                    <button key={o.v} type="button"
+                            onClick={() => setPrioridad(o.v)}
+                            data-testid={`feedback-prio-${o.v}`}
+                            className={`px-3 py-1.5 ${prioridad === o.v ? o.cls : 'bg-white text-slate-700'}`}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-600 mb-1 block">Descripción * <span className="text-slate-400">(mín. {MIN_DESC} caracteres)</span></label>
                 <textarea value={descripcion} onChange={(e) => setDescripcion(e.target.value)} rows={5}
                           data-testid="feedback-descripcion"
                           placeholder="Describe lo que ocurre, qué esperabas, y cualquier detalle útil..."
                           className="w-full px-3 py-2 border border-slate-300 rounded text-sm" />
+                <div className={`mt-1 text-[11px] ${charsLeft > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {charsLeft > 0 ? `Faltan ${charsLeft} caracteres` : '✓ Suficientemente detallado'}
+                </div>
               </div>
               <div className="text-xs text-slate-500">📍 Página: <code className="bg-slate-100 px-1">{loc.pathname}</code></div>
               {msg && (
@@ -86,10 +131,10 @@ const FeedbackButton = () => {
             </div>
             <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center gap-2">
               <button onClick={() => setOpen(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
-              <button onClick={enviar} disabled={sending}
+              <button onClick={enviar} disabled={sending || charsLeft > 0}
                       data-testid="btn-feedback-enviar"
                       className="ml-auto px-4 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700 disabled:opacity-50">
-                {sending ? 'Enviando...' : 'Enviar'}
+                {sending ? 'Enviando...' : 'Enviar reporte'}
               </button>
             </div>
           </div>
