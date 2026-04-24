@@ -3,7 +3,11 @@
 // Se inicializa con `mi_disponibilidad` viniendo del backend
 // y persiste con POST /api/portal/disponibilidad/bulk.
 import React, { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '../../contexts/SupabaseAuthContext';
+import { supabase } from '../../lib/supabaseClient';
+
+const API_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:8001/api'
+  : `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const fmtFecha = (iso) => {
   if (!iso) return '';
@@ -16,7 +20,6 @@ const fmtFecha = (iso) => {
 const fmtHora = (h) => h ? String(h).slice(0, 5) : '';
 
 const MiDisponibilidadPanel = ({ ensayos = [], onSaved }) => {
-  const { api } = useAuth();
   // Estado local por ensayo_id -> true | false | null
   const [values, setValues] = useState({});
   const [saving, setSaving] = useState(false);
@@ -41,14 +44,29 @@ const MiDisponibilidadPanel = ({ ensayos = [], onSaved }) => {
     try {
       setSaving(true); setMsg(null);
       const entries = ensayos.map(e => ({ ensayo_id: e.id, asiste: values[e.id] ?? null }));
-      const r = await api.post('/api/portal/disponibilidad/bulk', { entries });
-      setMsg({ type: 'success', text: `Disponibilidad guardada · ${r.data.actualizados + r.data.creados} actualizaciones` });
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const response = await fetch(`${API_URL}/portal/disponibilidad/bulk`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ entries })
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al guardar disponibilidad');
+      }
+      const d = await response.json();
+      const total = (d.actualizados || 0) + (d.creados || 0) + (d.borrados || 0);
+      setMsg({ type: 'success', text: `${total} cambios guardados correctamente` });
       onSaved && onSaved();
     } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || err.message });
+      setMsg({ type: 'error', text: err.message });
     } finally {
       setSaving(false);
-      setTimeout(() => setMsg(null), 3500);
+      setTimeout(() => setMsg(null), 6000);
     }
   };
 

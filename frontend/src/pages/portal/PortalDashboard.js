@@ -452,7 +452,6 @@ const PortalDashboard = () => {
                   {(eventoSeleccionado.ensayos || []).length > 0 && (
                     <MiDisponibilidadPanel
                       ensayos={eventoSeleccionado.ensayos || []}
-                      onSaved={cargarMisEventos}
                     />
                   )}
 

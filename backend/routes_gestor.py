@@ -992,7 +992,7 @@ async def put_cachets_config(
             payload = {
                 "evento_id": evento_id,
                 "instrumento": row.instrumento.strip(),
-                "nivel_estudios": (row.nivel_estudios or '').strip() or None,
+                "nivel_estudios": (row.nivel_estudios or '').strip() or 'General',
                 "importe": row.importe,
                 "updated_at": now,
             }

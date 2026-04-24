@@ -31,6 +31,11 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Febrero 2026 — Bloque D cerrado (fixes iteration_7)
+- ✅ **Fix backend `PUT /api/gestor/cachets-config/{evento_id}`**: `nivel_estudios=null` ahora se normaliza a `'General'` antes del UPSERT para respetar el NOT NULL de la constraint `ux_cachets_evento_instr_nivel`. Verificado con curl (`{"ok":true,"escritas":1}`).
+- ✅ **Fix frontend `MiDisponibilidadPanel.js`**: reemplazado `useAuth().api.post` inexistente por `fetch + supabase.auth.getSession()` (mismo patrón que `PortalDashboard`). Mensaje verde `[data-testid=disponibilidad-msg]` ahora renderiza `"N cambios guardados correctamente"` durante 6s tras guardar. Eliminado `onSaved={cargarMisEventos}` del parent para evitar unmount por `loading=true`.
+- ✅ Smoke test Playwright: 4 ensayos reset → guardar → `MSG VISIBLE: 3 cambios guardados correctamente`. Estado seed restaurado (Sí/Sí/No/—).
+
 ### Abril 2026 — DELETE músico + testing end-to-end Bloque C
 - ✅ **DELETE /api/gestor/musicos/{id}**: bloquea 409 si el músico tiene asignaciones `confirmado` en eventos `abierto`/`en_curso`; 404 si no existe; 200 elimina perfil `usuarios` (CASCADE) + usuario de Supabase Auth + registro en `registro_actividad` con tipo='musico_eliminado'.
 - ✅ UI: botón rojo "Eliminar músico" en ficha `/admin/musicos/{id}` con modal de confirmación y manejo visible del error 409.
