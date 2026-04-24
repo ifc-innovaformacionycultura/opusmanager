@@ -543,3 +543,22 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - pytest 22/22 PASS sin regresiones.
 - Screenshots end-to-end: lightbox sobre thumbnail, modal con botón Anotar, MarkerArea con toolbar completa, captura subida tras anotación.
 
+
+## Iteración 17 (Feb 2026) — Atajo de teclado + backfill incidencias
+
+### ✅ Atajo de teclado para reportar incidencia
+- `Ctrl/⌘+Shift+I` (principal) y `Ctrl/⌘+Shift+B` (alternativo, evita conflicto con DevTools en navegadores que lo reservan).
+- Listener global registrado por `FeedbackButton` (sólo cuando hay sesión gestor o portal).
+- Al activarse: `e.preventDefault()` → captura del viewport con **html2canvas** (`yarn add html2canvas`), import dinámico para no inflar el bundle inicial. Se ignoran los nodos del propio modal y del botón flotante.
+- El blob resultante se inyecta en `IncidenciaModal` vía nuevo prop `preloadedFile` que llama a `handleFile` automáticamente al abrir → la captura se sube de inmediato y queda visible con el badge "✓ Subida" + botón "Anotar".
+- Toast `📸 Capturando pantalla…` mientras corre html2canvas.
+
+### ✅ Backfill de incidencias antiguas
+- Nuevo script `/app/backend/scripts/backfill_incidencias_usuario_id.py`.
+- Lógica en cascada: match exacto por `apellidos, nombre` → fallback al admin gestor para incidencias en `/admin/...` → si nada matchea, deja NULL.
+- **Ejecutado**: 11/11 incidencias antiguas actualizadas. La pestaña "Mis incidencias" del admin pasa de **0 → 14**.
+
+### Tests
+- pytest 22/22 PASS.
+- Screenshots end-to-end: modal abre vía Ctrl+Shift+B con captura pre-cargada, ambos atajos confirmados, "Mis incidencias (14)" tras backfill.
+

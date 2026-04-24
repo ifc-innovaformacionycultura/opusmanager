@@ -36,8 +36,9 @@ const PRIO_OPTIONS = [
  *  - pagina: string  (ruta actual pre-rellenada en el campo)
  *  - send: async (payload) => incidencia   (función inyectada que hace el POST /incidencias)
  *  - uploadScreenshot: async (file) => { url, path }  (función inyectada que sube al backend)
+ *  - preloadedFile: File | null  (si se pasa, se usa como captura inicial al abrir el modal)
  */
-export default function IncidenciaModal({ open, onClose, onSubmitted, pagina = '', send, uploadScreenshot }) {
+export default function IncidenciaModal({ open, onClose, onSubmitted, pagina = '', send, uploadScreenshot, preloadedFile = null }) {
   const [tipo, setTipo] = useState('incidencia');
   const [prioridad, setPrioridad] = useState('media');
   const [descripcion, setDescripcion] = useState('');
@@ -97,6 +98,14 @@ export default function IncidenciaModal({ open, onClose, onSubmitted, pagina = '
     return () => window.removeEventListener('paste', onPaste);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Precargar la captura inyectada por FeedbackButton (atajo de teclado).
+  useEffect(() => {
+    if (open && preloadedFile && !shotFile) {
+      handleFile(preloadedFile);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, preloadedFile]);
 
   const handleFile = async (file) => {
     if (!file) return;
