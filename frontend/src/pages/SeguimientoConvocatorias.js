@@ -392,23 +392,40 @@ const SeguimientoConvocatorias = () => {
                 </tr>
                 {/* Fila 2: subcolumnas (ensayos + %Disp + Publicado + Acción) */}
                 <tr>
-                  {eventosVisibles.map(ev => (
-                    <React.Fragment key={ev.id}>
-                      {ev.ensayos.map(e => (
-                        <th
-                          key={e.id}
-                          className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-slate-50 min-w-[70px]"
-                          data-testid={`subcol-ensayo-${e.id}`}
-                        >
-                          <div className="font-semibold text-slate-800 capitalize">{e.tipo || 'Ensayo'}</div>
-                          <div>{fmtFecha(e.fecha)}{e.hora ? ` ${fmtHora(e.hora)}` : ''}</div>
-                        </th>
-                      ))}
-                      <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-slate-50 min-w-[50px]" title="% Disponibilidad">% Disp.</th>
-                      <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-slate-50 min-w-[60px]">Publicado</th>
-                      <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-r-2 border-slate-400 bg-slate-50 min-w-[120px]">Acción</th>
-                    </React.Fragment>
-                  ))}
+                  {eventosVisibles.map(ev => {
+                    // Contadores por tipo para numerar subcolumnas: Ens.1, Ens.2, Func.1...
+                    const counters = { ensayo: 0, concierto: 0, funcion: 0 };
+                    const tipoAbrev = (t) => {
+                      if (t === 'ensayo') return 'Ens';
+                      if (t === 'concierto') return 'Conc';
+                      if (t === 'funcion') return 'Func';
+                      return 'Ens';
+                    };
+                    return (
+                      <React.Fragment key={ev.id}>
+                        {ev.ensayos.map(e => {
+                          const tipo = (e.tipo || 'ensayo').toLowerCase();
+                          counters[tipo] = (counters[tipo] || 0) + 1;
+                          const label = `${tipoAbrev(tipo)}.${counters[tipo]}`;
+                          return (
+                            <th
+                              key={e.id}
+                              className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-slate-50 min-w-[70px]"
+                              data-testid={`subcol-ensayo-${e.id}`}
+                              title={`${label} · ${fmtFecha(e.fecha)}${e.hora ? ' ' + fmtHora(e.hora) : ''}`}
+                            >
+                              <div className="font-semibold text-slate-800">{label}</div>
+                              <div>{fmtFecha(e.fecha)}</div>
+                              {e.hora && <div className="text-slate-500">{fmtHora(e.hora)}</div>}
+                            </th>
+                          );
+                        })}
+                        <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-slate-50 min-w-[50px]" title="% Disponibilidad">% Disp.</th>
+                        <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-slate-50 min-w-[60px]">Publicado</th>
+                        <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-r-2 border-slate-400 bg-slate-50 min-w-[120px]">Acción</th>
+                      </React.Fragment>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">

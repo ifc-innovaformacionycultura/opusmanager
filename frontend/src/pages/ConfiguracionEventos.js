@@ -150,53 +150,62 @@ const InstrumentationSection = ({ instrumentation, onChange }) => {
 
 // Event Form
 const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
-  const [rehearsals, setRehearsals] = useState(event.rehearsals || []);
+  const [rehearsals, setRehearsals] = useState([]);
+  const [rehearsalsInitial, setRehearsalsInitial] = useState([]); // snapshot para diff
   const [program, setProgram] = useState(event.program || []);
-  const [fechasSecVisibles, setFechasSecVisibles] = useState(() => {
-    // Mostrar tantos bloques como los rellenados + uno vacío (mínimo 0, máx 4)
-    let count = 0;
-    for (let i = 1; i <= 4; i++) {
-      if (event[`fecha_secundaria_${i}`]) count = i;
-    }
-    return count;
-  });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
+  // Convierte ensayos de backend { id, fecha, hora, tipo, obligatorio, lugar, notas }
+  // al formato del formulario { id?, date, start, tipo, obligatorio, lugar, notas }
+  const toFormRehearsals = (ens = []) => (ens || []).map(e => ({
+    id: e.id,
+    date: e.fecha ? String(e.fecha).slice(0, 10) : '',
+    start: e.hora ? String(e.hora).slice(0, 5) : '',
+    tipo: e.tipo || 'ensayo',
+    obligatorio: e.obligatorio !== false,
+    lugar: e.lugar || '',
+    notas: e.notas || '',
+  }));
+
   useEffect(() => {
-    setRehearsals(event.rehearsals || []);
+    const converted = toFormRehearsals(event.ensayos || []);
+    setRehearsals(converted);
+    setRehearsalsInitial(converted);
     setProgram(event.program || []);
-  }, [event]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id, event.ensayos]);
 
   const addRehearsal = () => {
-    const newRehearsals = [...rehearsals, { date: '', start: '', end: '' }];
+    const newRehearsals = [...rehearsals, { date: '', start: '', tipo: 'ensayo', obligatorio: true }];
     setRehearsals(newRehearsals);
-    onChange({ ...event, rehearsals: newRehearsals });
   };
 
   const updateRehearsal = (index, field, value) => {
     const newRehearsals = [...rehearsals];
     newRehearsals[index] = { ...newRehearsals[index], [field]: value };
     setRehearsals(newRehearsals);
-    onChange({ ...event, rehearsals: newRehearsals });
   };
 
   const removeRehearsal = (index) => {
     const newRehearsals = rehearsals.filter((_, i) => i !== index);
     setRehearsals(newRehearsals);
-    onChange({ ...event, rehearsals: newRehearsals });
   };
+
+  // Expone al padre los cambios de ensayos + programa vía onChange (para pasarlos al save)
+  useEffect(() => {
+    onChange({ ...event, rehearsals, rehearsalsInitial, program });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rehearsals, program]);
 
   const addProgramItem = () => {
     const newProgram = [...program, { duration: '', author: '', obra: '', observaciones: '' }];
     setProgram(newProgram);
-    onChange({ ...event, program: newProgram });
   };
 
   const updateProgramItem = (index, field, value) => {
     const newProgram = [...program];
     newProgram[index] = { ...newProgram[index], [field]: value };
     setProgram(newProgram);
-    onChange({ ...event, program: newProgram });
   };
 
   return (
@@ -225,18 +234,6 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
           </select>
         </div>
         <InputField
-          label="Fecha de inicio"
-          type="date"
-          value={event.fecha_inicio ? String(event.fecha_inicio).slice(0, 10) : ''}
-          onChange={(v) => onChange({ ...event, fecha_inicio: v })}
-        />
-        <InputField
-          label="Fecha de fin"
-          type="date"
-          value={event.fecha_fin ? String(event.fecha_fin).slice(0, 10) : ''}
-          onChange={(v) => onChange({ ...event, fecha_fin: v })}
-        />
-        <InputField
           label="Lugar"
           value={event.lugar}
           onChange={(v) => onChange({ ...event, lugar: v })}
@@ -258,6 +255,83 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
             <option value="finalizado">Finalizado</option>
           </select>
         </div>
+
+        {/* Fechas agrupadas — todas en Datos Generales */}
+        <div className="md:col-span-2 bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3" data-testid="fechas-bloque">
+          <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Fechas del evento</p>
+
+          {/* Fecha principal (fecha + hora) */}
+          <div className="flex items-center gap-2 mb-2" data-testid="fecha-row-principal">
+            <span className="text-xs text-slate-500 w-56 shrink-0">Fecha de actuación principal</span>
+            <input
+              type="date"
+              value={event.fecha_inicio ? String(event.fecha_inicio).slice(0, 10) : ''}
+              onChange={(e) => onChange({ ...event, fecha_inicio: e.target.value })}
+              className="px-2 py-1 border border-slate-200 rounded text-sm"
+              data-testid="input-fecha-principal"
+            />
+            <input
+              type="time"
+              value={event.hora_inicio ? String(event.hora_inicio).slice(0, 5) : ''}
+              onChange={(e) => onChange({ ...event, hora_inicio: e.target.value })}
+              className="px-2 py-1 border border-slate-200 rounded text-sm"
+              data-testid="input-hora-principal"
+              placeholder="Hora"
+            />
+          </div>
+
+          {/* Actuaciones 2/3/4 → fecha_secundaria_1/2/3 + hora_secundaria_1/2/3 */}
+          {[1, 2, 3].map((i) => {
+            const label = `Fecha de actuación ${i + 1}`;
+            const fechaKey = `fecha_secundaria_${i}`;
+            const horaKey = `hora_secundaria_${i}`;
+            return (
+              <div key={i} className="flex items-center gap-2 mb-2" data-testid={`fecha-row-actuacion-${i + 1}`}>
+                <span className="text-xs text-slate-500 w-56 shrink-0">{label} <span className="text-slate-400">(opcional)</span></span>
+                <input
+                  type="date"
+                  value={event[fechaKey] ? String(event[fechaKey]).slice(0, 10) : ''}
+                  onChange={(e) => onChange({ ...event, [fechaKey]: e.target.value || null })}
+                  className="px-2 py-1 border border-slate-200 rounded text-sm"
+                  data-testid={`input-fecha-actuacion-${i + 1}`}
+                />
+                <input
+                  type="time"
+                  value={event[horaKey] ? String(event[horaKey]).slice(0, 5) : ''}
+                  onChange={(e) => onChange({ ...event, [horaKey]: e.target.value || null })}
+                  className="px-2 py-1 border border-slate-200 rounded text-sm"
+                  data-testid={`input-hora-actuacion-${i + 1}`}
+                  placeholder="Hora"
+                />
+              </div>
+            );
+          })}
+
+          {/* Fecha inicio preparación (para ensayos) */}
+          <div className="flex items-center gap-2 mb-2" data-testid="fecha-row-preparacion">
+            <span className="text-xs text-slate-500 w-56 shrink-0">Fecha inicio preparación <span className="text-slate-400">(ensayos)</span></span>
+            <input
+              type="date"
+              value={event.fecha_inicio_preparacion ? String(event.fecha_inicio_preparacion).slice(0, 10) : ''}
+              onChange={(e) => onChange({ ...event, fecha_inicio_preparacion: e.target.value || null })}
+              className="px-2 py-1 border border-slate-200 rounded text-sm"
+              data-testid="input-fecha-preparacion"
+            />
+          </div>
+
+          {/* Fecha fin */}
+          <div className="flex items-center gap-2" data-testid="fecha-row-fin">
+            <span className="text-xs text-slate-500 w-56 shrink-0">Fecha fin</span>
+            <input
+              type="date"
+              value={event.fecha_fin ? String(event.fecha_fin).slice(0, 10) : ''}
+              onChange={(e) => onChange({ ...event, fecha_fin: e.target.value || null })}
+              className="px-2 py-1 border border-slate-200 rounded text-sm"
+              data-testid="input-fecha-fin"
+            />
+          </div>
+        </div>
+
         <div className="md:col-span-2 mb-3">
           <label className="block text-sm text-slate-600 mb-1">Descripción</label>
           <textarea
@@ -280,36 +354,65 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
         </div>
       </div>
 
-      {/* Ensayos */}
-      <SectionTitle color="green">Ensayos</SectionTitle>
+      {/* Ensayos y Funciones */}
+      <SectionTitle color="green">Ensayos y Funciones</SectionTitle>
+      <p className="text-xs text-slate-500 -mt-2 mb-2">
+        Añade ensayos y funciones (conciertos) del evento. Los ensayos aparecerán como subcolumnas en Seguimiento de Plantillas.
+      </p>
       <div className="space-y-2">
         {rehearsals.map((rehearsal, index) => (
-          <div key={index} className="flex items-center gap-2 bg-slate-50 p-2 rounded">
-            <span className="text-sm text-slate-500 w-20">Ensayo {index + 1}</span>
+          <div
+            key={rehearsal.id || `new-${index}`}
+            className="flex items-center gap-2 bg-slate-50 p-2 rounded flex-wrap"
+            data-testid={`ensayo-row-${index}`}
+          >
+            <select
+              value={rehearsal.tipo || 'ensayo'}
+              onChange={(e) => updateRehearsal(index, 'tipo', e.target.value)}
+              className="px-2 py-1 border border-slate-200 rounded text-sm bg-white"
+              data-testid={`ensayo-tipo-${index}`}
+            >
+              <option value="ensayo">Ensayo</option>
+              <option value="concierto">Concierto</option>
+              <option value="funcion">Función</option>
+            </select>
             <input
               type="date"
               value={rehearsal.date || ''}
               onChange={(e) => updateRehearsal(index, 'date', e.target.value)}
               className="px-2 py-1 border border-slate-200 rounded text-sm"
+              data-testid={`ensayo-fecha-${index}`}
             />
             <input
               type="time"
               value={rehearsal.start || ''}
               onChange={(e) => updateRehearsal(index, 'start', e.target.value)}
               className="px-2 py-1 border border-slate-200 rounded text-sm"
-              placeholder="Inicio"
+              data-testid={`ensayo-hora-${index}`}
+              placeholder="Hora"
             />
-            <span className="text-slate-400">-</span>
             <input
-              type="time"
-              value={rehearsal.end || ''}
-              onChange={(e) => updateRehearsal(index, 'end', e.target.value)}
-              className="px-2 py-1 border border-slate-200 rounded text-sm"
-              placeholder="Fin"
+              type="text"
+              value={rehearsal.lugar || ''}
+              onChange={(e) => updateRehearsal(index, 'lugar', e.target.value)}
+              className="px-2 py-1 border border-slate-200 rounded text-sm flex-1 min-w-[140px]"
+              placeholder="Lugar (opcional)"
+              data-testid={`ensayo-lugar-${index}`}
             />
+            <label className="inline-flex items-center gap-1 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                checked={rehearsal.obligatorio !== false}
+                onChange={(e) => updateRehearsal(index, 'obligatorio', e.target.checked)}
+                data-testid={`ensayo-obligatorio-${index}`}
+              />
+              Obligatorio
+            </label>
             <button
               onClick={() => removeRehearsal(index)}
               className="p-1 text-red-500 hover:bg-red-50 rounded"
+              data-testid={`ensayo-delete-${index}`}
+              title="Eliminar"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
@@ -318,9 +421,10 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
         <button
           onClick={addRehearsal}
           className="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1"
+          data-testid="btn-add-ensayo"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
-          Añadir ensayo
+          Añadir ensayo/función
         </button>
       </div>
 
@@ -390,60 +494,7 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
         </button>
       </div>
 
-      {/* Fechas adicionales de función */}
-      <SectionTitle color="blue">Fechas adicionales de función</SectionTitle>
-      <p className="text-xs text-slate-500 -mt-2 mb-2">Añade hasta 4 fechas extra de función con su hora correspondiente.</p>
-      <div className="space-y-2" data-testid="fechas-secundarias-wrapper">
-        {[1, 2, 3, 4].slice(0, fechasSecVisibles).map((i) => {
-          const fechaKey = `fecha_secundaria_${i}`;
-          const horaKey = `hora_secundaria_${i}`;
-          const fechaValue = event[fechaKey] ? String(event[fechaKey]).slice(0, 10) : '';
-          return (
-            <div key={i} className="flex items-center gap-2 bg-slate-50 p-2 rounded" data-testid={`fecha-secundaria-row-${i}`}>
-              <span className="text-sm text-slate-500 w-20">Fecha {i}</span>
-              <input
-                type="date"
-                value={fechaValue}
-                onChange={(e) => onChange({ ...event, [fechaKey]: e.target.value })}
-                className="px-2 py-1 border border-slate-200 rounded text-sm"
-                data-testid={`input-fecha-sec-${i}`}
-              />
-              <input
-                type="time"
-                value={event[horaKey] || ''}
-                onChange={(e) => onChange({ ...event, [horaKey]: e.target.value })}
-                className="px-2 py-1 border border-slate-200 rounded text-sm"
-                data-testid={`input-hora-sec-${i}`}
-                placeholder="Hora"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  // Vaciamos esta fecha y desplazamos el resto visualmente (simple: la dejamos vacía)
-                  onChange({ ...event, [fechaKey]: null, [horaKey]: null });
-                  if (i === fechasSecVisibles) setFechasSecVisibles(Math.max(0, fechasSecVisibles - 1));
-                }}
-                className="p-1 text-red-500 hover:bg-red-50 rounded"
-                title="Quitar fecha"
-                data-testid={`btn-remove-fecha-sec-${i}`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
-              </button>
-            </div>
-          );
-        })}
-        {fechasSecVisibles < 4 && (
-          <button
-            type="button"
-            onClick={() => setFechasSecVisibles(fechasSecVisibles + 1)}
-            className="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1"
-            data-testid="btn-add-fecha-secundaria"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
-            Añadir fecha
-          </button>
-        )}
-      </div>
+      {/* Fechas adicionales — MOVIDAS a Datos Generales */}
 
       {/* Partituras y materiales por sección */}
       <SectionTitle color="yellow">Partituras y materiales por sección</SectionTitle>
@@ -636,6 +687,8 @@ const ConfiguracionEventos = () => {
       temporada: event.temporada ?? null,
       descripcion: event.descripcion ?? null,
       fecha_inicio: event.fecha_inicio || null,
+      hora_inicio: event.hora_inicio || null,
+      fecha_inicio_preparacion: event.fecha_inicio_preparacion || null,
       fecha_fin: event.fecha_fin || null,
       estado: event.estado ?? null,
       tipo: event.tipo ?? null,
@@ -661,6 +714,61 @@ const ConfiguracionEventos = () => {
     return base;
   };
 
+  // Persiste los ensayos: diff entre estado inicial vs actual → POST (nuevos)
+  // + DELETE (borrados) + PUT (modificados).
+  const persistEnsayos = async (eventoId, current, initial) => {
+    const initialById = {};
+    (initial || []).forEach(r => { if (r.id) initialById[r.id] = r; });
+    const currentById = {};
+    (current || []).forEach(r => { if (r.id) currentById[r.id] = r; });
+
+    const toCreate = (current || []).filter(r => !r.id && r.date);
+    const toDelete = (initial || []).filter(r => r.id && !currentById[r.id]);
+    const toUpdate = (current || []).filter(r => {
+      if (!r.id) return false;
+      const prev = initialById[r.id];
+      if (!prev) return false;
+      return (
+        prev.date !== r.date ||
+        prev.start !== r.start ||
+        prev.tipo !== r.tipo ||
+        prev.obligatorio !== r.obligatorio ||
+        (prev.lugar || '') !== (r.lugar || '') ||
+        (prev.notas || '') !== (r.notas || '')
+      );
+    });
+
+    const results = { created: 0, updated: 0, deleted: 0 };
+    for (const r of toCreate) {
+      await api.post('/api/gestor/ensayos', {
+        evento_id: eventoId,
+        fecha: r.date,
+        hora: r.start || '00:00',
+        tipo: r.tipo || 'ensayo',
+        obligatorio: r.obligatorio !== false,
+        lugar: r.lugar || null,
+        notas: r.notas || null,
+      });
+      results.created++;
+    }
+    for (const r of toUpdate) {
+      await api.put(`/api/gestor/ensayos/${r.id}`, {
+        fecha: r.date,
+        hora: r.start || '00:00',
+        tipo: r.tipo || 'ensayo',
+        obligatorio: r.obligatorio !== false,
+        lugar: r.lugar || null,
+        notas: r.notas || null,
+      });
+      results.updated++;
+    }
+    for (const r of toDelete) {
+      await api.delete(`/api/gestor/ensayos/${r.id}`);
+      results.deleted++;
+    }
+    return results;
+  };
+
   const saveEvent = async (event) => {
     setSaving(true);
     try {
@@ -674,7 +782,16 @@ const ConfiguracionEventos = () => {
       console.log('[Eventos] PUT /api/gestor/eventos/' + event.id, payload);
       const res = await api.put(`/api/gestor/eventos/${event.id}`, payload);
       console.log('[Eventos] PUT response:', res.data);
-      showFeedback('success', 'Evento guardado correctamente');
+
+      // Persistir ensayos (diff)
+      let ensayosRes = { created: 0, updated: 0, deleted: 0 };
+      if (event.rehearsals) {
+        ensayosRes = await persistEnsayos(event.id, event.rehearsals, event.rehearsalsInitial || []);
+      }
+      const ensayosMsg = (ensayosRes.created + ensayosRes.updated + ensayosRes.deleted) > 0
+        ? ` · Ensayos: +${ensayosRes.created} / ±${ensayosRes.updated} / −${ensayosRes.deleted}`
+        : '';
+      showFeedback('success', `Evento guardado correctamente${ensayosMsg}`);
       await loadEvents(selectedSeason);
     } catch (err) {
       console.error("[Eventos] Error saving event:", err, err.response?.data);

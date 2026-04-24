@@ -23,6 +23,8 @@ class EventoCreate(BaseModel):
     temporada: Optional[str] = None
     descripcion: Optional[str] = None
     fecha_inicio: Optional[str] = None
+    hora_inicio: Optional[str] = None
+    fecha_inicio_preparacion: Optional[str] = None
     fecha_fin: Optional[str] = None
     tipo: Optional[str] = None
     lugar: Optional[str] = None
@@ -54,6 +56,8 @@ class EventoUpdate(BaseModel):
     temporada: Optional[str] = None
     descripcion: Optional[str] = None
     fecha_inicio: Optional[str] = None
+    hora_inicio: Optional[str] = None
+    fecha_inicio_preparacion: Optional[str] = None
     fecha_fin: Optional[str] = None
     estado: Optional[str] = None
     tipo: Optional[str] = None
@@ -96,6 +100,14 @@ class EnsayoCreate(BaseModel):
     lugar: Optional[str] = None
     notas: Optional[str] = None
 
+class EnsayoUpdate(BaseModel):
+    fecha: Optional[str] = None
+    hora: Optional[str] = None
+    tipo: Optional[str] = None
+    obligatorio: Optional[bool] = None
+    lugar: Optional[str] = None
+    notas: Optional[str] = None
+
 class MusicoCreate(BaseModel):
     email: EmailStr
     nombre: str
@@ -111,7 +123,7 @@ async def get_eventos(
     temporada: Optional[str] = None,
     current_user: dict = Depends(get_current_gestor)
 ):
-    """Get all eventos (with optional filters)"""
+    """Get all eventos (with optional filters). Incluye ensayos[] por evento."""
     try:
         query = supabase.table('eventos').select('*')
         
@@ -121,8 +133,22 @@ async def get_eventos(
             query = query.eq('temporada', temporada)
         
         response = query.order('created_at', desc=True).execute()
-        
-        return {"eventos": response.data or []}
+        eventos = response.data or []
+
+        # Adjuntar ensayos por evento (una sola query)
+        if eventos:
+            evento_ids = [e['id'] for e in eventos]
+            ens_res = supabase.table('ensayos').select('*') \
+                .in_('evento_id', evento_ids) \
+                .order('fecha', desc=False) \
+                .execute()
+            by_evento = {}
+            for ens in (ens_res.data or []):
+                by_evento.setdefault(ens['evento_id'], []).append(ens)
+            for ev in eventos:
+                ev['ensayos'] = by_evento.get(ev['id'], [])
+
+        return {"eventos": eventos}
         
     except Exception as e:
         raise HTTPException(
@@ -310,16 +336,25 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
         eventos_raw = eventos_res.data or []
         evento_ids = [e['id'] for e in eventos_raw]
 
-        # 2) Ensayos de esos eventos
-        ensayos_map = {}  # evento_id -> [ensayos]
+        # 2) Ensayos de esos eventos. ORDEN: primero tipo='ensayo' por fecha ASC,
+        #    luego los demás (concierto/funcion) por fecha ASC. Dentro de cada grupo, por fecha+hora.
+        ensayos_map = {}  # evento_id -> [ensayos ordenados]
         if evento_ids:
             ens_res = supabase.table('ensayos') \
                 .select('id,evento_id,tipo,fecha,hora,obligatorio,lugar') \
                 .in_('evento_id', evento_ids) \
-                .order('fecha', desc=False) \
                 .execute()
+            tmp_by_evento = {}
             for e in (ens_res.data or []):
-                ensayos_map.setdefault(e['evento_id'], []).append(e)
+                tmp_by_evento.setdefault(e['evento_id'], []).append(e)
+            for evid, lst in tmp_by_evento.items():
+                # sort key: (0 si tipo='ensayo' else 1, fecha, hora)
+                lst.sort(key=lambda x: (
+                    0 if (x.get('tipo') or 'ensayo') == 'ensayo' else 1,
+                    x.get('fecha') or '',
+                    x.get('hora') or ''
+                ))
+                ensayos_map[evid] = lst
 
         eventos_out = []
         for ev in eventos_raw:
@@ -1148,6 +1183,28 @@ async def delete_ensayo(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al eliminar ensayo: {str(e)}"
+        )
+
+@router.put("/ensayos/{ensayo_id}")
+async def update_ensayo(
+    ensayo_id: str,
+    data: EnsayoUpdate,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Update existing ensayo fields (fecha, hora, tipo, obligatorio, lugar, notas)."""
+    try:
+        payload = data.model_dump(exclude_none=True)
+        if not payload:
+            return {"message": "Sin cambios", "ensayo": None}
+        response = supabase.table('ensayos').update(payload).eq('id', ensayo_id).execute()
+        return {
+            "message": "Ensayo actualizado",
+            "ensayo": response.data[0] if response.data else None
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al actualizar ensayo: {str(e)}"
         )
 
 # ==================== Músicos ====================
