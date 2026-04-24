@@ -152,6 +152,8 @@ const GestorMusicoDetalle = () => {
           <dl className="text-sm space-y-2">
             <div><dt className="text-slate-500 inline">Dirección:</dt> <dd className="inline ml-1">{m.direccion || '—'}</dd></div>
             <div><dt className="text-slate-500 inline">Fecha nac.:</dt> <dd className="inline ml-1">{m.fecha_nacimiento ? new Date(m.fecha_nacimiento).toLocaleDateString('es-ES') : '—'}</dd></div>
+            <div><dt className="text-slate-500 inline">IBAN:</dt> <dd className="inline ml-1 font-mono" data-testid="ficha-iban">{m.iban || '—'}</dd></div>
+            <div><dt className="text-slate-500 inline">SWIFT:</dt> <dd className="inline ml-1 font-mono" data-testid="ficha-swift">{m.swift || '—'}</dd></div>
             <div><dt className="text-slate-500 inline">Alta:</dt> <dd className="inline ml-1">{m.fecha_alta ? new Date(m.fecha_alta).toLocaleDateString('es-ES') : '—'}</dd></div>
             <div><dt className="text-slate-500 inline">Últ. actualización perfil:</dt> <dd className="inline ml-1">{m.ultima_actualizacion_perfil ? new Date(m.ultima_actualizacion_perfil).toLocaleString('es-ES') : '—'}</dd></div>
           </dl>

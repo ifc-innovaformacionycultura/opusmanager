@@ -56,9 +56,9 @@ const PortalDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate, requiereCambio, vista]);
 
-  const cargarMisEventos = async () => {
+  const cargarMisEventos = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
@@ -71,11 +71,17 @@ const PortalDashboard = () => {
       if (!response.ok) throw new Error('Error al cargar eventos');
 
       const data = await response.json();
-      setEventos(data.asignaciones || []);
+      const asigs = data.asignaciones || [];
+      setEventos(asigs);
+      // Si hay un evento seleccionado, reemplazar su referencia con la nueva
+      if (eventoSeleccionado) {
+        const fresh = asigs.find(a => a.id === eventoSeleccionado.id);
+        if (fresh) setEventoSeleccionado(fresh);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -415,43 +421,11 @@ const PortalDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Fechas de función (primaria + secundarias) */}
-                  {(() => {
-                    const ev = eventoSeleccionado.evento || {};
-                    const funciones = [];
-                    if (ev.fecha_inicio) {
-                      funciones.push({ fecha: ev.fecha_inicio, hora: null, label: 'Función principal' });
-                    }
-                    for (let i = 1; i <= 4; i++) {
-                      const f = ev[`fecha_secundaria_${i}`];
-                      const h = ev[`hora_secundaria_${i}`];
-                      if (f) funciones.push({ fecha: f, hora: h, label: `Función ${i + 1}` });
-                    }
-                    if (funciones.length <= 1) return null;
-                    return (
-                      <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200" data-testid="fechas-funcion-block">
-                        <h3 className="text-lg font-semibold text-slate-900 mb-4">🎭 Fechas de función</h3>
-                        <div className="space-y-2">
-                          {funciones.map((f, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
-                              <div>
-                                <p className="font-medium text-slate-900">{f.label}</p>
-                                <p className="text-sm text-slate-600">
-                                  {new Date(f.fecha).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                                  {f.hora ? ` · ${String(f.hora).slice(0,5)}` : ''}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Mi disponibilidad por ensayo — el músico confirma asistencia */}
+                  {/* Fechas y Mi disponibilidad — tabla unificada basada en ensayos */}
                   {(eventoSeleccionado.ensayos || []).length > 0 && (
                     <MiDisponibilidadPanel
                       ensayos={eventoSeleccionado.ensayos || []}
+                      onSaved={() => cargarMisEventos(true)}
                     />
                   )}
 
@@ -513,40 +487,7 @@ const PortalDashboard = () => {
                     );
                   })()}
 
-                  {/* Ensayos */}
-                  <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4">📅 Ensayos y Fechas</h3>
-                    {ensayos.length === 0 ? (
-                      <p className="text-slate-500 text-sm">No hay ensayos programados aún.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {ensayos.map((ensayo) => (
-                          <div
-                            key={ensayo.id}
-                            className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200"
-                          >
-                            <div>
-                              <p className="font-medium text-slate-900">
-                                {new Date(ensayo.fecha).toLocaleDateString('es-ES', {
-                                  weekday: 'long',
-                                  year: 'numeric',
-                                  month: 'long',
-                                  day: 'numeric'
-                                })}
-                              </p>
-                              <p className="text-sm text-slate-600">{ensayo.hora} • {ensayo.tipo}</p>
-                              {ensayo.lugar && <p className="text-xs text-slate-500 mt-1">{ensayo.lugar}</p>}
-                            </div>
-                            {ensayo.obligatorio && (
-                              <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded">
-                                Obligatorio
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  {/* Ensayos — reemplazado por la tabla unificada MiDisponibilidadPanel arriba */}
 
                   {/* Materiales */}
                   <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">

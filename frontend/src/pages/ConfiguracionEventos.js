@@ -155,12 +155,13 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
   const [program, setProgram] = useState(event.program || []);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
-  // Convierte ensayos de backend { id, fecha, hora, tipo, obligatorio, lugar, notas }
-  // al formato del formulario { id?, date, start, tipo, obligatorio, lugar, notas }
+  // Convierte ensayos de backend { id, fecha, hora, hora_fin, tipo, obligatorio, lugar, notas }
+  // al formato del formulario { id?, date, start, end, tipo, obligatorio, lugar, notas }
   const toFormRehearsals = (ens = []) => (ens || []).map(e => ({
     id: e.id,
     date: e.fecha ? String(e.fecha).slice(0, 10) : '',
     start: e.hora ? String(e.hora).slice(0, 5) : '',
+    end: e.hora_fin ? String(e.hora_fin).slice(0, 5) : '',
     tipo: e.tipo || 'ensayo',
     obligatorio: e.obligatorio !== false,
     lugar: e.lugar || '',
@@ -176,7 +177,7 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
   }, [event.id, event.ensayos]);
 
   const addRehearsal = () => {
-    const newRehearsals = [...rehearsals, { date: '', start: '', tipo: 'ensayo', obligatorio: true }];
+    const newRehearsals = [...rehearsals, { date: '', start: '', end: '', tipo: 'ensayo', obligatorio: true }];
     setRehearsals(newRehearsals);
   };
 
@@ -389,7 +390,18 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
               onChange={(e) => updateRehearsal(index, 'start', e.target.value)}
               className="px-2 py-1 border border-slate-200 rounded text-sm"
               data-testid={`ensayo-hora-${index}`}
-              placeholder="Hora"
+              placeholder="Inicio"
+              title="Hora de inicio"
+            />
+            <span className="text-slate-400 text-xs">—</span>
+            <input
+              type="time"
+              value={rehearsal.end || ''}
+              onChange={(e) => updateRehearsal(index, 'end', e.target.value)}
+              className="px-2 py-1 border border-slate-200 rounded text-sm"
+              data-testid={`ensayo-hora-fin-${index}`}
+              placeholder="Fin"
+              title="Hora de fin"
             />
             <input
               type="text"
@@ -731,6 +743,7 @@ const ConfiguracionEventos = () => {
       return (
         prev.date !== r.date ||
         prev.start !== r.start ||
+        (prev.end || '') !== (r.end || '') ||
         prev.tipo !== r.tipo ||
         prev.obligatorio !== r.obligatorio ||
         (prev.lugar || '') !== (r.lugar || '') ||
@@ -744,6 +757,7 @@ const ConfiguracionEventos = () => {
         evento_id: eventoId,
         fecha: r.date,
         hora: r.start || '00:00',
+        hora_fin: r.end || null,
         tipo: r.tipo || 'ensayo',
         obligatorio: r.obligatorio !== false,
         lugar: r.lugar || null,
@@ -755,6 +769,7 @@ const ConfiguracionEventos = () => {
       await api.put(`/api/gestor/ensayos/${r.id}`, {
         fecha: r.date,
         hora: r.start || '00:00',
+        hora_fin: r.end || null,
         tipo: r.tipo || 'ensayo',
         obligatorio: r.obligatorio !== false,
         lugar: r.lugar || null,

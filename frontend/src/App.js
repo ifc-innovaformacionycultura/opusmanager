@@ -234,6 +234,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       children: [
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
         { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
+        { id: "tareas", label: "Planificador de tareas", path: "/admin/tareas" },
         { id: "recordatorios", label: "Recordatorios auto.", path: "/admin/recordatorios" },
         { id: "emails", label: "Historial de emails", path: "/admin/emails" },
         { id: "config-email", label: "Configuración de email", path: "/admin/emails/configuracion" },
@@ -721,6 +722,7 @@ import ManualUsuario from "./pages/ManualUsuario";
 import GestionReportes from "./pages/GestionReportes";
 import GestorMusicos from "./pages/GestorMusicos";
 import GestorMusicoDetalle from "./pages/GestorMusicoDetalle";
+import GestorTareas from "./pages/GestorTareas";
 import GestorRecordatorios from "./pages/GestorRecordatorios";
 import GestorEmailLog from "./pages/GestorEmailLog";
 import GestorReclamaciones from "./pages/GestorReclamaciones";
@@ -775,6 +777,7 @@ function App() {
                         <Route path="/admin/usuarios" element={<GestionUsuarios />} />
                         <Route path="/admin/musicos" element={<GestorMusicos />} />
                         <Route path="/admin/musicos/:id" element={<GestorMusicoDetalle />} />
+                        <Route path="/admin/tareas" element={<GestorTareas />} />
                         <Route path="/admin/recordatorios" element={<GestorRecordatorios />} />
                         <Route path="/admin/emails" element={<GestorEmailLog />} />
                         <Route path="/admin/emails/configuracion" element={<ConfiguracionEmail />} />

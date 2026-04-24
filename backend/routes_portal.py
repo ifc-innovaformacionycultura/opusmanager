@@ -81,6 +81,8 @@ class MiPerfilUpdate(BaseModel):
     especialidad: Optional[str] = None
     anos_experiencia: Optional[int] = None
     bio: Optional[str] = None
+    iban: Optional[str] = None
+    swift: Optional[str] = None
     titulaciones: Optional[List[TitulacionItem]] = None
 
 class NuevaReclamacionRequest(BaseModel):
@@ -183,12 +185,16 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
         disp_map = {}  # ensayo_id -> mi_disponibilidad
         if evento_ids:
             ens_res = supabase.table('ensayos') \
-                .select('id,evento_id,tipo,fecha,hora,obligatorio,lugar') \
+                .select('id,evento_id,tipo,fecha,hora,hora_fin,obligatorio,lugar') \
                 .in_('evento_id', evento_ids) \
                 .order('fecha', desc=False) \
                 .execute()
             for e in (ens_res.data or []):
                 ensayos_by_evento.setdefault(e['evento_id'], []).append(e)
+            # Orden: ensayos (fecha ASC) → conciertos/funciones (fecha ASC)
+            for evid, lst in ensayos_by_evento.items():
+                lst.sort(key=lambda x: (0 if (x.get('tipo') or 'ensayo') == 'ensayo' else 1,
+                                         x.get('fecha') or '', x.get('hora') or ''))
             ensayo_ids = [e['id'] for evs in ensayos_by_evento.values() for e in evs]
             if ensayo_ids:
                 d_res = supabase.table('disponibilidad') \
@@ -207,6 +213,7 @@ async def get_mis_eventos(current_user: dict = Depends(get_current_user)):
                     "id": e['id'],
                     "fecha": e.get('fecha'),
                     "hora": e.get('hora'),
+                    "hora_fin": e.get('hora_fin'),
                     "tipo": e.get('tipo'),
                     "lugar": e.get('lugar'),
                     "obligatorio": e.get('obligatorio'),

@@ -63,6 +63,8 @@ const MiPerfil = () => {
         especialidad: profile.especialidad || '',
         anos_experiencia: profile.anos_experiencia || '',
         bio: profile.bio || '',
+        iban: profile.iban || '',
+        swift: profile.swift || '',
         titulaciones: Array.isArray(profile.titulaciones) ? profile.titulaciones : []
       });
     }
@@ -325,6 +327,8 @@ const MiPerfil = () => {
                 className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm" />
             </Field>
             <Field label="Nacionalidad">{input('nacionalidad')}</Field>
+            <Field label="IBAN (cuenta bancaria)">{input('iban', { placeholder: 'ES00 0000 0000 00 0000000000' })}</Field>
+            <Field label="SWIFT / BIC">{input('swift', { placeholder: 'XXXXESMMXXX' })}</Field>
           </div>
         </SectionCard>
 

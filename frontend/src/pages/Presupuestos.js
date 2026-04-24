@@ -62,8 +62,8 @@ const Presupuestos = () => {
       const response = await api.get(`/api/gestor/eventos?temporada=${encodeURIComponent(selectedSeason)}`);
       const eventsList = response.data?.eventos || [];
       setEvents(eventsList);
-      // /api/budgets no existe aún; inicializamos siempre un presupuesto vacío
-      initializeBudgetData(eventsList);
+      // Cargar presupuestos persistidos
+      await loadPresupuestos(eventsList);
     } catch (err) {
       console.error("Error loading events:", err);
     } finally {
@@ -71,23 +71,53 @@ const Presupuestos = () => {
     }
   };
 
-  const initializeBudgetData = (eventsList) => {
-    const initialData = {};
+  // presupuestoIdMap[sectionId][levelId][eventId] = partida_id de Supabase
+  const [presupuestoIdMap, setPresupuestoIdMap] = useState({});
+
+  const buildConcepto = (sectionId, levelId) => {
+    const sec = SECTIONS.find(s => s.id === sectionId)?.name || sectionId;
+    const lvl = STUDY_LEVELS.find(l => l.id === levelId)?.name || levelId;
+    return `${sec} · ${lvl}`;
+  };
+
+  const loadPresupuestos = async (eventsList) => {
+    // Inicializamos grid en 0 con weight=100
+    const grid = {};
+    const idMap = {};
     SECTIONS.forEach(section => {
-      initialData[section.id] = {};
+      grid[section.id] = {};
+      idMap[section.id] = {};
       STUDY_LEVELS.forEach(level => {
-        initialData[section.id][level.id] = {};
+        grid[section.id][level.id] = {};
+        idMap[section.id][level.id] = {};
         eventsList.forEach(event => {
-          initialData[section.id][level.id][event.id] = {
-            num_rehearsals: 0,
-            num_functions: 0,
-            cache_total: 0,
-            weight: 100 // Default 100%
-          };
+          grid[section.id][level.id][event.id] = { num_rehearsals: 0, num_functions: 0, cache_total: 0, weight: 100 };
         });
       });
     });
-    setBudgetData(initialData);
+    // Traer partidas de la temporada
+    try {
+      const r = await api.get(`/api/gestor/presupuestos?temporada=${encodeURIComponent(selectedSeason)}`);
+      const partidas = r.data?.partidas || [];
+      partidas.forEach(p => {
+        let meta = {};
+        try { meta = p.notas ? JSON.parse(p.notas) : {}; } catch { meta = {}; }
+        const sid = meta.section_id;
+        const lid = meta.level_id;
+        if (!sid || !lid || !grid[sid] || !grid[sid][lid] || !grid[sid][lid][p.evento_id]) return;
+        grid[sid][lid][p.evento_id] = {
+          num_rehearsals: meta.num_rehearsals || 0,
+          num_functions: meta.num_functions || 0,
+          cache_total: Number(p.importe_previsto) || 0,
+          weight: meta.weight != null ? Number(meta.weight) : 100,
+        };
+        idMap[sid][lid][p.evento_id] = p.id;
+      });
+    } catch (err) {
+      console.error('[Presupuestos] error cargando partidas:', err);
+    }
+    setBudgetData(grid);
+    setPresupuestoIdMap(idMap);
   };
 
   const updateBudgetCell = (sectionId, levelId, eventId, field, value) => {
@@ -155,10 +185,47 @@ const Presupuestos = () => {
     return total;
   };
 
+  const [saveMsg, setSaveMsg] = useState(null);
+
   const saveBudget = async () => {
-    // /api/budgets no está implementado aún en el backend Supabase.
-    // Lo dejamos como no-op con aviso para no romper la UI.
-    alert('ℹ️ El guardado de presupuestos se conectará en la próxima iteración. Por ahora el cálculo es solo visual.');
+    try {
+      setSaving(true);
+      setSaveMsg(null);
+      // Construir lista de partidas a upsert
+      const partidas = [];
+      for (const section of SECTIONS) {
+        for (const level of STUDY_LEVELS) {
+          for (const event of events) {
+            const cell = budgetData[section.id]?.[level.id]?.[event.id];
+            if (!cell) continue;
+            // Solo persistimos si hay algún valor distinto de cero — evita ensuciar BD con vacíos
+            const importe = Number(cell.cache_total) || 0;
+            const weight = cell.weight == null ? 100 : Number(cell.weight);
+            const num_r = Number(cell.num_rehearsals) || 0;
+            const num_f = Number(cell.num_functions) || 0;
+            const id = presupuestoIdMap[section.id]?.[level.id]?.[event.id];
+            if (!id && importe === 0 && weight === 100 && num_r === 0 && num_f === 0) continue;
+            partidas.push({
+              id: id || undefined,
+              evento_id: event.id,
+              concepto: buildConcepto(section.id, level.id),
+              categoria: 'cachets',
+              tipo: 'gasto',
+              importe_previsto: importe,
+              importe_real: +(importe * weight / 100).toFixed(2),
+              notas: JSON.stringify({ section_id: section.id, level_id: level.id, num_rehearsals: num_r, num_functions: num_f, weight }),
+            });
+          }
+        }
+      }
+      const r = await api.post('/api/gestor/presupuestos/bulk', { partidas });
+      setSaveMsg({ type: 'success', text: `Guardado: ${r.data.creados} creadas, ${r.data.actualizados} actualizadas` });
+      await loadPresupuestos(events);
+      setTimeout(() => setSaveMsg(null), 4000);
+    } catch (err) {
+      console.error('[Presupuestos] error guardando:', err);
+      setSaveMsg({ type: 'error', text: err.response?.data?.detail || err.message });
+    } finally { setSaving(false); }
   };
 
   const toggleEventCollapse = (eventId) => {
@@ -227,6 +294,7 @@ const Presupuestos = () => {
           <button
             onClick={saveBudget}
             disabled={saving}
+            data-testid="btn-save-presupuesto"
             className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
           >
             {saving ? (
@@ -243,6 +311,14 @@ const Presupuestos = () => {
               </>
             )}
           </button>
+          {saveMsg && (
+            <span
+              data-testid="presupuesto-msg"
+              className={`text-sm font-medium ${saveMsg.type === 'success' ? 'text-green-700' : 'text-red-700'}`}
+            >
+              {saveMsg.type === 'success' ? '✅' : '⚠️'} {saveMsg.text}
+            </span>
+          )}
         </div>
       </header>
 

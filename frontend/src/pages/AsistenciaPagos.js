@@ -1,579 +1,258 @@
-import React, { useState, useEffect } from "react";
-import { useAuth as useGestorAuth } from "../contexts/AuthContext";
+// Gestión económica — vista informativa agrupada por evento/sección.
+// Muestra datos de contabilidad listos para pagar: IBAN, SWIFT, cachés,
+// extras, transporte, alojamiento, otros, total a percibir.
+// Datos desde GET /api/gestor/gestion-economica.
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
-// Color helper
-const getAvailabilityColor = (percentage) => {
-  if (percentage <= 30) return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' };
-  if (percentage <= 60) return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' };
-  if (percentage <= 80) return { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200' };
-  return { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' };
+const fmtEuro = (n) => `${(Number(n) || 0).toFixed(2)} €`;
+const fmtFecha = (iso) => {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch { return iso; }
 };
 
-// Instrument sections
-const INSTRUMENT_SECTIONS = [
-  { id: 'cuerda', name: 'Cuerda', instruments: ['Violín', 'Viola', 'Violonchelo', 'Contrabajo'] },
-  { id: 'viento_madera', name: 'Viento Madera', instruments: ['Flauta', 'Oboe', 'Clarinete', 'Fagot'] },
-  { id: 'viento_metal', name: 'Viento Metal', instruments: ['Trompeta', 'Trompa', 'Trombón', 'Tuba'] },
-  { id: 'percusion', name: 'Percusión', instruments: ['Percusión', 'Timbales'] },
-  { id: 'teclados', name: 'Teclados', instruments: ['Piano', 'Órgano', 'Clave', 'Celesta'] },
-  { id: 'coralistas', name: 'Coralistas', instruments: ['Soprano', 'Contralto', 'Tenor', 'Bajo'] },
-  { id: 'otros', name: 'Otros', instruments: ['Arpa', 'Guitarra', 'Solista'] }
-];
-
-// Helper function to get section ID from instrument
-const getSectionFromInstrument = (instrument) => {
-  if (!instrument) return 'otros';
-  
-  const section = INSTRUMENT_SECTIONS.find(s => 
-    s.instruments.some(inst => 
-      instrument.toLowerCase().includes(inst.toLowerCase())
-    )
-  );
-  
-  return section ? section.id : 'otros';
+const ESTADO_PAGO_COLORS = {
+  pendiente: 'bg-slate-100 text-slate-700',
+  pagado: 'bg-green-100 text-green-800',
+  anulado: 'bg-red-100 text-red-800',
 };
 
-// Helper function to calculate cache from budget data
-const calculateCacheFromBudget = (budgetData, sectionId, studyLevel, eventId, attendancePercentage) => {
-  if (!budgetData || !budgetData[sectionId]) {
-    return 100; // Fallback to base cache if no budget data
-  }
-  
-  // Default to 'superior_finalizado' if no study level specified
-  const level = studyLevel || 'superior_finalizado';
-  
-  const budgetCell = budgetData[sectionId]?.[level]?.[eventId];
-  
-  if (!budgetCell) {
-    return 100; // Fallback if no budget configured
-  }
-  
-  // Formula: cache_total × (weight / 100) × (attendance / 100)
-  const cacheTotal = budgetCell.cache_total || 0;
-  const weight = budgetCell.weight || 100;
-  const finalCache = cacheTotal * (weight / 100) * (attendancePercentage / 100);
-  
-  return Math.round(finalCache);
-};
-
-// File Upload Component
-const FileUpload = ({ label, value, onChange, eventName, contactName }) => {
-  const handleUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Simulate upload to Google Drive with auto-rename
-      const date = new Date().toISOString().split('T')[0];
-      const newFileName = `${eventName}_${date}_${contactName}_${file.name}`;
-      // In real implementation, this would upload to Google Drive
-      onChange({ name: newFileName, url: URL.createObjectURL(file), originalName: file.name });
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-2">
-      {value ? (
-        <a href={value.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline text-xs">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          {value.originalName?.substring(0, 10)}...
-        </a>
-      ) : (
-        <label className="cursor-pointer">
-          <input type="file" className="hidden" onChange={handleUpload} accept=".pdf,.jpg,.png,.jpeg" />
-          <span className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path d="M12 4v16m8-8H4"/>
-            </svg>
-            {label}
-          </span>
-        </label>
-      )}
-    </div>
-  );
-};
-
-// Contact Row with Economic Block
-const ContactRowEconomic = ({ contact, event, eventResponses, contactData, onDataChange, budgetData }) => {
-  const data = contactData || {
-    atril_numero: '',
-    atril_letra: '',
-    asistencia_real: {},
-    cache_extra: 0,
-    cache_extra_comentario: '',
-    extra_produccion: 0,
-    extra_transporte: 0,
-    otros_gastos: 0,
-    justificante_transporte: null,
-    justificante_alojamiento: null,
-    titulaciones: null
-  };
-
-  // Calculate attendance
-  const responses = eventResponses.find(r => r.contact_id === contact.id)?.responses || {};
-  const totalDates = Object.keys(responses).length || 1;
-  const previstoYes = Object.values(responses).filter(v => v === 'si').length;
-  const previstoPct = Math.round((previstoYes / totalDates) * 100);
-  
-  const realValues = Object.values(data.asistencia_real || {});
-  const realPct = realValues.length > 0 
-    ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
-    : 0;
-
-  // Calculate cache using budget data
-  const sectionId = getSectionFromInstrument(contact.especialidad);
-  const studyLevel = contact.nivel_estudios || 'superior_finalizado';
-  const cacheReal = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
-  
-  // Calculate totals
-  const cacheExtra = parseFloat(data.cache_extra) || 0;
-  const extraProduccion = parseFloat(data.extra_produccion) || 0;
-  const extraTransporte = parseFloat(data.extra_transporte) || 0;
-  const otrosGastos = parseFloat(data.otros_gastos) || 0;
-  const totalPercibir = cacheReal + cacheExtra + extraProduccion + extraTransporte + otrosGastos;
-
-  const realColors = getAvailabilityColor(realPct);
-
-  return (
-    <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-      {/* Personal Data */}
-      <td className="px-3 py-2 text-sm sticky left-0 bg-white">{contact.apellidos}</td>
-      <td className="px-3 py-2 text-sm">{contact.nombre}</td>
-      <td className="px-3 py-2 text-sm">{contact.especialidad}</td>
-
-      {/* Atril */}
-      <td className="px-2 py-2">
-        <div className="flex gap-1">
-          <input
-            type="number"
-            value={data.atril_numero || ''}
-            onChange={(e) => onDataChange(contact.id, 'atril_numero', e.target.value)}
-            className="w-10 px-1 py-1 border border-slate-200 rounded text-xs text-center"
-            placeholder="Nº"
-          />
-          <input
-            type="text"
-            value={data.atril_letra || ''}
-            onChange={(e) => onDataChange(contact.id, 'atril_letra', e.target.value)}
-            className="w-8 px-1 py-1 border border-slate-200 rounded text-xs text-center uppercase"
-            maxLength={1}
-          />
-        </div>
-      </td>
-
-      {/* Attendance */}
-      <td className="px-2 py-2 text-center">
-        <span className={`inline-flex px-2 py-1 rounded text-xs font-mono ${realColors.bg} ${realColors.text}`}>
-          {realPct}%
-        </span>
-      </td>
-
-      {/* Cache */}
-      <td className="px-2 py-2 text-center font-mono text-sm">{cacheReal}€</td>
-      <td className="px-2 py-2">
-        <input
-          type="number"
-          min="0"
-          value={data.cache_extra || ''}
-          onChange={(e) => onDataChange(contact.id, 'cache_extra', e.target.value)}
-          className="w-16 px-1 py-1 border border-slate-200 rounded text-xs text-center"
-        />
-      </td>
-
-      {/* Economic Block - Visually differentiated */}
-      <td className="px-2 py-2 bg-blue-50/50">
-        <input
-          type="number"
-          min="0"
-          value={data.extra_produccion || ''}
-          onChange={(e) => onDataChange(contact.id, 'extra_produccion', e.target.value)}
-          className="w-16 px-1 py-1 border border-blue-200 rounded text-xs text-center bg-white"
-          placeholder="€"
-        />
-      </td>
-      <td className="px-2 py-2 bg-blue-50/50">
-        <input
-          type="number"
-          min="0"
-          value={data.extra_transporte || ''}
-          onChange={(e) => onDataChange(contact.id, 'extra_transporte', e.target.value)}
-          className="w-16 px-1 py-1 border border-blue-200 rounded text-xs text-center bg-white"
-          placeholder="€"
-        />
-      </td>
-      <td className="px-2 py-2 bg-blue-50/50">
-        <input
-          type="number"
-          min="0"
-          value={data.otros_gastos || ''}
-          onChange={(e) => onDataChange(contact.id, 'otros_gastos', e.target.value)}
-          className="w-16 px-1 py-1 border border-blue-200 rounded text-xs text-center bg-white"
-          placeholder="€"
-        />
-      </td>
-
-      {/* Documentation */}
-      <td className="px-2 py-2 bg-amber-50/50">
-        <FileUpload
-          label="Transporte"
-          value={data.justificante_transporte}
-          onChange={(v) => onDataChange(contact.id, 'justificante_transporte', v)}
-          eventName={event.name}
-          contactName={`${contact.apellidos}_${contact.nombre}`}
-        />
-      </td>
-      <td className="px-2 py-2 bg-amber-50/50">
-        <FileUpload
-          label="Alojamiento"
-          value={data.justificante_alojamiento}
-          onChange={(v) => onDataChange(contact.id, 'justificante_alojamiento', v)}
-          eventName={event.name}
-          contactName={`${contact.apellidos}_${contact.nombre}`}
-        />
-      </td>
-      <td className="px-2 py-2 bg-amber-50/50">
-        <FileUpload
-          label="Titulaciones"
-          value={data.titulaciones}
-          onChange={(v) => onDataChange(contact.id, 'titulaciones', v)}
-          eventName={event.name}
-          contactName={`${contact.apellidos}_${contact.nombre}`}
-        />
-      </td>
-
-      {/* Total */}
-      <td className="px-3 py-2 bg-green-100 text-center">
-        <span className="font-bold text-green-800 font-mono">{totalPercibir}€</span>
-      </td>
-    </tr>
-  );
-};
-
-// Section Component
-const SectionEconomic = ({ section, contacts, event, eventResponses, contactsData, onDataChange, isExpanded, onToggle, budgetData }) => {
-  const sectionContacts = contacts.filter(c => 
-    section.instruments.some(inst => 
-      c.especialidad?.toLowerCase().includes(inst.toLowerCase())
-    )
-  );
-
-  if (sectionContacts.length === 0) return null;
-
-  // Calculate section totals using budget data
-  let sectionTotal = 0;
-  sectionContacts.forEach(contact => {
-    const data = contactsData[contact.id] || {};
-    const responses = eventResponses.find(r => r.contact_id === contact.id)?.responses || {};
-    const realValues = Object.values(data.asistencia_real || {});
-    const realPct = realValues.length > 0 
-      ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
-      : 0;
-    
-    const sectionId = getSectionFromInstrument(contact.especialidad);
-    const studyLevel = contact.nivel_estudios || 'superior_finalizado';
-    const cacheReal = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
-    
-    sectionTotal += cacheReal + (parseFloat(data.cache_extra) || 0) + (parseFloat(data.extra_produccion) || 0) + (parseFloat(data.extra_transporte) || 0) + (parseFloat(data.otros_gastos) || 0);
-  });
-
-  return (
-    <div className="border-l-2 border-slate-300 ml-4">
-      <button
-        onClick={onToggle}
-        className="w-full px-4 py-2 flex items-center justify-between bg-slate-100 hover:bg-slate-200 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M9 5l7 7-7 7"/>
-          </svg>
-          <span className="font-medium text-slate-700">{section.name}</span>
-          <span className="text-xs text-slate-500">({sectionContacts.length})</span>
-        </div>
-        <span className="text-sm font-mono text-slate-600">{Math.round(sectionTotal)}€</span>
-      </button>
-      
-      {isExpanded && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-xs">
-                <th className="px-3 py-2 text-left font-medium text-slate-600 sticky left-0 bg-slate-50">Apellidos</th>
-                <th className="px-3 py-2 text-left font-medium text-slate-600">Nombre</th>
-                <th className="px-3 py-2 text-left font-medium text-slate-600">Instrumento</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">Atril</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">% Real</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">Caché</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600">Extra</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600 bg-blue-50">Producción</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600 bg-blue-50">Transporte</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600 bg-blue-50">Otros</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600 bg-amber-50">Just. Trans.</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600 bg-amber-50">Just. Aloj.</th>
-                <th className="px-2 py-2 text-center font-medium text-slate-600 bg-amber-50">Titulaciones</th>
-                <th className="px-3 py-2 text-center font-medium text-slate-600 bg-green-100">TOTAL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sectionContacts.map(contact => (
-                <ContactRowEconomic
-                  key={contact.id}
-                  contact={contact}
-                  event={event}
-                  eventResponses={eventResponses}
-                  contactData={contactsData[contact.id]}
-                  onDataChange={onDataChange}
-                  budgetData={budgetData}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Event Accordion
-const EventAccordionEconomic = ({ event, index, contacts, eventResponses, contactsData, onDataChange, isExpanded, onToggle, budgetData }) => {
-  const [expandedSections, setExpandedSections] = useState({});
-  const [driveFolder, setDriveFolder] = useState('');
-
-  const toggleSection = (sectionId) => {
-    setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
-  };
-
-  // Calculate event totals using budget data
-  let totalCacheReal = 0;
-  let totalExtras = 0;
-  let totalGeneral = 0;
-
-  contacts.forEach(contact => {
-    const data = contactsData[contact.id] || {};
-    const realValues = Object.values(data.asistencia_real || {});
-    const realPct = realValues.length > 0 
-      ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
-      : 0;
-    
-    const sectionId = getSectionFromInstrument(contact.especialidad);
-    const studyLevel = contact.nivel_estudios || 'superior_finalizado';
-    const cacheReal = calculateCacheFromBudget(budgetData, sectionId, studyLevel, event.id, realPct);
-    const extras = (parseFloat(data.cache_extra) || 0) + (parseFloat(data.extra_produccion) || 0) + (parseFloat(data.extra_transporte) || 0) + (parseFloat(data.otros_gastos) || 0);
-    
-    totalCacheReal += cacheReal;
-    totalExtras += extras;
-    totalGeneral += cacheReal + extras;
-  });
-
-  return (
-    <div className="border border-slate-200 rounded-lg mb-4 overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full px-4 py-3 flex items-center justify-between bg-slate-800 text-white hover:bg-slate-700 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <svg className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M9 5l7 7-7 7"/>
-          </svg>
-          <span className="font-semibold">Evento {index + 1}</span>
-          <span className="text-slate-300">—</span>
-          <span>{event.name}</span>
-        </div>
-        <div className="flex items-center gap-6 text-sm">
-          <div className="text-slate-300">Caché: {Math.round(totalCacheReal)}€</div>
-          <div className="text-yellow-400">Extras: {Math.round(totalExtras)}€</div>
-          <div className="text-green-400 font-bold">TOTAL: {Math.round(totalGeneral)}€</div>
-        </div>
-      </button>
-
-      {isExpanded && (
-        <div className="bg-white">
-          {/* Drive folder config */}
-          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
-            <label className="flex items-center gap-2 text-sm">
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-              </svg>
-              <span className="text-slate-600">Carpeta Google Drive:</span>
-              <input
-                type="url"
-                value={driveFolder}
-                onChange={(e) => setDriveFolder(e.target.value)}
-                placeholder="https://drive.google.com/drive/folders/..."
-                className="flex-1 px-2 py-1 border border-slate-200 rounded text-sm"
-              />
-            </label>
-          </div>
-
-          {INSTRUMENT_SECTIONS.map(section => (
-            <SectionEconomic
-              key={section.id}
-              section={section}
-              contacts={contacts}
-              event={event}
-              eventResponses={eventResponses}
-              contactsData={contactsData}
-              onDataChange={onDataChange}
-              isExpanded={expandedSections[section.id]}
-              onToggle={() => toggleSection(section.id)}
-              budgetData={budgetData}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Main Component
 const AsistenciaPagos = () => {
-  const { api } = useGestorAuth();
-  const [events, setEvents] = useState([]);
-  const [contacts, setContacts] = useState([]);
-  const [eventResponses, setEventResponses] = useState({});
-  const [contactsData, setContactsData] = useState({});
-  const [expandedEvents, setExpandedEvents] = useState({});
+  const { api } = useAuth();
+  const [data, setData] = useState({ eventos: [], total_temporada: 0 });
   const [loading, setLoading] = useState(true);
-  const [budgetData, setBudgetData] = useState(null);
-  const [seasons, setSeasons] = useState([]);
+  const [error, setError] = useState(null);
+  const [openSet, setOpenSet] = useState(new Set());
+  const [temporada, setTemporada] = useState('');
+  const [temporadas, setTemporadas] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const cargar = async (tempSel = temporada) => {
+    try {
+      setLoading(true); setError(null);
+      const qs = tempSel ? `?temporada=${encodeURIComponent(tempSel)}` : '';
+      const r = await api.get(`/api/gestor/gestion-economica${qs}`);
+      const d = r.data || { eventos: [], total_temporada: 0 };
+      setData(d);
+      setOpenSet(new Set(d.eventos.map(e => e.id))); // todos abiertos por defecto
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message);
+    } finally { setLoading(false); }
+  };
 
   useEffect(() => {
-    loadData();
+    // cargar lista de temporadas
+    (async () => {
+      try {
+        const r = await api.get('/api/gestor/eventos');
+        const t = Array.from(new Set((r.data?.eventos || []).map(e => e.temporada).filter(Boolean)));
+        setTemporadas(t);
+        if (t.length && !temporada) {
+          setTemporada(t[0]);
+          cargar(t[0]);
+        } else {
+          cargar();
+        }
+      } catch (err) {
+        cargar();
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadData = async () => {
-    try {
-      const [eventsRes, contactsRes] = await Promise.all([
-        api.get('/api/gestor/eventos').catch(() => ({ data: { eventos: [] } })),
-        api.get('/api/gestor/musicos').catch(() => ({ data: { musicos: [] } }))
-      ]);
-
-      const eventsList = eventsRes.data?.eventos || [];
-      const contactsList = contactsRes.data?.musicos || [];
-
-      setEvents(eventsList);
-      setContacts(contactsList);
-
-      // Temporadas derivadas de eventos (no hay endpoint /seasons)
-      const temporadas = Array.from(new Set(eventsList.map(e => e.temporada).filter(Boolean)));
-      setSeasons(temporadas.map(t => ({ id: t, nombre: t })));
-
-      // Budget no implementado: estado vacío
-      setBudgetData({});
-
-      // Asignaciones por evento (reemplaza event-responses)
-      const responsesMap = {};
-      for (const event of eventsList) {
-        try {
-          const asigRes = await api.get(`/api/gestor/asignaciones/evento/${event.id}`);
-          responsesMap[event.id] = (asigRes.data?.asignaciones || []).map(a => ({
-            contact_id: a.usuario_id,
-            responses: { [event.id]: a.estado === 'confirmado' ? 'si' : (a.estado === 'rechazado' ? 'no' : '') },
-            observaciones: a.comentarios || '',
-            importe: a.importe,
-            estado_pago: a.estado_pago
-          }));
-        } catch { responsesMap[event.id] = []; }
-      }
-      setEventResponses(responsesMap);
-
-      if (eventsList.length > 0) {
-        setExpandedEvents({ [eventsList[0].id]: true });
-      }
-    } catch (err) {
-      console.error("Error loading data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleEvent = (eventId) => {
-    setExpandedEvents(prev => ({ ...prev, [eventId]: !prev[eventId] }));
-  };
-
-  const handleDataChange = (contactId, field, value) => {
-    setContactsData(prev => {
-      const contactData = { ...(prev[contactId] || {}) };
-      
-      if (field.startsWith('asistencia_real.')) {
-        const key = field.replace('asistencia_real.', '');
-        contactData.asistencia_real = { ...(contactData.asistencia_real || {}), [key]: value };
-      } else {
-        contactData[field] = value;
-      }
-      
-      return { ...prev, [contactId]: contactData };
+  const toggleAccordion = (evId) => {
+    setOpenSet(prev => {
+      const n = new Set(prev);
+      if (n.has(evId)) n.delete(evId); else n.add(evId);
+      return n;
     });
   };
 
-  const saveData = () => {
-    alert('Datos económicos guardados correctamente (simulado)');
+  const marcarPago = async (asignacionId, nuevoEstado) => {
+    try {
+      setBusy(true);
+      await api.put(`/api/gestor/asignaciones/${asignacionId}/pago`, { estado_pago: nuevoEstado });
+      await cargar(temporada);
+    } catch (err) {
+      alert('Error marcando pago: ' + (err.response?.data?.detail || err.message));
+    } finally { setBusy(false); }
   };
 
-  // Calculate global totals
-  let globalTotal = 0;
-  contacts.forEach(contact => {
-    const data = contactsData[contact.id] || {};
-    const realValues = Object.values(data.asistencia_real || {});
-    const realPct = realValues.length > 0 
-      ? realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length / 100
-      : 0;
-    
-    globalTotal += 100 * realPct + (parseFloat(data.cache_extra) || 0) + (parseFloat(data.extra_produccion) || 0) + (parseFloat(data.extra_transporte) || 0) + (parseFloat(data.otros_gastos) || 0);
-  });
+  const exportXlsx = async (eventoId = null) => {
+    try {
+      const qs = new URLSearchParams();
+      if (eventoId) qs.set('evento_id', eventoId);
+      if (temporada) qs.set('temporada', temporada);
+      const r = await api.get(`/api/gestor/gestion-economica/export?${qs}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gestion_economica_${eventoId || temporada || 'todos'}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Error al exportar: ' + err.message);
+    }
+  };
+
+  const totalTemporada = data.total_temporada || 0;
 
   if (loading) {
-    return (
-      <div className="p-6 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-800"></div>
-      </div>
-    );
+    return <div className="p-6 text-slate-500">Cargando gestión económica...</div>;
+  }
+  if (error) {
+    return <div className="p-6 text-red-700">⚠️ {error}</div>;
   }
 
   return (
-    <div className="p-6" data-testid="asistencia-pagos-page">
-      <header className="mb-6 flex items-center justify-between">
+    <div className="p-6" data-testid="gestion-economica">
+      <header className="mb-6 flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="font-cabinet text-3xl font-bold text-slate-900">Asistencia, Pagos y Bloque Económico</h1>
-          <p className="font-ibm text-slate-600 mt-1">Gestión económica completa y documentación justificativa</p>
+          <h1 className="font-cabinet text-3xl font-bold text-slate-900">Gestión económica</h1>
+          <p className="text-sm text-slate-600 mt-1">Contabilidad por evento y sección. Listo para pagos bancarios.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="px-4 py-2 bg-green-100 rounded-lg">
-            <span className="text-sm text-green-700">Total general:</span>
-            <span className="ml-2 font-bold text-green-800 font-mono text-lg">{Math.round(globalTotal)}€</span>
-          </div>
-          <button
-            onClick={saveData}
-            className="px-4 py-2 bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors text-sm font-medium"
-            data-testid="save-economic-btn"
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={temporada}
+            onChange={(e) => { setTemporada(e.target.value); cargar(e.target.value); }}
+            data-testid="temp-select"
+            className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
           >
-            Guardar cambios
-          </button>
+            <option value="">Todas las temporadas</option>
+            {temporadas.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <button
+            onClick={() => exportXlsx(null)}
+            data-testid="btn-export-all"
+            className="px-3 py-2 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700"
+          >📊 Exportar todo a Excel</button>
         </div>
       </header>
 
-      <div className="space-y-4">
-        {events.map((event, index) => (
-          <EventAccordionEconomic
-            key={event.id}
-            event={event}
-            index={index}
-            contacts={contacts}
-            eventResponses={eventResponses[event.id] || []}
-            contactsData={contactsData}
-            onDataChange={handleDataChange}
-            isExpanded={expandedEvents[event.id]}
-            onToggle={() => toggleEvent(event.id)}
-            budgetData={budgetData}
-          />
-        ))}
+      <div className="bg-blue-900 text-white rounded-lg p-4 mb-4 flex items-center justify-between">
+        <span className="text-sm uppercase tracking-wide">TOTAL TEMPORADA</span>
+        <span className="text-2xl font-bold" data-testid="total-temporada">{fmtEuro(totalTemporada)}</span>
       </div>
 
-      {events.length === 0 && (
-        <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-          <p className="text-slate-500">No hay eventos configurados</p>
+      {data.eventos.length === 0 && (
+        <div className="bg-white rounded-lg border border-slate-200 p-6 text-center text-slate-500">
+          No hay asignaciones confirmadas.
         </div>
       )}
+
+      {data.eventos.map(ev => {
+        const open = openSet.has(ev.id);
+        return (
+          <div key={ev.id} className="bg-white rounded-lg border border-slate-200 mb-3 overflow-hidden" data-testid={`evento-econ-${ev.id}`}>
+            <div
+              className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between cursor-pointer"
+              onClick={() => toggleAccordion(ev.id)}
+            >
+              <div>
+                <span className="font-semibold text-base">{ev.nombre}</span>
+                <span className="text-xs text-slate-300 ml-3">{fmtFecha(ev.fecha_inicio)} · {ev.total_musicos} músicos</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-lg font-bold">{fmtEuro(ev.totales.total)}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); exportXlsx(ev.id); }}
+                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-xs rounded"
+                  data-testid={`btn-export-ev-${ev.id}`}
+                >Excel</button>
+                <span className="text-xs">{open ? '▼' : '▶'}</span>
+              </div>
+            </div>
+            {open && ev.secciones.map(sec => (
+              <div key={sec.key}>
+                <div className="bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-700">
+                  {sec.label} <span className="text-slate-500 font-normal ml-2">({sec.count} músicos · {fmtEuro(sec.totales.total)})</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[12px]">
+                    <thead className="bg-slate-50 text-slate-600 text-[11px]">
+                      <tr>
+                        <th className="px-2 py-2 text-left font-medium">Apellidos, Nombre</th>
+                        <th className="px-2 py-2 text-left font-medium">Instrumento · Esp.</th>
+                        <th className="px-2 py-2 text-left font-medium">Nivel</th>
+                        <th className="px-2 py-2 text-left font-medium">IBAN</th>
+                        <th className="px-2 py-2 text-left font-medium">SWIFT</th>
+                        <th className="px-2 py-2 text-center font-medium">%Disp</th>
+                        <th className="px-2 py-2 text-center font-medium">%Real</th>
+                        <th className="px-2 py-2 text-right font-medium">Caché Prev.</th>
+                        <th className="px-2 py-2 text-right font-medium">Caché Real</th>
+                        <th className="px-2 py-2 text-right font-medium">Extras</th>
+                        <th className="px-2 py-2 text-right font-medium">Transp.</th>
+                        <th className="px-2 py-2 text-right font-medium">Aloj.</th>
+                        <th className="px-2 py-2 text-right font-medium">Otros</th>
+                        <th className="px-2 py-2 text-right font-bold bg-amber-100 text-amber-900">TOTAL</th>
+                        <th className="px-2 py-2 text-center font-medium">Estado</th>
+                        <th className="px-2 py-2 text-center font-medium">Titulaciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {sec.musicos.map(m => (
+                        <tr key={m.asignacion_id} className="hover:bg-slate-50" data-testid={`row-pago-${m.asignacion_id}`}>
+                          <td className="px-2 py-1.5 font-medium text-slate-900 whitespace-nowrap">{m.apellidos}, {m.nombre}</td>
+                          <td className="px-2 py-1.5 text-slate-700">{m.instrumento}{m.especialidad ? ` · ${m.especialidad}` : ''}</td>
+                          <td className="px-2 py-1.5 text-slate-600">{m.nivel_estudios || '—'}</td>
+                          <td className="px-2 py-1.5 font-mono text-[11px]" data-testid={`iban-${m.asignacion_id}`}>{m.iban || '—'}</td>
+                          <td className="px-2 py-1.5 font-mono text-[11px]">{m.swift || '—'}</td>
+                          <td className="px-2 py-1.5 text-center">{m.porcentaje_disponibilidad}%</td>
+                          <td className="px-2 py-1.5 text-center font-semibold">{m.porcentaje_asistencia_real}%</td>
+                          <td className="px-2 py-1.5 text-right">{fmtEuro(m.cache_previsto)}</td>
+                          <td className="px-2 py-1.5 text-right">{fmtEuro(m.cache_real)}</td>
+                          <td className="px-2 py-1.5 text-right">{fmtEuro(m.cache_extra)}</td>
+                          <td className="px-2 py-1.5 text-right">{fmtEuro(m.transporte_importe)}</td>
+                          <td className="px-2 py-1.5 text-right">{fmtEuro(m.alojamiento_importe)}</td>
+                          <td className="px-2 py-1.5 text-right">{fmtEuro(m.otros_importe)}</td>
+                          <td className="px-2 py-1.5 text-right font-bold bg-amber-50">{fmtEuro(m.total)}</td>
+                          <td className="px-2 py-1.5 text-center">
+                            <button
+                              onClick={() => marcarPago(m.asignacion_id, m.estado_pago === 'pagado' ? 'pendiente' : 'pagado')}
+                              disabled={busy}
+                              data-testid={`btn-pago-${m.asignacion_id}`}
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${ESTADO_PAGO_COLORS[m.estado_pago] || 'bg-slate-100 text-slate-700'}`}
+                              title="Click para alternar pagado/pendiente"
+                            >
+                              {m.estado_pago === 'pagado' ? '✓ Pagado' : m.estado_pago === 'anulado' ? '✗ Anulado' : 'Pendiente'}
+                            </button>
+                          </td>
+                          <td className="px-2 py-1.5 text-[10px] text-slate-500 max-w-[180px]">
+                            {(m.titulaciones || []).length === 0 ? '—' : (m.titulaciones || []).map((t, i) => (
+                              <div key={i} className="truncate" title={`${t.titulo}${t.institucion ? ' · ' + t.institucion : ''}${t.anio ? ' · ' + t.anio : ''}`}>
+                                {t.titulo}{t.institucion ? ` · ${t.institucion}` : ''}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="bg-slate-200 font-semibold">
+                        <td colSpan={7} className="px-2 py-1.5 text-right uppercase text-[11px]">Subtotal {sec.label}</td>
+                        <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.cache_previsto)}</td>
+                        <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.cache_real)}</td>
+                        <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.extras)}</td>
+                        <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.transporte)}</td>
+                        <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.alojamiento)}</td>
+                        <td className="px-2 py-1.5 text-right">{fmtEuro(sec.totales.otros)}</td>
+                        <td className="px-2 py-1.5 text-right bg-amber-100">{fmtEuro(sec.totales.total)}</td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+            {open && (
+              <div className="bg-blue-800 text-white px-4 py-2 flex items-center justify-between">
+                <span className="text-sm uppercase">Total evento {ev.nombre}</span>
+                <span className="text-lg font-bold">{fmtEuro(ev.totales.total)}</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };

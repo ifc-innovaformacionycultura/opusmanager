@@ -1,7 +1,7 @@
-// Panel "Mi disponibilidad" — se muestra dentro del detalle de cada convocatoria
-// del portal del músico. Una fila por ensayo/función con toggle Sí/No.
-// Se inicializa con `mi_disponibilidad` viniendo del backend
-// y persiste con POST /api/portal/disponibilidad/bulk.
+// Panel "Fechas y mi disponibilidad" — tabla unificada del evento
+// Columnas: Tipo | Fecha | Hora inicio–fin | Lugar | ¿Asisto? (Sí/No/—)
+// Todas las fechas vienen SIEMPRE de la tabla `ensayos` (tipo=ensayo|concierto|funcion).
+// Persiste cambios con POST /api/portal/disponibilidad/bulk.
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -13,14 +13,20 @@ const fmtFecha = (iso) => {
   if (!iso) return '';
   try {
     return new Date(iso).toLocaleDateString('es-ES', {
-      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+      weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
     });
   } catch { return iso; }
 };
 const fmtHora = (h) => h ? String(h).slice(0, 5) : '';
 
+const tipoLabel = (t) => {
+  const v = (t || 'ensayo').toLowerCase();
+  if (v === 'concierto') return { label: 'Concierto', cls: 'bg-amber-100 text-amber-800' };
+  if (v === 'funcion') return { label: 'Función', cls: 'bg-purple-100 text-purple-800' };
+  return { label: 'Ensayo', cls: 'bg-slate-100 text-slate-700' };
+};
+
 const MiDisponibilidadPanel = ({ ensayos = [], onSaved }) => {
-  // Estado local por ensayo_id -> true | false | null
   const [values, setValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -48,11 +54,8 @@ const MiDisponibilidadPanel = ({ ensayos = [], onSaved }) => {
       const token = session?.access_token;
       const response = await fetch(`${API_URL}/portal/disponibilidad/bulk`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ entries })
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries }),
       });
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -77,10 +80,10 @@ const MiDisponibilidadPanel = ({ ensayos = [], onSaved }) => {
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div>
           <h3 className="font-cabinet text-lg font-semibold text-slate-900 flex items-center gap-2">
-            🗓️ Mi disponibilidad
+            🗓️ Fechas y mi disponibilidad
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Marca si asistirás a cada ensayo/función. Puedes cambiar tu respuesta mientras la convocatoria esté abierta.
+            Revisa todas las fechas del evento y confirma tu asistencia. Los datos provienen directamente de la configuración del gestor.
           </p>
         </div>
         <button
@@ -106,73 +109,67 @@ const MiDisponibilidadPanel = ({ ensayos = [], onSaved }) => {
         </div>
       )}
 
-      <div className="divide-y divide-slate-100">
-        {ensayos.map(e => {
-          const v = values[e.id] ?? null;
-          return (
-            <div
-              key={e.id}
-              className="py-3 flex items-center justify-between gap-3 flex-wrap"
-              data-testid={`disp-row-${e.id}`}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 capitalize">
-                    {e.tipo || 'ensayo'}
-                  </span>
-                  {e.obligatorio && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-800">
-                      Obligatorio
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm" data-testid="tabla-fechas-disponibilidad">
+          <thead>
+            <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
+              <th className="text-left px-3 py-2 font-medium">Tipo</th>
+              <th className="text-left px-3 py-2 font-medium">Fecha</th>
+              <th className="text-left px-3 py-2 font-medium">Horario</th>
+              <th className="text-left px-3 py-2 font-medium">Lugar</th>
+              <th className="text-center px-3 py-2 font-medium">¿Asisto?</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {ensayos.map((e) => {
+              const v = values[e.id] ?? null;
+              const t = tipoLabel(e.tipo);
+              return (
+                <tr key={e.id} className="hover:bg-slate-50" data-testid={`disp-row-${e.id}`}>
+                  <td className="px-3 py-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${t.cls}`}>
+                      {t.label}
                     </span>
-                  )}
-                </div>
-                <p className="text-sm font-medium text-slate-900 mt-1 capitalize">{fmtFecha(e.fecha)}</p>
-                <p className="text-xs text-slate-500">
-                  {e.hora ? `${fmtHora(e.hora)} · ` : ''}{e.lugar || 'Lugar por confirmar'}
-                </p>
-              </div>
-              <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden bg-slate-50" role="group" aria-label="Disponibilidad">
-                <button
-                  type="button"
-                  onClick={() => setVal(e.id, true)}
-                  data-testid={`btn-si-${e.id}`}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                    v === true
-                      ? 'bg-green-600 text-white'
-                      : 'bg-white text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  Sí
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVal(e.id, false)}
-                  data-testid={`btn-no-${e.id}`}
-                  className={`px-3 py-1.5 text-xs font-medium border-l border-slate-200 transition-colors ${
-                    v === false
-                      ? 'bg-red-600 text-white'
-                      : 'bg-white text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  No
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVal(e.id, null)}
-                  data-testid={`btn-reset-${e.id}`}
-                  className={`px-2 py-1.5 text-xs border-l border-slate-200 transition-colors ${
-                    v === null
-                      ? 'bg-slate-200 text-slate-700'
-                      : 'bg-white text-slate-400 hover:bg-slate-100'
-                  }`}
-                  title="Sin respuesta"
-                >
-                  —
-                </button>
-              </div>
-            </div>
-          );
-        })}
+                    {e.obligatorio && (
+                      <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
+                        Obligatorio
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-slate-900 capitalize">{fmtFecha(e.fecha)}</td>
+                  <td className="px-3 py-2 text-slate-700 tabular-nums">
+                    {e.hora ? fmtHora(e.hora) : '—'}
+                    {e.hora_fin ? ` – ${fmtHora(e.hora_fin)}` : ''}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{e.lugar || '—'}</td>
+                  <td className="px-3 py-2">
+                    <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden bg-slate-50" role="group">
+                      <button
+                        type="button"
+                        onClick={() => setVal(e.id, true)}
+                        data-testid={`btn-si-${e.id}`}
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${v === true ? 'bg-green-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+                      >Sí</button>
+                      <button
+                        type="button"
+                        onClick={() => setVal(e.id, false)}
+                        data-testid={`btn-no-${e.id}`}
+                        className={`px-3 py-1.5 text-xs font-medium border-l border-slate-200 transition-colors ${v === false ? 'bg-red-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+                      >No</button>
+                      <button
+                        type="button"
+                        onClick={() => setVal(e.id, null)}
+                        data-testid={`btn-reset-${e.id}`}
+                        className={`px-2 py-1.5 text-xs border-l border-slate-200 transition-colors ${v === null ? 'bg-slate-200 text-slate-700' : 'bg-white text-slate-400 hover:bg-slate-100'}`}
+                        title="Sin respuesta"
+                      >—</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

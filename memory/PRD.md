@@ -31,7 +31,46 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
-### Febrero 2026 — Bloques 1-5 (CRÍTICO: ensayos persistidos + UX Seguimiento + asistencia_real NUMERIC)
+### Feb 2026 — Sesión XL: Bloques 1-7 (Presupuestos persistente, Portal unificado, Gestión económica, Análisis, Planificador)
+
+**Bloque 1 — Presupuestos REAL (elimina mensaje "próxima versión"):**
+- Backend nuevos endpoints: `GET/POST/PUT/DELETE/POST bulk /api/gestor/presupuestos`.
+- Frontend `Presupuestos.js`: `saveBudget` ahora hace upsert real a tabla `presupuestos` con `concepto`, `categoria='cachets'`, `tipo='gasto'`, `importe_previsto`, `importe_real=importe×weight/100`, y en `notas` JSON (section/level/num_rehearsals/num_functions/weight). `loadPresupuestos` lee y rehidrata la grid al cambiar de temporada. Feedback visible.
+- Bug fix: `categoria='cuerda'` rompía CHECK constraint (permite viajes/tecnico/alojamiento/publicidad/cachets/otros/sala). Solución: usar 'cachets' + sección en notas JSON.
+
+**Bloque 2 — Disponibilidad músico persistente:**
+- `cargarMisEventos(silent)` refresca `eventoSeleccionado` con los datos frescos tras guardar sin remount del panel (evita desincronización al volver).
+- UPSERT backend ya funcionaba; la regresión era de frontend al no reactualizar el padre.
+
+**Bloque 3 — PlantillasDefinitivas recalcula:**
+- Backend ya lee `cachets_config` con fallback a `asignaciones.cache_presupuestado/importe` (verificado).
+- Frontend `pctReal` y `cacheReal` son `useMemo` reactivos — cambian al instante al editar asistencias.
+- Verificado con curl 100/0/50/75 → 56.25% → 213.75€ (380×0.5625).
+
+**Bloque 4 — Mejoras menores:**
+- 4A `ensayos.hora_fin TIME` añadido. Formulario ensayos con doble input Inicio–Fin. Backend modelos `EnsayoCreate/Update` extendidos. Frontend persistEnsayos envía `hora_fin`.
+- 4B Portal músico: **UN SOLO** bloque "Fechas y mi disponibilidad" en formato tabla con columnas Tipo|Fecha|Horario|Lugar|¿Asisto?. Fuente única: tabla `ensayos`. Eliminados bloques duplicados "Fechas de función" y "Ensayos y Fechas".
+- 4C `usuarios.iban TEXT` + `swift TEXT`. `MiPerfil` añade ambos campos en Datos personales. `GestorMusicoDetalle` los muestra en ficha del gestor.
+
+**Bloque 5 — Gestión económica (Asistencia y Pagos):**
+- Nuevo endpoint `GET /api/gestor/gestion-economica` — reusa lógica de plantillas-definitivas enriqueciendo con iban/swift/titulaciones/estado_pago.
+- Nuevo endpoint `PUT /api/gestor/asignaciones/{id}/pago` — toggle pagado/pendiente/anulado.
+- Nuevo endpoint `GET /api/gestor/gestion-economica/export` (xlsx).
+- Frontend `AsistenciaPagos.js` (reescrito): acordeón por evento, desglose por sección, columnas completas (IBAN, SWIFT, %Disp, %Real, Caché Prev/Real, Extras, Transp, Aloj, Otros, TOTAL, Estado Pago, Titulaciones). Botones Excel por evento y global.
+
+**Bloque 6 — Análisis económico:**
+- Nuevo endpoint `GET /api/gestor/analisis/resumen` con stats agregadas (eventos, convocados, confirmados, %asistencia media, coste previsto/real/diferencia, por_evento, por_seccion).
+- Nuevo endpoint `GET /api/gestor/analisis/sepa-xml` que genera XML SEPA pain.001.001.03 con transferencias por músico (IBAN, SWIFT, importe total).
+- Frontend `AnalisisEconomico.js` (reescrito): 7 stat cards + 3 gráficos recharts (barras Previsto vs Real, tarta secciones, línea asistencia) + tabla detalle + botones Excel y SEPA XML.
+
+**Bloque 7 — Planificador de tareas:**
+- Backend: tabla `tareas` (UUID, título, descripción, evento_id, responsable_id/nombre, fecha_inicio, fecha_limite, prioridad[alta/media/baja], estado[pendiente/en_curso/completada/cancelada], categoria[artistico/logistico/economico/comunicacion/tecnico/otro], recordatorio). Endpoints CRUD `/api/gestor/tareas/*` + `GET /api/gestor/gestores`.
+- Frontend `GestorTareas.js` (nuevo): ruta `/admin/tareas` en menú Administración. Vista **Lista** con filtros múltiples (estado/prioridad/categoria/responsable/evento) + indicadores de urgencia (<24h rojo, <72h naranja, resto verde). Vista **Gantt** horizontal por mes con navegación ← → y barras coloreadas por prioridad agrupadas por categoría. Modal de creación/edición con validación.
+
+### SQL consolidado aplicado por el usuario
+- `/app/MIGRATION_BLOQUES_1-7.sql` — `ensayos.hora_fin`, `usuarios.iban/swift`, tabla `tareas` con CHECKs e índices.
+
+### Febrero 2026 — Bloques 1-5 previos
 
 **Bloque 1 — Configuración de Eventos:**
 - ✅ Backend: `GET /api/gestor/eventos` ahora incluye `ensayos[]` por evento. Nuevo `PUT /api/gestor/ensayos/{id}` (antes solo POST/DELETE).

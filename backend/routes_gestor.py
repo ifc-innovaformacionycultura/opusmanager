@@ -95,6 +95,7 @@ class EnsayoCreate(BaseModel):
     evento_id: str
     fecha: str  # ISO date string
     hora: str  # HH:MM format
+    hora_fin: Optional[str] = None
     tipo: str = "ensayo"  # 'ensayo', 'concierto', 'funcion'
     obligatorio: bool = True
     lugar: Optional[str] = None
@@ -103,6 +104,7 @@ class EnsayoCreate(BaseModel):
 class EnsayoUpdate(BaseModel):
     fecha: Optional[str] = None
     hora: Optional[str] = None
+    hora_fin: Optional[str] = None
     tipo: Optional[str] = None
     obligatorio: Optional[bool] = None
     lugar: Optional[str] = None
@@ -140,11 +142,14 @@ async def get_eventos(
             evento_ids = [e['id'] for e in eventos]
             ens_res = supabase.table('ensayos').select('*') \
                 .in_('evento_id', evento_ids) \
-                .order('fecha', desc=False) \
-                .execute()
+                .execute().data or []
             by_evento = {}
-            for ens in (ens_res.data or []):
+            for ens in ens_res:
                 by_evento.setdefault(ens['evento_id'], []).append(ens)
+            # Orden: ensayos fecha ASC → conciertos/funciones fecha ASC
+            for evid, lst in by_evento.items():
+                lst.sort(key=lambda x: (0 if (x.get('tipo') or 'ensayo') == 'ensayo' else 1,
+                                         x.get('fecha') or '', x.get('hora') or ''))
             for ev in eventos:
                 ev['ensayos'] = by_evento.get(ev['id'], [])
 
@@ -2478,3 +2483,607 @@ async def get_actividad(
         return {"actividad": res.data or []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+# ==================================================================
+# BLOQUE 1 — Presupuestos (CRUD real sobre tabla `presupuestos`)
+# ==================================================================
+
+class PresupuestoItem(BaseModel):
+    evento_id: str
+    concepto: str
+    categoria: Optional[str] = None
+    tipo: Optional[str] = 'gasto'  # 'ingreso' | 'gasto'
+    importe_previsto: Optional[float] = 0
+    importe_real: Optional[float] = 0
+    estado: Optional[str] = None
+    notas: Optional[str] = None
+    fecha_prevista: Optional[str] = None
+    fecha_pago: Optional[str] = None
+
+
+class PresupuestoBulkItem(BaseModel):
+    id: Optional[str] = None  # si viene, UPDATE; si no, INSERT
+    evento_id: str
+    concepto: str
+    categoria: Optional[str] = None
+    tipo: Optional[str] = 'gasto'
+    importe_previsto: Optional[float] = 0
+    importe_real: Optional[float] = 0
+    estado: Optional[str] = None
+    notas: Optional[str] = None
+    fecha_prevista: Optional[str] = None
+    fecha_pago: Optional[str] = None
+
+
+@router.get("/presupuestos")
+async def get_presupuestos_all(
+    evento_id: Optional[str] = None,
+    temporada: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Lista partidas de presupuesto. Filtra por evento o por temporada (joineando eventos)."""
+    try:
+        if evento_id:
+            r = supabase.table('presupuestos').select('*').eq('evento_id', evento_id).order('concepto', desc=False).execute()
+            return {"partidas": r.data or []}
+        # Filtrar por temporada: primero buscamos eventos de esa temporada
+        ev_ids = None
+        if temporada:
+            ev_res = supabase.table('eventos').select('id').eq('temporada', temporada).execute()
+            ev_ids = [e['id'] for e in (ev_res.data or [])]
+            if not ev_ids:
+                return {"partidas": []}
+        q = supabase.table('presupuestos').select('*')
+        if ev_ids is not None:
+            q = q.in_('evento_id', ev_ids)
+        r = q.order('concepto', desc=False).execute()
+        return {"partidas": r.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al listar presupuestos: {str(e)}")
+
+
+@router.post("/presupuestos")
+async def create_presupuesto(data: PresupuestoItem, current_user: dict = Depends(get_current_gestor)):
+    try:
+        r = supabase.table('presupuestos').insert(data.model_dump(exclude_none=True)).execute()
+        return {"partida": r.data[0] if r.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al crear partida: {str(e)}")
+
+
+@router.put("/presupuestos/{partida_id}")
+async def update_presupuesto(partida_id: str, data: PresupuestoItem, current_user: dict = Depends(get_current_gestor)):
+    try:
+        payload = data.model_dump(exclude_none=True)
+        payload['updated_at'] = datetime.now().isoformat()
+        r = supabase.table('presupuestos').update(payload).eq('id', partida_id).execute()
+        return {"partida": r.data[0] if r.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar partida: {str(e)}")
+
+
+@router.delete("/presupuestos/{partida_id}")
+async def delete_presupuesto(partida_id: str, current_user: dict = Depends(get_current_gestor)):
+    try:
+        supabase.table('presupuestos').delete().eq('id', partida_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar partida: {str(e)}")
+
+
+class PresupuestosBulkRequest(BaseModel):
+    partidas: List[PresupuestoBulkItem]
+    eliminar_ids: List[str] = []
+
+
+@router.post("/presupuestos/bulk")
+async def bulk_presupuestos(data: PresupuestosBulkRequest, current_user: dict = Depends(get_current_gestor)):
+    """Guardado masivo: crea / actualiza / borra partidas en una sola llamada."""
+    try:
+        now = datetime.now().isoformat()
+        creados = 0
+        actualizados = 0
+        for p in data.partidas:
+            base = p.model_dump(exclude_none=True)
+            base.pop('id', None)
+            base['updated_at'] = now
+            if p.id:
+                supabase.table('presupuestos').update(base).eq('id', p.id).execute()
+                actualizados += 1
+            else:
+                supabase.table('presupuestos').insert(base).execute()
+                creados += 1
+        borrados = 0
+        for pid in (data.eliminar_ids or []):
+            supabase.table('presupuestos').delete().eq('id', pid).execute()
+            borrados += 1
+        return {"ok": True, "creados": creados, "actualizados": actualizados, "borrados": borrados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar presupuestos: {str(e)}")
+
+
+# ==================================================================
+# BLOQUE 5 — Gestión Económica (contabilidad, marcar pagos, export xlsx)
+# ==================================================================
+
+@router.get("/gestion-economica")
+async def get_gestion_economica(
+    temporada: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """
+    Devuelve la misma estructura que /plantillas-definitivas pero añadiendo
+    datos de contabilidad por músico: iban, swift, titulaciones y estado_pago.
+    """
+    try:
+        # Arrancamos con asignaciones confirmadas
+        a_res = supabase.table('asignaciones') \
+            .select('id,usuario_id,evento_id,estado,estado_pago,cache_presupuestado,importe,numero_atril,letra,comentarios,nivel_estudios,porcentaje_asistencia') \
+            .eq('estado', 'confirmado') \
+            .execute()
+        confirmadas = a_res.data or []
+        if not confirmadas:
+            return {"eventos": [], "total_temporada": 0}
+
+        evento_ids = list({a['evento_id'] for a in confirmadas})
+        usuario_ids = list({a['usuario_id'] for a in confirmadas})
+
+        ev_q = supabase.table('eventos').select('*').in_('id', evento_ids)
+        if temporada:
+            ev_q = ev_q.eq('temporada', temporada)
+        eventos_raw = ev_q.order('fecha_inicio', desc=False).execute().data or []
+        evento_ids_vistos = [e['id'] for e in eventos_raw]
+
+        ens_res = supabase.table('ensayos').select('*').in_('evento_id', evento_ids_vistos).execute()
+        ensayos_by_evento = {}
+        for e in (ens_res.data or []):
+            ensayos_by_evento.setdefault(e['evento_id'], []).append(e)
+        for evid, lst in ensayos_by_evento.items():
+            lst.sort(key=lambda x: (0 if (x.get('tipo') or 'ensayo') == 'ensayo' else 1,
+                                     x.get('fecha') or '', x.get('hora') or ''))
+
+        usuarios_res = supabase.table('usuarios') \
+            .select('id,nombre,apellidos,email,instrumento,especialidad,nivel_estudios,baremo,localidad,direccion,anos_experiencia,iban,swift,titulaciones') \
+            .in_('id', usuario_ids).execute()
+        usuarios_by_id = {u['id']: u for u in (usuarios_res.data or [])}
+
+        ensayo_ids = [e['id'] for evs in ensayos_by_evento.values() for e in evs]
+        disp_by_pair = {}
+        if ensayo_ids:
+            d_res = supabase.table('disponibilidad') \
+                .select('id,usuario_id,ensayo_id,asiste,asistencia_real') \
+                .in_('ensayo_id', ensayo_ids) \
+                .in_('usuario_id', usuario_ids) \
+                .execute()
+            for d in (d_res.data or []):
+                disp_by_pair[(d['usuario_id'], d['ensayo_id'])] = d
+
+        gastos_res = supabase.table('gastos_adicionales').select('*') \
+            .in_('evento_id', evento_ids_vistos).in_('usuario_id', usuario_ids).execute()
+        gastos_by_pair = {(g['usuario_id'], g['evento_id']): g for g in (gastos_res.data or [])}
+
+        cachets_res = supabase.table('cachets_config').select('*') \
+            .in_('evento_id', evento_ids_vistos).execute()
+        cachets_by_evento = {}
+        for c in (cachets_res.data or []):
+            cachets_by_evento.setdefault(c['evento_id'], []).append(c)
+
+        total_temporada = 0.0
+        eventos_out = []
+        for ev in eventos_raw:
+            ensayos = ensayos_by_evento.get(ev['id'], [])
+            asigs_ev = [a for a in confirmadas if a['evento_id'] == ev['id']]
+            secciones_map = {key: [] for key, _label in SECCIONES_ORDER}
+            sin_seccion = []
+            total_ev = {"cache_previsto": 0.0, "cache_real": 0.0, "extras": 0.0,
+                        "transporte": 0.0, "alojamiento": 0.0, "otros": 0.0, "total": 0.0}
+            for a in asigs_ev:
+                u = usuarios_by_id.get(a['usuario_id'])
+                if not u:
+                    continue
+                asist_list = []
+                for e in ensayos:
+                    d = disp_by_pair.get((u['id'], e['id']))
+                    asist_list.append({
+                        "ensayo_id": e['id'],
+                        "asistencia_real": d.get('asistencia_real') if d else None,
+                    })
+                si_disp = sum(1 for e in ensayos if (disp_by_pair.get((u['id'], e['id'])) or {}).get('asiste') is True)
+                pct_disp = round((si_disp / len(ensayos)) * 100) if ensayos else 0
+                vals = [float(x['asistencia_real']) for x in asist_list if x['asistencia_real'] is not None]
+                pct_real = round(sum(vals) / len(vals), 2) if vals else 0
+
+                nivel_efectivo = a.get('nivel_estudios') or _nivel_estudios_efectivo(u)
+                cache_prev = _cachet_lookup(cachets_by_evento.get(ev['id'], []), u.get('instrumento'), nivel_efectivo)
+                if cache_prev is None:
+                    cache_prev = float(a.get('cache_presupuestado') or a.get('importe') or 0)
+                cache_real = round(cache_prev * (pct_real / 100.0), 2)
+                g = gastos_by_pair.get((u['id'], ev['id'])) or {}
+                extras = float(g.get('cache_extra') or 0)
+                transp = float(g.get('transporte_importe') or 0)
+                aloj = float(g.get('alojamiento_importe') or 0)
+                otros = float(g.get('otros_importe') or 0)
+                total = round(cache_real + extras + transp + aloj + otros, 2)
+
+                total_ev["cache_previsto"] += cache_prev
+                total_ev["cache_real"]     += cache_real
+                total_ev["extras"]         += extras
+                total_ev["transporte"]     += transp
+                total_ev["alojamiento"]    += aloj
+                total_ev["otros"]          += otros
+                total_ev["total"]          += total
+
+                musico_row = {
+                    "asignacion_id": a['id'],
+                    "usuario_id": u['id'],
+                    "nombre": u.get('nombre') or '',
+                    "apellidos": u.get('apellidos') or '',
+                    "email": u.get('email') or '',
+                    "instrumento": u.get('instrumento'),
+                    "especialidad": u.get('especialidad'),
+                    "nivel_estudios": nivel_efectivo,
+                    "iban": u.get('iban'),
+                    "swift": u.get('swift'),
+                    "titulaciones": u.get('titulaciones') or [],
+                    "numero_atril": a.get('numero_atril'),
+                    "letra": a.get('letra'),
+                    "estado_pago": a.get('estado_pago') or 'pendiente',
+                    "asistencia": asist_list,
+                    "porcentaje_disponibilidad": pct_disp,
+                    "porcentaje_asistencia_real": pct_real,
+                    "cache_previsto": round(cache_prev, 2),
+                    "cache_real": cache_real,
+                    "cache_extra": extras,
+                    "transporte_importe": transp,
+                    "alojamiento_importe": aloj,
+                    "otros_importe": otros,
+                    "total": total,
+                }
+                sec_key = seccion_de_instrumento(u.get('instrumento'))
+                if sec_key:
+                    secciones_map[sec_key].append(musico_row)
+                else:
+                    sin_seccion.append(musico_row)
+
+            secciones_out = []
+            for key, label in SECCIONES_ORDER:
+                lst = secciones_map[key]
+                if not lst:
+                    continue
+                sec_tot = {
+                    "cache_previsto": round(sum(m["cache_previsto"] for m in lst), 2),
+                    "cache_real":     round(sum(m["cache_real"] for m in lst), 2),
+                    "transporte":     round(sum(m["transporte_importe"] for m in lst), 2),
+                    "alojamiento":    round(sum(m["alojamiento_importe"] for m in lst), 2),
+                    "otros":          round(sum(m["otros_importe"] for m in lst), 2),
+                    "total":          round(sum(m["total"] for m in lst), 2),
+                    "extras":         round(sum(m["cache_extra"] for m in lst), 2),
+                }
+                secciones_out.append({
+                    "key": key, "label": label,
+                    "count": len(lst),
+                    "musicos": lst,
+                    "totales": sec_tot,
+                })
+            if sin_seccion:
+                sec_tot = {
+                    "cache_previsto": round(sum(m["cache_previsto"] for m in sin_seccion), 2),
+                    "cache_real":     round(sum(m["cache_real"] for m in sin_seccion), 2),
+                    "transporte":     round(sum(m["transporte_importe"] for m in sin_seccion), 2),
+                    "alojamiento":    round(sum(m["alojamiento_importe"] for m in sin_seccion), 2),
+                    "otros":          round(sum(m["otros_importe"] for m in sin_seccion), 2),
+                    "total":          round(sum(m["total"] for m in sin_seccion), 2),
+                    "extras":         round(sum(m["cache_extra"] for m in sin_seccion), 2),
+                }
+                secciones_out.append({"key":"otros","label":"Sin sección","count":len(sin_seccion),
+                                      "musicos":sin_seccion,"totales":sec_tot})
+
+            eventos_out.append({
+                "id": ev['id'],
+                "nombre": ev.get('nombre'),
+                "fecha_inicio": ev.get('fecha_inicio'),
+                "hora_inicio": ev.get('hora_inicio'),
+                "estado": ev.get('estado'),
+                "temporada": ev.get('temporada'),
+                "ensayos": ensayos,
+                "total_musicos": len(asigs_ev),
+                "totales": {k: round(v, 2) for k, v in total_ev.items()},
+                "secciones": secciones_out,
+            })
+            total_temporada += total_ev["total"]
+
+        return {"eventos": eventos_out, "total_temporada": round(total_temporada, 2)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en gestión económica: {str(e)}")
+
+
+@router.put("/asignaciones/{asignacion_id}/pago")
+async def marcar_pago(asignacion_id: str, payload: dict, current_user: dict = Depends(get_current_gestor)):
+    """Marca estado_pago de una asignación. {estado_pago: 'pagado'|'pendiente'|'anulado'}"""
+    try:
+        estado = payload.get('estado_pago') or 'pendiente'
+        r = supabase.table('asignaciones').update({
+            "estado_pago": estado,
+            "updated_at": datetime.now().isoformat(),
+        }).eq('id', asignacion_id).execute()
+        return {"ok": True, "asignacion": r.data[0] if r.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al marcar pago: {str(e)}")
+
+
+@router.get("/gestion-economica/export")
+async def export_gestion_xlsx(
+    evento_id: Optional[str] = None,
+    temporada: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Descarga .xlsx con los datos económicos. Si evento_id, solo ese evento."""
+    from fastapi.responses import StreamingResponse as SR
+    # Reutilizamos la consulta GET
+    data = await get_gestion_economica(temporada=temporada, current_user=current_user)
+    eventos = data.get("eventos", [])
+    if evento_id:
+        eventos = [e for e in eventos if e['id'] == evento_id]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Economía"
+    headers = ["Evento","Sección","Apellidos, Nombre","Instrumento","Especialidad","Nivel",
+               "IBAN","SWIFT","% Disp.","% Asist. Real","Caché Prev.","Caché Real","Extras",
+               "Transporte","Alojamiento","Otros","TOTAL","Estado Pago"]
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for ev in eventos:
+        for sec in ev.get("secciones", []):
+            for m in sec.get("musicos", []):
+                ws.append([
+                    ev.get("nombre",""), sec.get("label",""),
+                    f"{m.get('apellidos','')}, {m.get('nombre','')}",
+                    m.get("instrumento") or "",
+                    m.get("especialidad") or "",
+                    m.get("nivel_estudios") or "",
+                    m.get("iban") or "",
+                    m.get("swift") or "",
+                    m.get("porcentaje_disponibilidad"),
+                    m.get("porcentaje_asistencia_real"),
+                    m.get("cache_previsto"),
+                    m.get("cache_real"),
+                    m.get("cache_extra"),
+                    m.get("transporte_importe"),
+                    m.get("alojamiento_importe"),
+                    m.get("otros_importe"),
+                    m.get("total"),
+                    m.get("estado_pago"),
+                ])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"gestion_economica_{evento_id or temporada or 'todos'}.xlsx"
+    return SR(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ==================================================================
+# BLOQUE 6 — Análisis económico + export SEPA XML pain.001
+# ==================================================================
+
+@router.get("/analisis/resumen")
+async def get_analisis_resumen(
+    temporada: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Devuelve métricas agregadas de la temporada para la página de análisis."""
+    try:
+        data = await get_gestion_economica(temporada=temporada, current_user=current_user)
+        eventos = data.get("eventos", [])
+        total_prev = sum(ev["totales"]["cache_previsto"] for ev in eventos)
+        total_real = sum(ev["totales"]["total"] for ev in eventos)
+        total_musicos = 0
+        asistencias_pct = []
+        por_evento = []
+        por_seccion = {}
+        for ev in eventos:
+            musicos = sum(sec["count"] for sec in ev["secciones"])
+            total_musicos += musicos
+            pct_medio = 0
+            n = 0
+            for sec in ev["secciones"]:
+                for m in sec["musicos"]:
+                    pct_medio += m["porcentaje_asistencia_real"]
+                    n += 1
+                por_seccion[sec["label"]] = por_seccion.get(sec["label"], 0) + sec["totales"]["total"]
+            pct_medio = round(pct_medio / n, 2) if n else 0
+            asistencias_pct.append(pct_medio)
+            por_evento.append({
+                "id": ev["id"],
+                "nombre": ev["nombre"],
+                "fecha_inicio": ev.get("fecha_inicio"),
+                "musicos": musicos,
+                "pct_asistencia_medio": pct_medio,
+                "cache_previsto": ev["totales"]["cache_previsto"],
+                "total": ev["totales"]["total"],
+            })
+        pct_asistencia_temporada = round(sum(asistencias_pct) / len(asistencias_pct), 2) if asistencias_pct else 0
+
+        # Total músicos convocados (asignaciones en eventos de la temporada)
+        convocados_q = supabase.table('asignaciones').select('usuario_id, evento_id')
+        if temporada:
+            ev_ids = [e['id'] for e in eventos]
+            if ev_ids:
+                convocados_q = convocados_q.in_('evento_id', ev_ids)
+        convocados_res = convocados_q.execute()
+        total_convocados = len({a['usuario_id'] for a in (convocados_res.data or [])})
+
+        return {
+            "total_eventos": len(eventos),
+            "total_musicos_convocados": total_convocados,
+            "total_musicos_confirmados": total_musicos,
+            "pct_asistencia_medio": pct_asistencia_temporada,
+            "coste_previsto": round(total_prev, 2),
+            "coste_real": round(total_real, 2),
+            "diferencia": round(total_real - total_prev, 2),
+            "por_evento": por_evento,
+            "por_seccion": [{"seccion": k, "importe": round(v, 2)} for k, v in por_seccion.items()],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
+
+
+@router.get("/analisis/sepa-xml")
+async def export_sepa_xml(
+    temporada: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Genera XML SEPA pain.001.001.03 con las liquidaciones por músico."""
+    from fastapi.responses import Response
+    data = await get_gestion_economica(temporada=temporada, current_user=current_user)
+    eventos = data.get("eventos", [])
+    # Agrupar por músico: acumular el total a percibir
+    por_musico = {}
+    for ev in eventos:
+        for sec in ev.get("secciones", []):
+            for m in sec.get("musicos", []):
+                uid = m["usuario_id"]
+                if uid not in por_musico:
+                    por_musico[uid] = {
+                        "nombre": f"{m['nombre']} {m['apellidos']}".strip(),
+                        "iban": m.get("iban") or "",
+                        "swift": m.get("swift") or "",
+                        "total": 0.0,
+                    }
+                por_musico[uid]["total"] += m.get("total", 0)
+    now = datetime.now()
+    msg_id = f"OPUS-{now.strftime('%Y%m%d%H%M%S')}"
+    total_general = round(sum(p["total"] for p in por_musico.values()), 2)
+    tx_count = sum(1 for p in por_musico.values() if p["total"] > 0 and p["iban"])
+
+    def esc(s):
+        return (s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+
+    txs = []
+    idx = 0
+    for p in por_musico.values():
+        if not p["iban"] or p["total"] <= 0:
+            continue
+        idx += 1
+        txs.append(f"""
+    <CdtTrfTxInf>
+      <PmtId><EndToEndId>OPUS-{idx:04d}</EndToEndId></PmtId>
+      <Amt><InstdAmt Ccy="EUR">{p["total"]:.2f}</InstdAmt></Amt>
+      {f'<CdtrAgt><FinInstnId><BIC>{esc(p["swift"])}</BIC></FinInstnId></CdtrAgt>' if p["swift"] else ''}
+      <Cdtr><Nm>{esc(p["nombre"])}</Nm></Cdtr>
+      <CdtrAcct><Id><IBAN>{esc(p["iban"].replace(' ',''))}</IBAN></Id></CdtrAcct>
+      <RmtInf><Ustrd>Liquidación Opus Manager {esc(temporada or '')}</Ustrd></RmtInf>
+    </CdtTrfTxInf>""")
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>{msg_id}</MsgId>
+      <CreDtTm>{now.strftime('%Y-%m-%dT%H:%M:%S')}</CreDtTm>
+      <NbOfTxs>{tx_count}</NbOfTxs>
+      <CtrlSum>{total_general:.2f}</CtrlSum>
+      <InitgPty><Nm>Opus Manager</Nm></InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>{msg_id}-PMT</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <NbOfTxs>{tx_count}</NbOfTxs>
+      <CtrlSum>{total_general:.2f}</CtrlSum>
+      <PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>
+      <ReqdExctnDt>{now.strftime('%Y-%m-%d')}</ReqdExctnDt>
+      <Dbtr><Nm>Opus Manager</Nm></Dbtr>
+      <DbtrAcct><Id><IBAN>ES0000000000000000000000</IBAN></Id></DbtrAcct>
+      <DbtrAgt><FinInstnId><Othr><Id>NOTPROVIDED</Id></Othr></FinInstnId></DbtrAgt>
+      {''.join(txs)}
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>"""
+    return Response(
+        content=xml,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="sepa_liquidaciones_{temporada or "todas"}.xml"'}
+    )
+
+
+# ==================================================================
+# BLOQUE 7 — Tareas (CRUD)
+# ==================================================================
+
+class TareaCreate(BaseModel):
+    titulo: str
+    descripcion: Optional[str] = None
+    evento_id: Optional[str] = None
+    responsable_id: Optional[str] = None
+    responsable_nombre: Optional[str] = None
+    fecha_inicio: Optional[str] = None
+    fecha_limite: str
+    prioridad: Optional[str] = 'media'
+    estado: Optional[str] = 'pendiente'
+    categoria: Optional[str] = 'otro'
+    recordatorio_fecha: Optional[str] = None
+
+
+class TareaUpdate(BaseModel):
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    evento_id: Optional[str] = None
+    responsable_id: Optional[str] = None
+    responsable_nombre: Optional[str] = None
+    fecha_inicio: Optional[str] = None
+    fecha_limite: Optional[str] = None
+    prioridad: Optional[str] = None
+    estado: Optional[str] = None
+    categoria: Optional[str] = None
+    recordatorio_fecha: Optional[str] = None
+
+
+@router.get("/tareas")
+async def list_tareas(current_user: dict = Depends(get_current_gestor)):
+    try:
+        r = supabase.table('tareas').select('*').order('fecha_limite', desc=False).execute()
+        return {"tareas": r.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al listar tareas: {str(e)}")
+
+
+@router.post("/tareas")
+async def create_tarea(data: TareaCreate, current_user: dict = Depends(get_current_gestor)):
+    try:
+        payload = data.model_dump(exclude_none=True)
+        r = supabase.table('tareas').insert(payload).execute()
+        return {"tarea": r.data[0] if r.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
+
+
+@router.put("/tareas/{tarea_id}")
+async def update_tarea(tarea_id: str, data: TareaUpdate, current_user: dict = Depends(get_current_gestor)):
+    try:
+        payload = data.model_dump(exclude_none=True)
+        payload['updated_at'] = datetime.now().isoformat()
+        r = supabase.table('tareas').update(payload).eq('id', tarea_id).execute()
+        return {"tarea": r.data[0] if r.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar tarea: {str(e)}")
+
+
+@router.delete("/tareas/{tarea_id}")
+async def delete_tarea(tarea_id: str, current_user: dict = Depends(get_current_gestor)):
+    try:
+        supabase.table('tareas').delete().eq('id', tarea_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar tarea: {str(e)}")
+
+
+@router.get("/gestores")
+async def list_gestores(current_user: dict = Depends(get_current_gestor)):
+    try:
+        r = supabase.table('usuarios').select('id,nombre,apellidos,email').eq('rol','gestor').order('apellidos').execute()
+        return {"gestores": r.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al listar gestores: {str(e)}")
+
