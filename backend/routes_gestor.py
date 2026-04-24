@@ -243,102 +243,270 @@ async def update_evento(
             detail=f"Error al actualizar evento: {str(e)}"
         )
 
-# ==================== Seguimiento de Convocatorias (pivot) ====================
+# ==================== Seguimiento de Plantillas (Bloque D) ====================
+
+from instrumentos import (
+    SECCIONES_ORDER,
+    seccion_de_instrumento,
+    instrumento_sort_key,
+)
+
+def _funciones_del_evento(ev: dict) -> List[dict]:
+    """Devuelve la lista de 'funciones' (fecha principal + secundarias) de un evento."""
+    funciones = []
+    if ev.get('fecha_inicio'):
+        funciones.append({"fecha": ev['fecha_inicio'], "hora": None, "label": "Principal"})
+    for i in range(1, 5):
+        f = ev.get(f'fecha_secundaria_{i}')
+        h = ev.get(f'hora_secundaria_{i}')
+        if f:
+            funciones.append({"fecha": f, "hora": h, "label": f"Función {i + 1}"})
+    return funciones
+
+
+def _nivel_estudios_efectivo(u: dict) -> Optional[str]:
+    """Fallback: si no hay nivel_estudios, usa especialidad."""
+    return u.get('nivel_estudios') or u.get('especialidad') or None
+
+
+def _localidad_efectiva(u: dict) -> Optional[str]:
+    """Fallback: si no hay localidad, extrae de direccion (última coma)."""
+    if u.get('localidad'):
+        return u['localidad']
+    direccion = (u.get('direccion') or '').strip()
+    if ',' in direccion:
+        return direccion.rsplit(',', 1)[-1].strip() or None
+    return None
+
 
 @router.get("/seguimiento")
 async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
     """
-    Devuelve datos para la tabla pivot de seguimiento:
-      - eventos activos (estado='abierto') con sus fechas principal + secundarias
-      - todos los músicos activos
-      - asignaciones indexadas como { "<musico_id>_<evento_id>": asignacion }
-    El frontend construye la tabla músicos × eventos.
+    Seguimiento de Plantillas — Estructura pivot Músicos × Eventos.
+
+    Respuesta:
+      {
+        eventos: [{id, nombre, estado ('borrador'|'abierto'), fechas[], ensayos:[{id,tipo,fecha,hora,obligatorio}]}],
+        musicos: [{
+          id, nombre, apellidos, email, instrumento, especialidad,
+          nivel_estudios (efectivo), baremo, localidad (efectiva), anos_experiencia,
+          asignaciones: {
+            evento_id: {
+              asignacion_id, estado, publicado_musico,
+              disponibilidad: { ensayo_id: {asiste, asistencia_real} },
+              porcentaje_disponibilidad, porcentaje_asistencia_real
+            }
+          }
+        }]
+      }
     """
     try:
+        # 1) Eventos abiertos o borrador
         eventos_res = supabase.table('eventos') \
             .select('*') \
-            .eq('estado', 'abierto') \
+            .in_('estado', ['borrador', 'abierto']) \
             .order('fecha_inicio', desc=False) \
             .execute()
-        eventos = eventos_res.data or []
+        eventos_raw = eventos_res.data or []
+        evento_ids = [e['id'] for e in eventos_raw]
 
-        # Lista compacta de fechas por evento (principal + secundarias)
+        # 2) Ensayos de esos eventos
+        ensayos_map = {}  # evento_id -> [ensayos]
+        if evento_ids:
+            ens_res = supabase.table('ensayos') \
+                .select('id,evento_id,tipo,fecha,hora,obligatorio,lugar') \
+                .in_('evento_id', evento_ids) \
+                .order('fecha', desc=False) \
+                .execute()
+            for e in (ens_res.data or []):
+                ensayos_map.setdefault(e['evento_id'], []).append(e)
+
         eventos_out = []
-        evento_ids = []
-        for ev in eventos:
-            funciones = []
-            if ev.get('fecha_inicio'):
-                funciones.append({"fecha": ev['fecha_inicio'], "hora": None, "label": "Principal"})
-            for i in range(1, 5):
-                f = ev.get(f'fecha_secundaria_{i}')
-                h = ev.get(f'hora_secundaria_{i}')
-                if f:
-                    funciones.append({"fecha": f, "hora": h, "label": f"Función {i + 1}"})
+        for ev in eventos_raw:
             eventos_out.append({
                 "id": ev['id'],
                 "nombre": ev.get('nombre'),
-                "temporada": ev.get('temporada'),
+                "estado": ev.get('estado'),
                 "tipo": ev.get('tipo'),
                 "lugar": ev.get('lugar'),
+                "temporada": ev.get('temporada'),
                 "fecha_inicio": ev.get('fecha_inicio'),
                 "fecha_fin": ev.get('fecha_fin'),
-                "funciones": funciones,
+                "fechas": _funciones_del_evento(ev),
+                "ensayos": ensayos_map.get(ev['id'], []),
             })
-            evento_ids.append(ev['id'])
 
+        # 3) Músicos activos
         musicos_res = supabase.table('usuarios') \
-            .select('id,nombre,apellidos,email,instrumento,estado') \
+            .select('id,nombre,apellidos,email,instrumento,especialidad,nivel_estudios,baremo,localidad,direccion,anos_experiencia,estado') \
             .eq('rol', 'musico') \
             .eq('estado', 'activo') \
             .order('apellidos', desc=False) \
             .execute()
-        musicos = musicos_res.data or []
+        musicos_raw = musicos_res.data or []
 
-        # Cargar asignaciones de esos eventos
-        asigs_map = {}
+        # 4) Asignaciones
+        asigs_list = []
         if evento_ids:
             a_res = supabase.table('asignaciones') \
-                .select('id,usuario_id,evento_id,estado,importe') \
+                .select('id,usuario_id,evento_id,estado,publicado_musico,cache_presupuestado,importe') \
                 .in_('evento_id', evento_ids) \
                 .execute()
-            for a in (a_res.data or []):
-                key = f"{a['usuario_id']}_{a['evento_id']}"
-                asigs_map[key] = a
+            asigs_list = a_res.data or []
 
-        return {
-            "eventos": eventos_out,
-            "musicos": musicos,
-            "asignaciones": asigs_map,
-        }
+        # 5) Disponibilidades de esos usuarios (solo para los ensayos conocidos)
+        ensayo_ids = [e['id'] for evlist in ensayos_map.values() for e in evlist]
+        disp_map = {}  # (usuario_id, ensayo_id) -> disponibilidad
+        if ensayo_ids:
+            d_res = supabase.table('disponibilidad') \
+                .select('id,usuario_id,ensayo_id,asiste,asistencia_real') \
+                .in_('ensayo_id', ensayo_ids) \
+                .execute()
+            for d in (d_res.data or []):
+                disp_map[(d['usuario_id'], d['ensayo_id'])] = d
+
+        # Index asignaciones por (usuario_id, evento_id)
+        asig_index = {(a['usuario_id'], a['evento_id']): a for a in asigs_list}
+
+        # Total ensayos por evento
+        total_ensayos_por_evento = {eid: len(evs) for eid, evs in ensayos_map.items()}
+
+        musicos_out = []
+        for u in musicos_raw:
+            m = {
+                "id": u['id'],
+                "nombre": u.get('nombre') or '',
+                "apellidos": u.get('apellidos') or '',
+                "email": u.get('email') or '',
+                "instrumento": u.get('instrumento'),
+                "especialidad": u.get('especialidad'),
+                "nivel_estudios": _nivel_estudios_efectivo(u),
+                "baremo": u.get('baremo'),
+                "localidad": _localidad_efectiva(u),
+                "anos_experiencia": u.get('anos_experiencia'),
+                "asignaciones": {}
+            }
+            for ev in eventos_raw:
+                asig = asig_index.get((u['id'], ev['id']))
+                ensayos = ensayos_map.get(ev['id'], [])
+                disp_by_ensayo = {}
+                si_disp = 0
+                si_real = 0
+                for e in ensayos:
+                    d = disp_map.get((u['id'], e['id']))
+                    if d:
+                        disp_by_ensayo[e['id']] = {
+                            "asiste": d.get('asiste'),
+                            "asistencia_real": d.get('asistencia_real'),
+                            "disponibilidad_id": d.get('id'),
+                        }
+                        if d.get('asiste') is True:
+                            si_disp += 1
+                        if d.get('asistencia_real') is True:
+                            si_real += 1
+                total_e = total_ensayos_por_evento.get(ev['id'], 0) or 0
+                pct_disp = round((si_disp / total_e) * 100) if total_e else 0
+                pct_real = round((si_real / total_e) * 100) if total_e else 0
+
+                m["asignaciones"][ev['id']] = {
+                    "asignacion_id": asig['id'] if asig else None,
+                    "estado": asig['estado'] if asig else None,
+                    "publicado_musico": bool(asig.get('publicado_musico')) if asig else False,
+                    "disponibilidad": disp_by_ensayo,
+                    "porcentaje_disponibilidad": pct_disp,
+                    "porcentaje_asistencia_real": pct_real,
+                }
+            musicos_out.append(m)
+
+        return {"eventos": eventos_out, "musicos": musicos_out}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en seguimiento: {str(e)}")
 
 
-class SeguimientoBulkUpdate(BaseModel):
-    evento_id: str
+class PublicarRequest(BaseModel):
     usuario_ids: List[str]
-    estado: str  # 'pendiente' | 'confirmado' | 'rechazado' | 'no_disponible' | 'excluido'
+    evento_id: str
+    publicar: bool
 
 
-@router.post("/seguimiento/bulk")
-async def seguimiento_bulk(
-    data: SeguimientoBulkUpdate,
+@router.post("/seguimiento/publicar")
+async def seguimiento_publicar(
+    data: PublicarRequest,
     current_user: dict = Depends(get_current_gestor)
 ):
     """
-    Aplica un cambio de estado a varios músicos para un evento.
-    - Si la asignación existe: UPDATE estado.
-    - Si no existe: INSERT (estado + usuario_id + evento_id).
-    Devuelve resumen { actualizados, creados }.
+    Crea o actualiza asignaciones para publicar/despublicar un evento a un conjunto de músicos.
+    - publicar=True:  crea asignación con estado='pendiente', publicado_musico=True, fecha_publicacion=NOW.
+                     Si ya existe, sólo actualiza publicado_musico=True + fecha_publicacion.
+    - publicar=False: si existe, publicado_musico=False. Si no existe, no hace nada.
     """
+    if not data.usuario_ids:
+        return {"publicados": 0, "despublicados": 0, "creados": 0}
+
+    try:
+        existing_res = supabase.table('asignaciones') \
+            .select('id,usuario_id,publicado_musico') \
+            .eq('evento_id', data.evento_id) \
+            .in_('usuario_id', data.usuario_ids) \
+            .execute()
+        existing_by_user = {a['usuario_id']: a for a in (existing_res.data or [])}
+
+        publicados = 0
+        despublicados = 0
+        creados = 0
+        now = datetime.now().isoformat()
+
+        for uid in data.usuario_ids:
+            existing = existing_by_user.get(uid)
+            if data.publicar:
+                if existing:
+                    supabase.table('asignaciones').update({
+                        "publicado_musico": True,
+                        "fecha_publicacion": now,
+                        "updated_at": now,
+                    }).eq('id', existing['id']).execute()
+                    publicados += 1
+                else:
+                    supabase.table('asignaciones').insert({
+                        "usuario_id": uid,
+                        "evento_id": data.evento_id,
+                        "estado": "pendiente",
+                        "publicado_musico": True,
+                        "fecha_publicacion": now,
+                    }).execute()
+                    creados += 1
+            else:
+                if existing:
+                    supabase.table('asignaciones').update({
+                        "publicado_musico": False,
+                        "updated_at": now,
+                    }).eq('id', existing['id']).execute()
+                    despublicados += 1
+
+        return {"publicados": publicados, "despublicados": despublicados, "creados": creados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al publicar: {str(e)}")
+
+
+class BulkAccionRequest(BaseModel):
+    usuario_ids: List[str]
+    evento_id: str
+    accion: str  # 'pendiente' | 'confirmado' | 'no_disponible' | 'excluido' | 'rechazado'
+
+
+@router.post("/seguimiento/bulk-accion")
+async def seguimiento_bulk_accion(
+    data: BulkAccionRequest,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Aplica un cambio de estado a varios músicos para un evento (UPSERT)."""
     valid = {'pendiente', 'confirmado', 'rechazado', 'no_disponible', 'excluido'}
-    if data.estado not in valid:
-        raise HTTPException(status_code=400, detail=f"Estado inválido. Usa: {sorted(valid)}")
+    if data.accion not in valid:
+        raise HTTPException(status_code=400, detail=f"Acción inválida. Usa: {sorted(valid)}")
     if not data.usuario_ids:
         return {"actualizados": 0, "creados": 0}
 
     try:
-        # Obtener asignaciones existentes de esos usuarios para el evento
         existing_res = supabase.table('asignaciones') \
             .select('id,usuario_id') \
             .eq('evento_id', data.evento_id) \
@@ -352,7 +520,7 @@ async def seguimiento_bulk(
         for uid in data.usuario_ids:
             if uid in existing_by_user:
                 supabase.table('asignaciones') \
-                    .update({"estado": data.estado, "updated_at": now}) \
+                    .update({"estado": data.accion, "updated_at": now}) \
                     .eq('id', existing_by_user[uid]) \
                     .execute()
                 actualizados += 1
@@ -360,13 +528,465 @@ async def seguimiento_bulk(
                 supabase.table('asignaciones').insert({
                     "usuario_id": uid,
                     "evento_id": data.evento_id,
-                    "estado": data.estado,
+                    "estado": data.accion,
                 }).execute()
                 creados += 1
 
         return {"actualizados": actualizados, "creados": creados}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en actualización masiva: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en acción masiva: {str(e)}")
+
+
+# ==================== Plantillas Definitivas (Bloque D) ====================
+
+def _cachet_lookup(cachets_rows: List[dict], instrumento: Optional[str], nivel: Optional[str]) -> Optional[float]:
+    """Busca en cachets_config el importe para (instrumento, nivel). Case-insensitive."""
+    if not instrumento:
+        return None
+    i = str(instrumento).strip().lower()
+    n = str(nivel or '').strip().lower()
+    # Match exacto instrumento+nivel
+    for r in cachets_rows:
+        if (r.get('instrumento') or '').strip().lower() == i and \
+           (r.get('nivel_estudios') or '').strip().lower() == n:
+            return float(r['importe']) if r.get('importe') is not None else None
+    # Fallback: solo instrumento (nivel NULL/vacío en config)
+    for r in cachets_rows:
+        if (r.get('instrumento') or '').strip().lower() == i and \
+           not (r.get('nivel_estudios') or '').strip():
+            return float(r['importe']) if r.get('importe') is not None else None
+    return None
+
+
+@router.get("/plantillas-definitivas")
+async def get_plantillas_definitivas(current_user: dict = Depends(get_current_gestor)):
+    """
+    Devuelve eventos que tienen al menos un músico confirmado,
+    agrupados por sección instrumental, con todos los cálculos
+    necesarios para la pantalla (disponibilidad, asistencia real,
+    cachet previsto/real, gastos adicionales).
+    """
+    try:
+        # Asignaciones confirmadas
+        a_res = supabase.table('asignaciones') \
+            .select('id,usuario_id,evento_id,estado,cache_presupuestado,importe,numero_atril,letra,comentarios,nivel_estudios,porcentaje_asistencia') \
+            .eq('estado', 'confirmado') \
+            .execute()
+        confirmadas = a_res.data or []
+        if not confirmadas:
+            return {"eventos": []}
+
+        evento_ids = list({a['evento_id'] for a in confirmadas})
+        usuario_ids = list({a['usuario_id'] for a in confirmadas})
+
+        eventos_res = supabase.table('eventos') \
+            .select('*') \
+            .in_('id', evento_ids) \
+            .order('fecha_inicio', desc=False) \
+            .execute()
+        eventos_raw = eventos_res.data or []
+
+        ens_res = supabase.table('ensayos') \
+            .select('id,evento_id,tipo,fecha,hora,obligatorio,lugar') \
+            .in_('evento_id', evento_ids) \
+            .order('fecha', desc=False) \
+            .execute()
+        ensayos_by_evento = {}
+        for e in (ens_res.data or []):
+            ensayos_by_evento.setdefault(e['evento_id'], []).append(e)
+
+        usuarios_res = supabase.table('usuarios') \
+            .select('id,nombre,apellidos,email,instrumento,especialidad,nivel_estudios,baremo,localidad,direccion,anos_experiencia') \
+            .in_('id', usuario_ids) \
+            .execute()
+        usuarios_by_id = {u['id']: u for u in (usuarios_res.data or [])}
+
+        ensayo_ids = [e['id'] for evs in ensayos_by_evento.values() for e in evs]
+        disp_by_pair = {}  # (usuario_id, ensayo_id) -> row
+        if ensayo_ids:
+            d_res = supabase.table('disponibilidad') \
+                .select('id,usuario_id,ensayo_id,asiste,asistencia_real') \
+                .in_('ensayo_id', ensayo_ids) \
+                .in_('usuario_id', usuario_ids) \
+                .execute()
+            for d in (d_res.data or []):
+                disp_by_pair[(d['usuario_id'], d['ensayo_id'])] = d
+
+        gastos_res = supabase.table('gastos_adicionales') \
+            .select('*') \
+            .in_('evento_id', evento_ids) \
+            .in_('usuario_id', usuario_ids) \
+            .execute()
+        gastos_by_pair = {(g['usuario_id'], g['evento_id']): g for g in (gastos_res.data or [])}
+
+        cachets_res = supabase.table('cachets_config') \
+            .select('id,evento_id,instrumento,nivel_estudios,importe') \
+            .in_('evento_id', evento_ids) \
+            .execute()
+        cachets_by_evento = {}
+        for c in (cachets_res.data or []):
+            cachets_by_evento.setdefault(c['evento_id'], []).append(c)
+
+        eventos_out = []
+        for ev in eventos_raw:
+            ensayos = ensayos_by_evento.get(ev['id'], [])
+            total_e = len(ensayos)
+            asigs_ev = [a for a in confirmadas if a['evento_id'] == ev['id']]
+
+            # Construir músicos agrupados por sección
+            secciones_map = {key: [] for key, _label in SECCIONES_ORDER}
+            sin_seccion = []
+            total_ev = {
+                "cache_previsto": 0.0, "cache_real": 0.0, "extras": 0.0,
+                "transporte": 0.0, "alojamiento": 0.0, "otros": 0.0, "total": 0.0,
+            }
+            for a in asigs_ev:
+                u = usuarios_by_id.get(a['usuario_id'])
+                if not u:
+                    continue
+                disp_list = []
+                asist_list = []
+                for e in ensayos:
+                    d = disp_by_pair.get((u['id'], e['id']))
+                    disp_list.append({
+                        "ensayo_id": e['id'],
+                        "asiste": d.get('asiste') if d else None,
+                        "disponibilidad_id": d.get('id') if d else None,
+                    })
+                    asist_list.append({
+                        "ensayo_id": e['id'],
+                        "asistencia_real": d.get('asistencia_real') if d else None,
+                    })
+                si_disp = sum(1 for x in disp_list if x["asiste"] is True)
+                si_real = sum(1 for x in asist_list if x["asistencia_real"] is True)
+                pct_disp = round((si_disp / total_e) * 100) if total_e else 0
+                pct_real = round((si_real / total_e) * 100) if total_e else 0
+
+                # Caché previsto: cachets_config → fallback asignaciones.cache_presupuestado → asignaciones.importe
+                nivel_efectivo = a.get('nivel_estudios') or _nivel_estudios_efectivo(u)
+                cache_prev = _cachet_lookup(cachets_by_evento.get(ev['id'], []), u.get('instrumento'), nivel_efectivo)
+                if cache_prev is None:
+                    cache_prev = float(a.get('cache_presupuestado') or a.get('importe') or 0)
+
+                cache_real = round(cache_prev * (pct_real / 100.0), 2)
+
+                g = gastos_by_pair.get((u['id'], ev['id'])) or {}
+                extras = float(g.get('cache_extra') or 0)
+                transp = float(g.get('transporte_importe') or 0)
+                aloj = float(g.get('alojamiento_importe') or 0)
+                otros = float(g.get('otros_importe') or 0)
+                total = round(cache_real + extras + transp + aloj + otros, 2)
+
+                total_ev["cache_previsto"] += cache_prev
+                total_ev["cache_real"]     += cache_real
+                total_ev["extras"]         += extras
+                total_ev["transporte"]     += transp
+                total_ev["alojamiento"]    += aloj
+                total_ev["otros"]          += otros
+                total_ev["total"]          += total
+
+                musico_row = {
+                    "asignacion_id": a['id'],
+                    "usuario_id": u['id'],
+                    "nombre": u.get('nombre') or '',
+                    "apellidos": u.get('apellidos') or '',
+                    "email": u.get('email') or '',
+                    "instrumento": u.get('instrumento'),
+                    "especialidad": u.get('especialidad'),
+                    "nivel_estudios": nivel_efectivo,
+                    "numero_atril": a.get('numero_atril'),
+                    "letra": a.get('letra'),
+                    "comentario": a.get('comentarios') or '',
+                    "disponibilidad": disp_list,
+                    "asistencia": asist_list,
+                    "porcentaje_disponibilidad": pct_disp,
+                    "porcentaje_asistencia_real": pct_real,
+                    "cache_previsto": round(cache_prev, 2),
+                    "cache_real": cache_real,
+                    "gastos_adicional_id": g.get('id'),
+                    "cache_extra": extras,
+                    "motivo_extra": g.get('notas') or '',
+                    "transporte_importe": transp,
+                    "transporte_justificante_url": g.get('transporte_justificante_url'),
+                    "alojamiento_importe": aloj,
+                    "alojamiento_justificante_url": g.get('alojamiento_justificante_url'),
+                    "otros_importe": otros,
+                    "otros_justificante_url": g.get('otros_justificante_url'),
+                    "total": total,
+                }
+                sec_key = seccion_de_instrumento(u.get('instrumento'))
+                if sec_key:
+                    secciones_map[sec_key].append(musico_row)
+                else:
+                    sin_seccion.append(musico_row)
+
+            # Ordenar dentro de cada sección por instrumento → apellidos
+            for key in secciones_map:
+                secciones_map[key].sort(key=lambda m: (instrumento_sort_key(m.get('instrumento')),
+                                                       (m.get('apellidos') or '').lower()))
+            sin_seccion.sort(key=lambda m: (m.get('apellidos') or '').lower())
+
+            secciones_out = []
+            for key, label in SECCIONES_ORDER:
+                musicos_sec = secciones_map[key]
+                if not musicos_sec:
+                    continue
+                sec_totals = {k: 0.0 for k in ("cache_previsto","cache_real","extras","transporte","alojamiento","otros","total")}
+                for m in musicos_sec:
+                    sec_totals["cache_previsto"] += m["cache_previsto"]
+                    sec_totals["cache_real"]     += m["cache_real"]
+                    sec_totals["extras"]         += m["cache_extra"]
+                    sec_totals["transporte"]     += m["transporte_importe"]
+                    sec_totals["alojamiento"]    += m["alojamiento_importe"]
+                    sec_totals["otros"]          += m["otros_importe"]
+                    sec_totals["total"]          += m["total"]
+                secciones_out.append({
+                    "key": key, "label": label,
+                    "count": len(musicos_sec),
+                    "musicos": musicos_sec,
+                    "totales": {k: round(v, 2) for k, v in sec_totals.items()},
+                })
+            if sin_seccion:
+                sec_totals = {k: 0.0 for k in ("cache_previsto","cache_real","extras","transporte","alojamiento","otros","total")}
+                for m in sin_seccion:
+                    sec_totals["cache_previsto"] += m["cache_previsto"]
+                    sec_totals["cache_real"]     += m["cache_real"]
+                    sec_totals["extras"]         += m["cache_extra"]
+                    sec_totals["transporte"]     += m["transporte_importe"]
+                    sec_totals["alojamiento"]    += m["alojamiento_importe"]
+                    sec_totals["otros"]          += m["otros_importe"]
+                    sec_totals["total"]          += m["total"]
+                secciones_out.append({
+                    "key": "otros", "label": "Sin sección",
+                    "count": len(sin_seccion),
+                    "musicos": sin_seccion,
+                    "totales": {k: round(v, 2) for k, v in sec_totals.items()},
+                })
+
+            eventos_out.append({
+                "id": ev['id'],
+                "nombre": ev.get('nombre'),
+                "estado": ev.get('estado'),
+                "fechas": _funciones_del_evento(ev),
+                "lugar": ev.get('lugar'),
+                "ensayos": ensayos,
+                "total_musicos": len(asigs_ev),
+                "totales": {k: round(v, 2) for k, v in total_ev.items()},
+                "secciones": secciones_out,
+            })
+
+        return {"eventos": eventos_out}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en plantillas definitivas: {str(e)}")
+
+
+class AsistenciaItem(BaseModel):
+    disponibilidad_id: Optional[str] = None
+    usuario_id: Optional[str] = None
+    ensayo_id: Optional[str] = None
+    asistencia_real: Optional[bool] = None
+
+
+class GastoItem(BaseModel):
+    usuario_id: str
+    evento_id: str
+    transporte_importe: Optional[float] = None
+    transporte_justificante_url: Optional[str] = None
+    alojamiento_importe: Optional[float] = None
+    alojamiento_justificante_url: Optional[str] = None
+    otros_importe: Optional[float] = None
+    otros_justificante_url: Optional[str] = None
+    cache_extra: Optional[float] = None
+    notas: Optional[str] = None
+
+
+class AnotacionItem(BaseModel):
+    asignacion_id: str
+    numero_atril: Optional[int] = None
+    letra: Optional[str] = None
+    comentario: Optional[str] = None
+
+
+class GuardarPlantillasRequest(BaseModel):
+    asistencias: List[AsistenciaItem] = []
+    gastos: List[GastoItem] = []
+    anotaciones: List[AnotacionItem] = []
+
+
+@router.put("/plantillas-definitivas/guardar")
+async def guardar_plantillas_definitivas(
+    data: GuardarPlantillasRequest,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """
+    Persiste cambios de Plantillas Definitivas en una sola llamada:
+      - asistencias: UPDATE/UPSERT disponibilidad.asistencia_real
+      - gastos: UPSERT gastos_adicionales (usuario_id + evento_id UNIQUE)
+      - anotaciones: UPDATE asignaciones.numero_atril / letra / comentarios
+      - Actualiza asignaciones.porcentaje_asistencia por cada asignación tocada
+    """
+    now = datetime.now().isoformat()
+    resumen = {"asistencias": 0, "gastos": 0, "anotaciones": 0}
+    try:
+        # 1) Asistencias
+        for a in data.asistencias:
+            if a.disponibilidad_id:
+                supabase.table('disponibilidad').update({
+                    "asistencia_real": a.asistencia_real,
+                    "updated_at": now,
+                }).eq('id', a.disponibilidad_id).execute()
+                resumen["asistencias"] += 1
+            elif a.usuario_id and a.ensayo_id:
+                # UPSERT por (usuario_id, ensayo_id) — la tabla tiene UNIQUE sobre estos dos campos
+                ex = supabase.table('disponibilidad') \
+                    .select('id') \
+                    .eq('usuario_id', a.usuario_id).eq('ensayo_id', a.ensayo_id).limit(1).execute()
+                if ex.data:
+                    supabase.table('disponibilidad').update({
+                        "asistencia_real": a.asistencia_real,
+                        "updated_at": now,
+                    }).eq('id', ex.data[0]['id']).execute()
+                else:
+                    supabase.table('disponibilidad').insert({
+                        "usuario_id": a.usuario_id,
+                        "ensayo_id": a.ensayo_id,
+                        "asistencia_real": a.asistencia_real,
+                    }).execute()
+                resumen["asistencias"] += 1
+
+        # 2) Gastos — UPSERT por (usuario_id, evento_id)
+        for g in data.gastos:
+            payload = {k: v for k, v in g.model_dump(exclude_unset=True).items() if k not in ('usuario_id', 'evento_id')}
+            if not payload:
+                payload = {}
+            payload["updated_at"] = now
+            ex = supabase.table('gastos_adicionales') \
+                .select('id') \
+                .eq('usuario_id', g.usuario_id).eq('evento_id', g.evento_id).limit(1).execute()
+            if ex.data:
+                supabase.table('gastos_adicionales').update(payload).eq('id', ex.data[0]['id']).execute()
+            else:
+                insert_payload = {"usuario_id": g.usuario_id, "evento_id": g.evento_id, **payload}
+                supabase.table('gastos_adicionales').insert(insert_payload).execute()
+            resumen["gastos"] += 1
+
+        # 3) Anotaciones
+        asigs_ids_tocadas = set()
+        for n in data.anotaciones:
+            payload = {k: v for k, v in {
+                "numero_atril": n.numero_atril,
+                "letra": n.letra,
+                "comentarios": n.comentario,
+                "updated_at": now,
+            }.items() if v is not None or k == "updated_at"}
+            supabase.table('asignaciones').update(payload).eq('id', n.asignacion_id).execute()
+            resumen["anotaciones"] += 1
+            asigs_ids_tocadas.add(n.asignacion_id)
+
+        # 4) Recalcular porcentaje_asistencia para las asignaciones tocadas por asistencias
+        #    (buscamos las asignaciones de esos usuario+evento)
+        pares = {(a.usuario_id, a.ensayo_id) for a in data.asistencias if a.usuario_id and a.ensayo_id}
+        if pares:
+            usuario_ids = list({u for (u, _) in pares})
+            ensayo_ids = list({e for (_, e) in pares})
+            # evento_id de esos ensayos
+            e_res = supabase.table('ensayos').select('id,evento_id').in_('id', ensayo_ids).execute()
+            eventos_de_ens = {e['id']: e['evento_id'] for e in (e_res.data or [])}
+            evento_ids = list({eventos_de_ens[eid] for eid in ensayo_ids if eid in eventos_de_ens})
+            # Para cada (usuario, evento) recalcular
+            for uid in usuario_ids:
+                for evid in evento_ids:
+                    # contar ensayos + asistencias reales
+                    all_e = supabase.table('ensayos').select('id').eq('evento_id', evid).execute().data or []
+                    total = len(all_e)
+                    if not total:
+                        continue
+                    all_ids = [x['id'] for x in all_e]
+                    d = supabase.table('disponibilidad').select('asistencia_real') \
+                        .eq('usuario_id', uid).in_('ensayo_id', all_ids).execute().data or []
+                    si = sum(1 for x in d if x.get('asistencia_real') is True)
+                    pct = round((si / total) * 100, 2)
+                    supabase.table('asignaciones').update({
+                        "porcentaje_asistencia": pct, "updated_at": now
+                    }).eq('usuario_id', uid).eq('evento_id', evid).execute()
+
+        return {"ok": True, "resumen": resumen}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar: {str(e)}")
+
+
+# ==================== Cachets Config ====================
+
+class CachetRow(BaseModel):
+    instrumento: str
+    nivel_estudios: Optional[str] = None
+    importe: float
+
+
+@router.get("/cachets-config/{evento_id}")
+async def get_cachets_config(
+    evento_id: str,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """Devuelve las tarifas configuradas para un evento (instrumento + nivel + importe)."""
+    try:
+        r = supabase.table('cachets_config') \
+            .select('id,instrumento,nivel_estudios,importe') \
+            .eq('evento_id', evento_id) \
+            .order('instrumento', desc=False) \
+            .execute()
+        return {"cachets": r.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.put("/cachets-config/{evento_id}")
+async def put_cachets_config(
+    evento_id: str,
+    rows: List[CachetRow],
+    current_user: dict = Depends(get_current_gestor)
+):
+    """
+    Sustituye (UPSERT) las tarifas de un evento.
+    Todas las filas se guardan con evento_id fijo. Las (instrumento, nivel_estudios)
+    duplicadas se actualizan (hay UNIQUE INDEX ux_cachets_evento_instr_nivel).
+    """
+    try:
+        now = datetime.now().isoformat()
+        written = 0
+        for row in rows:
+            payload = {
+                "evento_id": evento_id,
+                "instrumento": row.instrumento.strip(),
+                "nivel_estudios": (row.nivel_estudios or '').strip() or None,
+                "importe": row.importe,
+                "updated_at": now,
+            }
+            ex = supabase.table('cachets_config').select('id') \
+                .eq('evento_id', evento_id) \
+                .eq('instrumento', payload['instrumento']) \
+                .execute()
+            # Emular UPSERT por (evento, instrumento, nivel)
+            target = None
+            for r in (ex.data or []):
+                # no traemos nivel en select previo -> hacemos otro match
+                pass
+            # Mejor: trae todas las filas del evento y filtra en Python para evitar NULL matcheo raro
+            all_rows = supabase.table('cachets_config').select('id,nivel_estudios,instrumento') \
+                .eq('evento_id', evento_id).execute().data or []
+            for r in all_rows:
+                if (r.get('instrumento') or '').strip().lower() == payload['instrumento'].lower() and \
+                   ((r.get('nivel_estudios') or '') == (payload['nivel_estudios'] or '')):
+                    target = r['id']
+                    break
+            if target:
+                supabase.table('cachets_config').update(payload).eq('id', target).execute()
+            else:
+                supabase.table('cachets_config').insert(payload).execute()
+            written += 1
+        return {"ok": True, "escritas": written}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar cachets: {str(e)}")
 
 
 @router.delete("/eventos/{evento_id}")
