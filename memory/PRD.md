@@ -248,3 +248,42 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 ### P3
 - [ ] Google Drive justificantes, Gmail
 - [ ] XML bancario y PDF corporativo
+
+---
+
+## Changelog (Feb 2026 — Fork Resume)
+
+### ✅ BLOQUE 1 — Presupuestos · Sección A · Cachets Base (DONE)
+- `CachetsBaseSection.js` renderiza tabla editable con los **4 niveles oficiales**: `Superior finalizado`, `Superior cursando`, `Profesional finalizado`, `Profesional cursando`.
+- 6 secciones instrumentales ordenadas: Cuerda, Viento Madera, Viento Metal, Percusión, Teclados, Coro.
+- 76 inputs editables persistidos en `cachets_config` con `evento_id IS NULL` (plantilla global).
+- Endpoints: `GET/PUT /api/gestor/cachets-base`.
+- Integrado en `Presupuestos.js` línea 327.
+
+### ✅ BLOQUE 2 — Plantillas Definitivas · Caché Previsto (DONE)
+- Backend `_cachet_lookup_with_source` aplica **fallback 3-tier**: `evento+instr+nivel` → `evento+instr` → `base+instr+nivel` → `base+instr` → `asignaciones.importe`.
+- Endpoint `GET /api/gestor/plantillas-definitivas` devuelve `cache_previsto` y `cache_fuente` por músico.
+- Etiqueta UI expandida de "Caché Prev." → **"Caché Previsto"** (PlantillasDefinitivas.js línea 110).
+
+### ✅ BLOQUE 6 — Feedback / Incidencias (DONE)
+- SQL ejecutado: tabla `incidencias` operativa + índices `idx_incidencias_estado`, `idx_incidencias_created`.
+- `FeedbackButton.js` flotante en todas las páginas admin (tipos: incidencia/mejora/pregunta).
+- Admin panel `/admin/incidencias` para revisar/resolver.
+- **Fix FK violation** (fork resume Feb 2026): `POST /incidencias` ahora comprueba si `current_user.id` existe en `public.usuarios`; si no, guarda `usuario_id=NULL` preservando `usuario_nombre`. Evita error `incidencias_usuario_id_fkey` cuando el admin autenticado vía Supabase Auth no tiene fila espejo.
+
+### ✅ Bloques adicionales validados
+- `/asistencia/pagos` — Gestión económica por evento (SEPA XML + Excel exports)
+- `/asistencia/analisis` — Análisis económico con Recharts + accordions por evento
+- `/admin/tareas` — Planificador con 3 vistas (Lista, Gantt, Calendario) + comentarios internos
+
+### Issues menores pendientes (low priority)
+- [LOW] Warning React `<span> cannot be a child of <option>` — no rompe UX, requiere investigación en shadcn Select.
+- [LOW] `cache_fuente='sin_datos'` no documentado en el enum — considerar unificar con `sin_cachet`.
+
+### URLs correctas (para QA)
+- `/configuracion/presupuestos` — Presupuestos + Sección A Cachets base
+- `/plantillas-definitivas` — Plantillas definitivas (sin prefijo /admin)
+- `/asistencia/pagos` — Gestión económica
+- `/asistencia/analisis` — Análisis económico
+- `/admin/tareas` — Planificador de tareas
+- `/admin/incidencias` — Feedback e incidencias

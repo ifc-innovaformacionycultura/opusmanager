@@ -3258,8 +3258,19 @@ class IncidenciaUpdate(BaseModel):
 async def create_incidencia(data: IncidenciaCreate, current_user: dict = Depends(get_current_gestor)):
     try:
         payload = data.model_dump(exclude_none=True)
-        payload['usuario_id'] = current_user['id']
-        payload['usuario_nombre'] = f"{current_user.get('apellidos','')}, {current_user.get('nombre','')}".strip(', ')
+        uid = current_user.get('id')
+        # Comprobar que el usuario existe en public.usuarios; si no, guardamos NULL
+        # (la FK es ON DELETE SET NULL y usuario_nombre preserva la identidad).
+        usuario_id_valido = None
+        if uid:
+            exists = supabase.table('usuarios').select('id').eq('id', uid).limit(1).execute()
+            if exists.data:
+                usuario_id_valido = uid
+        payload['usuario_id'] = usuario_id_valido
+        nombre_full = f"{current_user.get('apellidos','')}, {current_user.get('nombre','')}".strip(', ')
+        if not nombre_full:
+            nombre_full = current_user.get('email') or 'Usuario desconocido'
+        payload['usuario_nombre'] = nombre_full
         r = supabase.table('incidencias').insert(payload).execute()
         return {"incidencia": r.data[0] if r.data else None}
     except Exception as e:

@@ -107,7 +107,7 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust }) => {
                 <th className="px-1 py-1 text-center text-[10px] text-slate-600 border-b border-r-2 border-slate-400">% Real</th>
               </>
             )}
-            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[72px]">Caché Prev.</th>
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[80px]" title="Caché previsto calculado desde cachets_config (instrumento + nivel)">Caché Previsto</th>
             <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[72px]">Caché Real</th>
             <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[70px]">Extra</th>
             <th className="px-1 py-1 text-left  text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[110px]">Motivo</th>
