@@ -11,10 +11,6 @@ const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Supabase credentials missing. Check .env file.')
-  console.log('🔍 Debug - supabaseUrl:', supabaseUrl ? '✅ Present' : '❌ Missing')
-  console.log('🔍 Debug - supabaseAnonKey:', supabaseAnonKey ? '✅ Present' : '❌ Missing')
-} else {
-  console.log('✅ Supabase client initialized with URL:', supabaseUrl)
 }
 
 // Create Supabase client

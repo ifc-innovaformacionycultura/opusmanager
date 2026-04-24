@@ -332,10 +332,10 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
       }
     """
     try:
-        # 1) Eventos abiertos o borrador
+        # 1) Eventos publicados (estado='abierto')
         eventos_res = supabase.table('eventos') \
             .select('*') \
-            .in_('estado', ['borrador', 'abierto']) \
+            .eq('estado', 'abierto') \
             .order('fecha_inicio', desc=False) \
             .execute()
         eventos_raw = eventos_res.data or []
@@ -669,12 +669,18 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
         evento_ids = list({a['evento_id'] for a in confirmadas})
         usuario_ids = list({a['usuario_id'] for a in confirmadas})
 
+        # Bloque 3: solo eventos publicados (estado='abierto')
         eventos_res = supabase.table('eventos') \
             .select('*') \
             .in_('id', evento_ids) \
+            .eq('estado', 'abierto') \
             .order('fecha_inicio', desc=False) \
             .execute()
         eventos_raw = eventos_res.data or []
+        # Recalcular evento_ids después del filtro (puede haber quedado vacío)
+        evento_ids = [e['id'] for e in eventos_raw]
+        if not evento_ids:
+            return {"eventos": [], "total_temporada": 0}
 
         ens_res = supabase.table('ensayos') \
             .select('id,evento_id,tipo,fecha,hora,obligatorio,lugar') \
@@ -3068,4 +3074,142 @@ async def list_gestores(current_user: dict = Depends(get_current_gestor)):
 
 
 # NOTE: Endpoints de /incidencias movidos a routes_incidencias.py (refactor feb 2026)
+
+
+# ==================================================================
+# LOGÍSTICA del evento (transportes + alojamientos)
+# ==================================================================
+
+class LogisticaItem(BaseModel):
+    id: Optional[str] = None
+    tipo: str  # 'transporte_ida' | 'transporte_vuelta' | 'alojamiento'
+    orden: Optional[int] = 1
+    fecha: Optional[str] = None
+    hora_salida: Optional[str] = None
+    lugar_salida: Optional[str] = None
+    hora_llegada: Optional[str] = None
+    lugar_llegada: Optional[str] = None
+    recogida_1_lugar: Optional[str] = None
+    recogida_1_hora: Optional[str] = None
+    recogida_2_lugar: Optional[str] = None
+    recogida_2_hora: Optional[str] = None
+    recogida_3_lugar: Optional[str] = None
+    recogida_3_hora: Optional[str] = None
+    hotel_nombre: Optional[str] = None
+    hotel_direccion: Optional[str] = None
+    fecha_checkin: Optional[str] = None
+    fecha_checkout: Optional[str] = None
+    fecha_limite_confirmacion: Optional[str] = None
+    notas: Optional[str] = None
+
+
+class LogisticaBulkRequest(BaseModel):
+    items: List[LogisticaItem] = []
+    eliminar_ids: List[str] = []
+
+
+@router.get("/eventos/{evento_id}/logistica")
+async def get_logistica_evento(evento_id: str, current_user: dict = Depends(get_current_gestor)):
+    try:
+        r = supabase.table('evento_logistica').select('*') \
+            .eq('evento_id', evento_id) \
+            .order('tipo', desc=False) \
+            .order('orden', desc=False) \
+            .execute()
+        return {"logistica": r.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al listar logística: {str(e)}")
+
+
+@router.put("/eventos/{evento_id}/logistica")
+async def put_logistica_evento(evento_id: str, data: LogisticaBulkRequest, current_user: dict = Depends(get_current_gestor)):
+    """Guardado masivo de la logística de un evento."""
+    try:
+        now = datetime.now().isoformat()
+        creados = 0
+        actualizados = 0
+        for it in data.items:
+            base = it.model_dump(exclude_none=True)
+            base.pop('id', None)
+            base['evento_id'] = evento_id
+            base['updated_at'] = now
+            # Limpiar strings vacíos para columnas DATE/TIME (Postgres lanza error si recibe '')
+            for k in ('fecha', 'fecha_checkin', 'fecha_checkout', 'fecha_limite_confirmacion',
+                      'hora_salida', 'hora_llegada',
+                      'recogida_1_hora', 'recogida_2_hora', 'recogida_3_hora'):
+                if base.get(k) == '':
+                    base[k] = None
+            if it.id:
+                supabase.table('evento_logistica').update(base).eq('id', it.id).execute()
+                actualizados += 1
+            else:
+                supabase.table('evento_logistica').insert(base).execute()
+                creados += 1
+        borrados = 0
+        for lid in (data.eliminar_ids or []):
+            supabase.table('evento_logistica').delete().eq('id', lid).execute()
+            borrados += 1
+        return {"ok": True, "creados": creados, "actualizados": actualizados, "borrados": borrados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar logística: {str(e)}")
+
+
+@router.delete("/logistica/{logistica_id}")
+async def delete_logistica(logistica_id: str, current_user: dict = Depends(get_current_gestor)):
+    try:
+        supabase.table('evento_logistica').delete().eq('id', logistica_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar logística: {str(e)}")
+
+
+@router.get("/logistica/{logistica_id}/confirmaciones")
+async def get_confirmaciones_logistica(logistica_id: str, current_user: dict = Depends(get_current_gestor)):
+    """Para una pieza de logística, devuelve la lista de músicos confirmados,
+    rechazados y los que aún no han respondido (entre los músicos asignados al evento)."""
+    try:
+        log_row = supabase.table('evento_logistica').select('evento_id') \
+            .eq('id', logistica_id).limit(1).execute().data
+        if not log_row:
+            raise HTTPException(status_code=404, detail="Logística no encontrada")
+        evento_id = log_row[0]['evento_id']
+
+        # Músicos asignados al evento
+        asigs = supabase.table('asignaciones').select('usuario_id') \
+            .eq('evento_id', evento_id).execute().data or []
+        usuario_ids = list({a['usuario_id'] for a in asigs})
+
+        # Confirmaciones existentes
+        confs = supabase.table('confirmaciones_logistica').select('*') \
+            .eq('logistica_id', logistica_id).execute().data or []
+        conf_by_user = {c['usuario_id']: c for c in confs}
+
+        # Datos de músicos
+        users = supabase.table('usuarios') \
+            .select('id,nombre,apellidos,instrumento,email') \
+            .in_('id', usuario_ids).execute().data if usuario_ids else []
+
+        confirmados = []; rechazados = []; sin_respuesta = []
+        for u in users:
+            c = conf_by_user.get(u['id'])
+            entry = {**u, "respuesta_at": (c or {}).get('updated_at')}
+            if not c:
+                sin_respuesta.append(entry)
+            elif c.get('confirmado') is True:
+                confirmados.append(entry)
+            elif c.get('confirmado') is False:
+                rechazados.append(entry)
+            else:
+                sin_respuesta.append(entry)
+        return {
+            "logistica_id": logistica_id,
+            "total_asignados": len(usuario_ids),
+            "confirmados": confirmados,
+            "rechazados": rechazados,
+            "sin_respuesta": sin_respuesta,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 

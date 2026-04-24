@@ -1,578 +1,443 @@
-import React, { useState, useEffect } from "react";
+// Presupuestos — Matriz completa por temporada (Bloque 1, feb 2026)
+// Filas: secciones × instrumentos × niveles
+// Columnas: bloque por evento (estado='abierto'), 5 subcolumnas cuando expandido,
+//           1 (Total) cuando contraído.
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
-import CachetsBaseSection from "./CachetsBaseSection";
 
-// Orchestra sections and study levels
-const SECTIONS = [
-  { id: 'cuerda', name: 'CUERDA', color: 'bg-blue-50' },
-  { id: 'viento_madera', name: 'VIENTO MADERA', color: 'bg-green-50' },
-  { id: 'viento_metal', name: 'VIENTO METAL', color: 'bg-yellow-50' },
-  { id: 'percusion', name: 'PERCUSIÓN', color: 'bg-orange-50' },
-  { id: 'teclados', name: 'TECLADOS', color: 'bg-purple-50' },
-  { id: 'coros', name: 'COROS', color: 'bg-pink-50' }
+// ==================================================================
+// Estructura de filas: 76 = 19 instrumentos × 4 niveles
+// ==================================================================
+const SECCIONES = [
+  { id: 'cuerda',        name: 'CUERDA',        instrumentos: ['Violín', 'Viola', 'Violonchelo', 'Contrabajo'],
+    bg: 'bg-blue-50',   bgAlt: 'bg-blue-100',   bar: 'bg-blue-500'   },
+  { id: 'viento_madera', name: 'VIENTO MADERA', instrumentos: ['Flauta', 'Oboe', 'Clarinete', 'Fagot'],
+    bg: 'bg-green-50',  bgAlt: 'bg-green-100',  bar: 'bg-green-500'  },
+  { id: 'viento_metal',  name: 'VIENTO METAL',  instrumentos: ['Trompa', 'Trompeta', 'Trombón', 'Tuba'],
+    bg: 'bg-yellow-50', bgAlt: 'bg-yellow-100', bar: 'bg-yellow-500' },
+  { id: 'percusion',     name: 'PERCUSIÓN',     instrumentos: ['Percusión'],
+    bg: 'bg-orange-50', bgAlt: 'bg-orange-100', bar: 'bg-orange-500' },
+  { id: 'teclados',      name: 'TECLADOS',      instrumentos: ['Piano', 'Órgano'],
+    bg: 'bg-purple-50', bgAlt: 'bg-purple-100', bar: 'bg-purple-500' },
+  { id: 'coro',          name: 'CORO',          instrumentos: ['Soprano', 'Alto', 'Tenor', 'Barítono'],
+    bg: 'bg-pink-50',   bgAlt: 'bg-pink-100',   bar: 'bg-pink-500'   },
 ];
 
-const STUDY_LEVELS = [
-  { id: 'superior_finalizado', name: 'Superior Finalizado' },
-  { id: 'superior_cursando', name: 'Superior Cursando' },
-  { id: 'profesional_finalizado', name: 'Profesional Finalizado' },
-  { id: 'profesional_cursando', name: 'Profesional Cursando' }
+const NIVELES = [
+  'Superior finalizado',
+  'Superior cursando',
+  'Profesional finalizado',
+  'Profesional cursando',
 ];
 
-const Presupuestos = () => {
-  const { api } = useGestorAuth();
-  const [events, setEvents] = useState([]);
-  const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState(null);
-  const [budgetData, setBudgetData] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [collapsedEvents, setCollapsedEvents] = useState({});
+// Valores por defecto al precargar (aplica solo a celdas vacías)
+const PRECARGA_NIVEL = {
+  'Superior finalizado':    400,
+  'Superior cursando':      320,
+  'Profesional finalizado': 260,
+  'Profesional cursando':   200,
+};
 
-  useEffect(() => {
-    fetchSeasons();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (selectedSeason) {
-      fetchEvents();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeason]);
-
-  const fetchSeasons = async () => {
-    try {
-      // Las temporadas se derivan de los eventos (campo `temporada` TEXT en Supabase)
-      const response = await api.get('/api/gestor/eventos');
-      const allEvents = response.data?.eventos || [];
-      const temporadas = Array.from(new Set(allEvents.map(e => e.temporada).filter(Boolean)));
-      const seasonList = temporadas.map(t => ({ id: t, nombre: t }));
-      setSeasons(seasonList);
-      if (seasonList.length > 0) {
-        setSelectedSeason(seasonList[0].id);
-      }
-    } catch (err) {
-      console.error("Error loading seasons:", err);
-    }
-  };
-
-  const fetchEvents = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get(`/api/gestor/eventos?temporada=${encodeURIComponent(selectedSeason)}`);
-      const eventsList = response.data?.eventos || [];
-      setEvents(eventsList);
-      // Cargar presupuestos persistidos
-      await loadPresupuestos(eventsList);
-    } catch (err) {
-      console.error("Error loading events:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // presupuestoIdMap[sectionId][levelId][eventId] = partida_id de Supabase
-  const [presupuestoIdMap, setPresupuestoIdMap] = useState({});
-
-  const buildConcepto = (sectionId, levelId) => {
-    const sec = SECTIONS.find(s => s.id === sectionId)?.name || sectionId;
-    const lvl = STUDY_LEVELS.find(l => l.id === levelId)?.name || levelId;
-    return `${sec} · ${lvl}`;
-  };
-
-  const loadPresupuestos = async (eventsList) => {
-    // Inicializamos grid en 0 con weight=100
-    const grid = {};
-    const idMap = {};
-    SECTIONS.forEach(section => {
-      grid[section.id] = {};
-      idMap[section.id] = {};
-      STUDY_LEVELS.forEach(level => {
-        grid[section.id][level.id] = {};
-        idMap[section.id][level.id] = {};
-        eventsList.forEach(event => {
-          grid[section.id][level.id][event.id] = { num_rehearsals: 0, num_functions: 0, cache_total: 0, weight: 100 };
+// Generar las 76 filas planas (sección, instrumento, nivel)
+const buildRows = () => {
+  const rows = [];
+  for (const sec of SECCIONES) {
+    sec.instrumentos.forEach((instr, instrIdx) => {
+      NIVELES.forEach((niv, nivIdx) => {
+        const idx = rows.length;
+        rows.push({
+          key: `${instr}__${niv}`,
+          seccion: sec,
+          instrumento: instr,
+          nivel: niv,
+          // Para zebra dentro de una sección: alternamos por (instrIdx + nivIdx)
+          alt: (instrIdx + nivIdx) % 2 === 1,
+          isFirstOfInstr: nivIdx === 0,
+          isFirstOfSec: instrIdx === 0 && nivIdx === 0,
+          rowIdx: idx,
         });
       });
     });
-    // Traer partidas de la temporada
+  }
+  return rows;
+};
+
+const fmtFechaCorta = (iso) => {
+  if (!iso) return '';
+  try {
+    const datePart = String(iso).slice(0, 10);  // YYYY-MM-DD
+    const d = new Date(datePart + 'T00:00:00');
+    if (isNaN(d.getTime())) return datePart;
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    return `${dd}/${mm}/${yy}`;
+  } catch { return iso; }
+};
+
+const fmtEuro = (v) => `${(Number(v) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+
+// Construye el mapa { 'eventoId__instr__nivel' : {id, importe, factor} } a partir de las cachets devueltas
+const buildCachetsMap = (rows) => {
+  const map = {};
+  for (const r of (rows || [])) {
+    const key = `${r.evento_id}__${r.instrumento}__${r.nivel_estudios}`;
+    map[key] = {
+      id: r.id,
+      importe: Number(r.importe) || 0,
+      factor: Number(r.factor_ponderacion ?? 100),
+    };
+  }
+  return map;
+};
+
+// ==================================================================
+// Componente principal
+// ==================================================================
+const Presupuestos = () => {
+  const { api } = useGestorAuth();
+  const [seasons, setSeasons] = useState([]);
+  const [selectedSeason, setSelectedSeason] = useState(null);
+  const [eventos, setEventos] = useState([]);          // eventos abiertos de la temporada
+  const [cachets, setCachets] = useState({});           // mapa eventoId__instr__nivel → {id, importe, factor}
+  const [collapsed, setCollapsed] = useState({});       // {eventoId: true} cuando contraído
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const ROWS = useMemo(() => buildRows(), []);
+
+  const fetchSeasons = useCallback(async () => {
     try {
-      const r = await api.get(`/api/gestor/presupuestos?temporada=${encodeURIComponent(selectedSeason)}`);
-      const partidas = r.data?.partidas || [];
-      partidas.forEach(p => {
-        let meta = {};
-        try { meta = p.notas ? JSON.parse(p.notas) : {}; } catch { meta = {}; }
-        const sid = meta.section_id;
-        const lid = meta.level_id;
-        if (!sid || !lid || !grid[sid] || !grid[sid][lid] || !grid[sid][lid][p.evento_id]) return;
-        grid[sid][lid][p.evento_id] = {
-          num_rehearsals: meta.num_rehearsals || 0,
-          num_functions: meta.num_functions || 0,
-          cache_total: Number(p.importe_previsto) || 0,
-          weight: meta.weight != null ? Number(meta.weight) : 100,
-        };
-        idMap[sid][lid][p.evento_id] = p.id;
-      });
-    } catch (err) {
-      console.error('[Presupuestos] error cargando partidas:', err);
+      const r = await api.get('/api/gestor/eventos');
+      const all = r.data?.eventos || [];
+      const t = Array.from(new Set(all.map(e => e.temporada).filter(Boolean)));
+      setSeasons(t);
+      // Auto-seleccionar la más reciente si no hay ninguna
+      if (!selectedSeason && t.length > 0) setSelectedSeason(t[t.length - 1]);
+    } catch (e) {
+      console.error('[Presupuestos] error temporadas', e);
     }
-    setBudgetData(grid);
-    setPresupuestoIdMap(idMap);
-  };
+  }, [api, selectedSeason]);
 
-  const updateBudgetCell = (sectionId, levelId, eventId, field, value) => {
-    setBudgetData(prev => ({
-      ...prev,
-      [sectionId]: {
-        ...prev[sectionId],
-        [levelId]: {
-          ...prev[sectionId][levelId],
-          [eventId]: {
-            ...prev[sectionId][levelId][eventId],
-            [field]: parseFloat(value) || 0
-          }
-        }
-      }
-    }));
-  };
-
-  // Calculate totals
-  const calculateEventTotal = (eventId) => {
-    let total = 0;
-    SECTIONS.forEach(section => {
-      STUDY_LEVELS.forEach(level => {
-        const cell = budgetData[section.id]?.[level.id]?.[eventId];
-        if (cell) {
-          const subtotal = cell.cache_total * (cell.weight / 100);
-          total += subtotal;
-        }
-      });
-    });
-    return total;
-  };
-
-  const calculateSectionEventTotal = (sectionId, eventId) => {
-    let total = 0;
-    STUDY_LEVELS.forEach(level => {
-      const cell = budgetData[sectionId]?.[level.id]?.[eventId];
-      if (cell) {
-        const subtotal = cell.cache_total * (cell.weight / 100);
-        total += subtotal;
-      }
-    });
-    return total;
-  };
-
-  const calculateRowTotal = (sectionId, levelId) => {
-    let total = 0;
-    events.forEach(event => {
-      const cell = budgetData[sectionId]?.[levelId]?.[event.id];
-      if (cell) {
-        const subtotal = (cell.cache_total || 0) * ((cell.weight ?? 100) / 100);
-        total += subtotal;
-      }
-    });
-    return total;
-  };
-
-  const calculateGrandTotal = () => {
-    let total = 0;
-    SECTIONS.forEach(section => {
-      STUDY_LEVELS.forEach(level => {
-        total += calculateRowTotal(section.id, level.id);
-      });
-    });
-    return total;
-  };
-
-  const [saveMsg, setSaveMsg] = useState(null);
-
-  const saveBudget = async () => {
+  const fetchMatriz = useCallback(async () => {
+    if (!selectedSeason) { setEventos([]); setCachets({}); setLoading(false); return; }
+    setLoading(true);
     try {
-      setSaving(true);
-      setSaveMsg(null);
-      // Construir lista de partidas a upsert
-      const partidas = [];
-      for (const section of SECTIONS) {
-        for (const level of STUDY_LEVELS) {
-          for (const event of events) {
-            const cell = budgetData[section.id]?.[level.id]?.[event.id];
-            if (!cell) continue;
-            // Solo persistimos si hay algún valor distinto de cero — evita ensuciar BD con vacíos
-            const importe = Number(cell.cache_total) || 0;
-            const weight = cell.weight == null ? 100 : Number(cell.weight);
-            const num_r = Number(cell.num_rehearsals) || 0;
-            const num_f = Number(cell.num_functions) || 0;
-            const id = presupuestoIdMap[section.id]?.[level.id]?.[event.id];
-            if (!id && importe === 0 && weight === 100 && num_r === 0 && num_f === 0) continue;
-            partidas.push({
-              id: id || undefined,
-              evento_id: event.id,
-              concepto: buildConcepto(section.id, level.id),
-              categoria: 'cachets',
-              tipo: 'gasto',
-              importe_previsto: importe,
-              importe_real: +(importe * weight / 100).toFixed(2),
-              notas: JSON.stringify({ section_id: section.id, level_id: level.id, num_rehearsals: num_r, num_functions: num_f, weight }),
-            });
+      const r = await api.get('/api/gestor/presupuestos-matriz', { params: { temporada: selectedSeason } });
+      setEventos(r.data?.eventos || []);
+      setCachets(buildCachetsMap(r.data?.cachets || []));
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
+    } finally { setLoading(false); }
+  }, [api, selectedSeason]);
+
+  useEffect(() => { fetchSeasons(); }, [fetchSeasons]);
+  useEffect(() => { fetchMatriz(); }, [fetchMatriz]);
+
+  const setCell = (eventoId, instr, nivel, field, value) => {
+    setCachets(prev => {
+      const key = `${eventoId}__${instr}__${nivel}`;
+      const prevCell = prev[key] || { importe: 0, factor: 100, _dirty: false };
+      const num = value === '' ? 0 : Number(value);
+      return {
+        ...prev,
+        [key]: { ...prevCell, [field]: num, _dirty: true },
+      };
+    });
+  };
+
+  const cellValue = (eventoId, instr, nivel) => {
+    const k = `${eventoId}__${instr}__${nivel}`;
+    return cachets[k] || { importe: 0, factor: 100 };
+  };
+
+  const totalCelda = (eventoId, instr, nivel) => {
+    const c = cellValue(eventoId, instr, nivel);
+    return c.importe * (c.factor / 100);
+  };
+
+  const totalEvento = (eventoId) => {
+    let total = 0;
+    for (const sec of SECCIONES) {
+      for (const instr of sec.instrumentos) {
+        for (const niv of NIVELES) {
+          total += totalCelda(eventoId, instr, niv);
+        }
+      }
+    }
+    return total;
+  };
+
+  const totalGeneral = useMemo(() => {
+    return eventos.reduce((acc, e) => acc + totalEvento(e.id), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventos, cachets]);
+
+  const precargarEstandar = () => {
+    setCachets(prev => {
+      const next = { ...prev };
+      let added = 0;
+      for (const ev of eventos) {
+        for (const sec of SECCIONES) {
+          for (const instr of sec.instrumentos) {
+            for (const niv of NIVELES) {
+              const k = `${ev.id}__${instr}__${niv}`;
+              const cur = next[k];
+              if (!cur || (Number(cur.importe) || 0) === 0) {
+                next[k] = {
+                  ...cur,
+                  importe: PRECARGA_NIVEL[niv],
+                  factor: cur?.factor ?? 100,
+                  _dirty: true,
+                };
+                added++;
+              }
+            }
           }
         }
       }
-      const r = await api.post('/api/gestor/presupuestos/bulk', { partidas });
-      setSaveMsg({ type: 'success', text: `Guardado: ${r.data.creados} creadas, ${r.data.actualizados} actualizadas` });
-      await loadPresupuestos(events);
-      setTimeout(() => setSaveMsg(null), 4000);
-    } catch (err) {
-      console.error('[Presupuestos] error guardando:', err);
-      setSaveMsg({ type: 'error', text: err.response?.data?.detail || err.message });
+      setMsg({ type: 'info', text: `📋 ${added} celdas precargadas con valores estándar (vacías rellenadas).` });
+      setTimeout(() => setMsg(null), 4500);
+      return next;
+    });
+  };
+
+  const guardarTodos = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const payload = { rows: [] };
+      for (const ev of eventos) {
+        for (const sec of SECCIONES) {
+          for (const instr of sec.instrumentos) {
+            for (const niv of NIVELES) {
+              const k = `${ev.id}__${instr}__${niv}`;
+              const c = cachets[k];
+              if (c && c._dirty) {
+                payload.rows.push({
+                  id: c.id,
+                  evento_id: ev.id,
+                  instrumento: instr,
+                  nivel_estudios: niv,
+                  importe: Number(c.importe) || 0,
+                  factor_ponderacion: Number(c.factor) || 100,
+                });
+              }
+            }
+          }
+        }
+      }
+      if (payload.rows.length === 0) {
+        setMsg({ type: 'info', text: 'No hay cambios pendientes.' });
+        setTimeout(() => setMsg(null), 2500);
+        return;
+      }
+      const r = await api.post('/api/gestor/presupuestos-matriz/bulk', payload);
+      setMsg({ type: 'success', text: `✅ Guardado: ${r.data.total || 0} registros (creados ${r.data.creados || 0}, actualizados ${r.data.actualizados || 0})` });
+      setTimeout(() => setMsg(null), 4000);
+      await fetchMatriz();  // recargar para sincronizar IDs y limpiar dirty
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
     } finally { setSaving(false); }
   };
 
-  const toggleEventCollapse = (eventId) => {
-    setCollapsedEvents(prev => ({
-      ...prev,
-      [eventId]: !prev[eventId]
-    }));
-  };
+  const toggleCollapse = (evId) => setCollapsed(prev => ({ ...prev, [evId]: !prev[evId] }));
 
-  const collapseAllEvents = () => {
-    const allCollapsed = {};
-    events.forEach(event => {
-      allCollapsed[event.id] = true;
-    });
-    setCollapsedEvents(allCollapsed);
-  };
-
-  const expandAllEvents = () => {
-    setCollapsedEvents({});
-  };
-
-  if (loading) {
-    return (
-      <div className="p-6 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-800"></div>
-      </div>
-    );
-  }
-
+  // ==================================================================
+  // RENDER
+  // ==================================================================
   return (
-    <div className="p-6">
-      <header className="mb-6 flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="font-cabinet text-3xl font-bold text-slate-900">Presupuestos de Temporada</h1>
-          <p className="font-ibm text-slate-600 mt-1">Gestión de cachés por evento y categoría</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Collapse controls */}
-          <div className="flex items-center gap-2 border border-slate-300 rounded-md px-2 py-1">
-            <button
-              onClick={collapseAllEvents}
-              className="px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded"
-              title="Contraer todos los eventos"
-            >
-              ⊟ Contraer todos
-            </button>
-            <div className="w-px h-4 bg-slate-300"></div>
-            <button
-              onClick={expandAllEvents}
-              className="px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded"
-              title="Expandir todos los eventos"
-            >
-              ⊞ Expandir todos
-            </button>
-          </div>
-          
-          <select
-            value={selectedSeason || ''}
-            onChange={(e) => setSelectedSeason(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-          >
-            {(seasons || []).map(season => (
-              <option key={season.id} value={season.id}>{season.nombre}</option>
-            ))}
-          </select>
-          <button
-            onClick={saveBudget}
-            disabled={saving}
-            data-testid="btn-save-presupuesto"
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
-          >
-            {saving ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                Guardando...
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                </svg>
-                Guardar Presupuesto
-              </>
-            )}
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="max-w-[1800px] mx-auto">
+        <h1 className="text-2xl font-bold text-slate-900 mb-1">💰 Presupuestos</h1>
+        <p className="text-sm text-slate-600 mb-4">Matriz de cachets por instrumento, nivel y evento. Solo se muestran eventos publicados (estado <em>abierto</em>).</p>
+
+        {/* Barra superior sticky */}
+        <div className="sticky top-0 z-30 bg-slate-50 border-b border-slate-200 py-3 flex flex-wrap items-center gap-3 mb-4">
+          <label className="text-sm">
+            <span className="text-slate-600 mr-2">Temporada:</span>
+            <select value={selectedSeason || ''} onChange={(e) => setSelectedSeason(e.target.value)}
+                    data-testid="select-temporada-presup"
+                    className="border border-slate-300 rounded px-3 py-1.5 bg-white text-sm">
+              <option value="">— elige temporada —</option>
+              {seasons.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={precargarEstandar}
+                  data-testid="btn-precargar-presup"
+                  title="Rellena con 400/320/260/200€ las celdas vacías"
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded">
+            📋 Precargar estándar
           </button>
-          {saveMsg && (
-            <span
-              data-testid="presupuesto-msg"
-              className={`text-sm font-medium ${saveMsg.type === 'success' ? 'text-green-700' : 'text-red-700'}`}
-            >
-              {saveMsg.type === 'success' ? '✅' : '⚠️'} {saveMsg.text}
-            </span>
+          <button type="button" onClick={guardarTodos} disabled={saving}
+                  data-testid="btn-guardar-presup"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded disabled:opacity-50">
+            {saving ? 'Guardando…' : 'Guardar todos'}
+          </button>
+          {msg && (
+            <span className={`text-xs px-2 py-1 rounded ${msg.type === 'success' ? 'bg-emerald-100 text-emerald-800' : msg.type === 'info' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-700'}`}
+                  data-testid="presup-msg">{msg.text}</span>
           )}
+          <span className="ml-auto text-sm text-slate-700">
+            Total temporada: <strong className="text-emerald-700 tabular-nums" data-testid="total-temporada">{fmtEuro(totalGeneral)}</strong>
+          </span>
         </div>
-      </header>
 
-      {/* Sección A — Cachets base por instrumento y nivel (con selector de alcance) */}
-      <CachetsBaseSection api={api} eventos={events} />
-
-      {/* Sección B — Otros gastos e ingresos por evento */}
-      <div className="bg-slate-100 px-4 py-2 rounded-t-lg border border-slate-300 border-b-0 mb-0">
-        <h2 className="font-semibold text-slate-800">📊 Sección B · Otros gastos e ingresos por evento</h2>
-        <p className="text-xs text-slate-600 mt-0.5">Partidas complementarias (sala, técnico, publicidad, viajes, etc.) por evento.</p>
-      </div>
-
-      {events.length === 0 ? (
-        <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-          <p className="text-slate-500">No hay eventos configurados para esta temporada</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-          {/* Wrapper with horizontal scroll */}
-          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
-            <table className="w-full text-sm" style={{ minWidth: '1400px' }}>
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300">
-                  <th className="px-3 py-3 text-left font-semibold text-slate-700 sticky left-0 bg-slate-100 border-r border-slate-300 min-w-[200px] z-10">
-                    Sección / Nivel de Estudios
-                  </th>
-                  {(events || []).map(event => {
-                    const isCollapsed = collapsedEvents[event.id];
-                    return (
-                      <th 
-                        key={event.id} 
-                        colSpan={isCollapsed ? 1 : 4} 
-                        className="px-2 py-2 text-center font-semibold text-slate-700 border-r border-slate-300 relative"
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => toggleEventCollapse(event.id)}
-                            className="hover:bg-slate-200 rounded p-1 transition-colors"
-                            title={isCollapsed ? "Expandir evento" : "Contraer evento"}
-                          >
-                            {isCollapsed ? (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                            ) : (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            )}
-                          </button>
-                          <div>
-                            <div className="text-xs font-bold" data-testid={`budget-event-name-${event.id}`}>{event.nombre || 'Sin nombre'}</div>
-                            <div className="text-[10px] text-slate-500">{event.fecha_inicio ? new Date(event.fecha_inicio).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}</div>
-                          </div>
-                        </div>
-                      </th>
-                    );
-                  })}
-                  <th className="px-3 py-3 text-center font-semibold text-slate-700 bg-slate-200 min-w-[100px]">
-                    TOTAL
-                  </th>
-                </tr>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-600">
-                  <th className="px-3 py-2 sticky left-0 bg-slate-50 border-r border-slate-300 z-10"></th>
-                  {(events || []).map(event => {
-                    const isCollapsed = collapsedEvents[event.id];
-                    if (isCollapsed) {
+        {loading ? (
+          <div className="bg-white rounded-lg p-8 text-center text-slate-500 border">Cargando matriz de presupuestos…</div>
+        ) : eventos.length === 0 ? (
+          <div className="bg-white rounded-lg p-8 text-center text-slate-500 border">
+            {selectedSeason ? 'No hay eventos publicados (estado abierto) en esta temporada.' : 'Selecciona una temporada para empezar.'}
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+            <div className="overflow-x-auto" data-testid="presup-matriz-wrap">
+              <table className="text-xs border-collapse" style={{ minWidth: 900 + eventos.length * 280 }}>
+                <thead className="bg-slate-100 sticky top-[60px] z-20">
+                  {/* Fila 1: secciones de columnas (header de evento) */}
+                  <tr>
+                    <th colSpan={3} className="sticky left-0 z-30 bg-slate-100 border-b border-slate-300 px-3 py-2 text-left text-slate-700 font-semibold" style={{ minWidth: 360 }}>
+                      Instrumento / Nivel
+                    </th>
+                    {eventos.map(ev => {
+                      const expanded = !collapsed[ev.id];
                       return (
-                        <th key={`header-${event.id}`} className="px-2 py-2 text-center border-r border-slate-300">
-                          Total €
+                        <th key={ev.id} colSpan={expanded ? 5 : 1}
+                            className="border-b border-l border-slate-300 px-2 py-2 text-center align-top"
+                            data-testid={`evt-header-${ev.id}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <button type="button" onClick={() => toggleCollapse(ev.id)}
+                                    data-testid={`btn-collapse-${ev.id}`}
+                                    className="text-slate-500 hover:text-slate-800">
+                              {expanded ? '◧' : '▸'}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-slate-900 truncate" title={ev.nombre}>{ev.nombre}</div>
+                              <div className="text-[10px] text-slate-600 mt-0.5">
+                                {fmtFechaCorta(ev.fecha_inicio)}{ev.fecha_fin && ev.fecha_fin !== ev.fecha_inicio ? ` – ${fmtFechaCorta(ev.fecha_fin)}` : ''}
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                {ev.n_ensayos} ens · {ev.n_funciones} func
+                              </div>
+                            </div>
+                          </div>
                         </th>
                       );
-                    }
+                    })}
+                    <th className="border-b border-l-2 border-slate-400 bg-slate-200 px-3 py-2 text-center font-semibold text-slate-800" style={{ minWidth: 110 }}>
+                      Total fila
+                    </th>
+                  </tr>
+                  {/* Fila 2: subcabeceras de cada evento */}
+                  <tr className="text-[10px]">
+                    <th className="sticky left-0 z-30 bg-slate-50 border-b border-slate-300 px-2 py-1 text-left text-slate-500 font-medium">Sección</th>
+                    <th className="sticky bg-slate-50 border-b border-slate-300 px-2 py-1 text-left text-slate-500 font-medium" style={{ left: 100 }}>Instrumento</th>
+                    <th className="sticky bg-slate-50 border-b border-slate-300 px-2 py-1 text-left text-slate-500 font-medium" style={{ left: 220 }}>Nivel</th>
+                    {eventos.map(ev => {
+                      const expanded = !collapsed[ev.id];
+                      if (!expanded) {
+                        return <th key={ev.id} className="border-b border-l border-slate-300 px-2 py-1 text-center text-slate-500 font-medium bg-slate-50">Total €</th>;
+                      }
+                      return (
+                        <React.Fragment key={ev.id}>
+                          <th className="border-b border-l border-slate-300 px-2 py-1 text-center text-slate-500 font-medium bg-slate-50">Caché €</th>
+                          <th className="border-b border-slate-300 px-1 py-1 text-center text-slate-400 font-medium bg-slate-100">Ens.</th>
+                          <th className="border-b border-slate-300 px-1 py-1 text-center text-slate-400 font-medium bg-slate-100">Func.</th>
+                          <th className="border-b border-slate-300 px-2 py-1 text-center text-slate-500 font-medium bg-slate-50">Pond. %</th>
+                          <th className="border-b border-slate-300 px-2 py-1 text-center text-slate-700 font-semibold bg-slate-100">Total €</th>
+                        </React.Fragment>
+                      );
+                    })}
+                    <th className="border-b border-l-2 border-slate-400 bg-slate-200" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {ROWS.map((row) => {
+                    const sec = row.seccion;
+                    const rowBg = row.alt ? sec.bgAlt : sec.bg;
+                    const totalFila = eventos.reduce((acc, ev) => acc + totalCelda(ev.id, row.instrumento, row.nivel), 0);
                     return (
-                      <React.Fragment key={`header-${event.id}`}>
-                        <th className="px-1 py-2 text-center border-r border-slate-200"># Ensayos</th>
-                        <th className="px-1 py-2 text-center border-r border-slate-200"># Funciones</th>
-                        <th className="px-1 py-2 text-center border-r border-slate-200">Caché Total €</th>
-                        <th className="px-1 py-2 text-center border-r border-slate-300">Pond. %</th>
-                      </React.Fragment>
+                      <tr key={row.key} className={`border-t border-slate-200 ${rowBg}`}>
+                        {/* Sticky cols */}
+                        <td className={`sticky left-0 z-10 px-2 py-1.5 ${rowBg} border-r border-slate-200`} style={{ width: 100 }}>
+                          {row.isFirstOfSec ? (
+                            <span className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded ${sec.bar} text-white`}>{sec.name}</span>
+                          ) : null}
+                        </td>
+                        <td className={`sticky z-10 px-2 py-1.5 ${rowBg} border-r border-slate-200 font-medium text-slate-800`} style={{ left: 100, width: 120 }}>
+                          {row.isFirstOfInstr ? row.instrumento : <span className="text-slate-400">↳</span>}
+                        </td>
+                        <td className={`sticky z-10 px-2 py-1.5 ${rowBg} border-r border-slate-200 text-slate-700`} style={{ left: 220, width: 140 }}>
+                          {row.nivel}
+                        </td>
+                        {eventos.map(ev => {
+                          const c = cellValue(ev.id, row.instrumento, row.nivel);
+                          const expanded = !collapsed[ev.id];
+                          const total = totalCelda(ev.id, row.instrumento, row.nivel);
+                          if (!expanded) {
+                            return (
+                              <td key={ev.id} className="border-l border-slate-200 px-2 py-1 text-right tabular-nums font-semibold text-slate-800"
+                                  data-testid={`total-${ev.id}-${row.instrumento}-${row.nivel.replace(/ /g,'_')}`}>
+                                {fmtEuro(total)}
+                              </td>
+                            );
+                          }
+                          return (
+                            <React.Fragment key={ev.id}>
+                              <td className="border-l border-slate-200 px-1 py-1 text-right">
+                                <input type="number" min="0" step="10" value={c.importe || ''}
+                                       onChange={(e) => setCell(ev.id, row.instrumento, row.nivel, 'importe', e.target.value)}
+                                       data-testid={`cache-${ev.id}-${row.instrumento}-${row.nivel.replace(/ /g,'_')}`}
+                                       placeholder="0"
+                                       className="w-20 px-1.5 py-0.5 text-right border border-slate-300 rounded bg-white tabular-nums" />
+                              </td>
+                              <td className="px-1 py-1 text-center text-slate-400 tabular-nums bg-slate-50/40">{ev.n_ensayos}</td>
+                              <td className="px-1 py-1 text-center text-slate-400 tabular-nums bg-slate-50/40">{ev.n_funciones}</td>
+                              <td className="px-1 py-1 text-right">
+                                <input type="number" min="0" max="200" step="5" value={c.factor ?? 100}
+                                       onChange={(e) => setCell(ev.id, row.instrumento, row.nivel, 'factor', e.target.value)}
+                                       data-testid={`factor-${ev.id}-${row.instrumento}-${row.nivel.replace(/ /g,'_')}`}
+                                       className="w-16 px-1.5 py-0.5 text-right border border-slate-300 rounded bg-white tabular-nums" />
+                              </td>
+                              <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-700 bg-emerald-50/40"
+                                  data-testid={`total-${ev.id}-${row.instrumento}-${row.nivel.replace(/ /g,'_')}`}>
+                                {fmtEuro(total)}
+                              </td>
+                            </React.Fragment>
+                          );
+                        })}
+                        <td className="border-l-2 border-slate-400 bg-slate-100 px-2 py-1 text-right tabular-nums font-semibold text-slate-900">
+                          {fmtEuro(totalFila)}
+                        </td>
+                      </tr>
                     );
                   })}
-                  <th className="px-3 py-2 bg-slate-200"></th>
-                </tr>
-              </thead>
-            <tbody>
-              {SECTIONS.map((section, sectionIdx) => (
-                <React.Fragment key={section.id}>
-                  {/* Section Header */}
-                  <tr className={`${section.color} border-b border-slate-300`}>
-                    <td colSpan={1 + events.reduce((acc, ev) => acc + (collapsedEvents[ev.id] ? 1 : 4), 0) + 1} className="px-3 py-2 font-bold text-slate-800 text-xs uppercase tracking-wide">
-                      {section.name}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-200 border-t-2 border-slate-400">
+                    <td colSpan={3} className="sticky left-0 z-10 bg-slate-200 px-3 py-2 text-right font-bold text-slate-800">
+                      Total por evento:
                     </td>
-                  </tr>
-                  
-                  {/* Study Levels */}
-                  {(STUDY_LEVELS || []).map((level, levelIdx) => (
-                    <tr key={`${section.id}-${level.id}`} className="border-b border-slate-200 hover:bg-slate-50">
-                      <td className="px-3 py-2 text-slate-700 sticky left-0 bg-white border-r border-slate-300 text-xs z-10">
-                        <span className="pl-4">{level.name}</span>
-                      </td>
-                      {(events || []).map(event => {
-                        const cell = budgetData[section.id]?.[level.id]?.[event.id] || { num_rehearsals: 0, num_functions: 0, cache_total: 0, weight: 100 };
-                        const isCollapsed = collapsedEvents[event.id];
-                        
-                        if (isCollapsed) {
-                          // Show only total when collapsed
-                          const subtotal = cell.cache_total * (cell.weight / 100);
-                          return (
-                            <td key={`${section.id}-${level.id}-${event.id}`} className="px-2 py-2 text-center border-r border-slate-300 text-xs font-medium">
-                              {subtotal.toFixed(2)}€
-                            </td>
-                          );
-                        }
-                        
-                        // Show all four columns when expanded
-                        return (
-                          <React.Fragment key={`${section.id}-${level.id}-${event.id}`}>
-                            <td className="px-1 py-1 border-r border-slate-200">
-                              <input
-                                type="number"
-                                value={cell.num_rehearsals}
-                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'num_rehearsals', e.target.value)}
-                                className="w-full px-1 py-1 text-center border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                min="0"
-                                step="1"
-                              />
-                            </td>
-                            <td className="px-1 py-1 border-r border-slate-200">
-                              <input
-                                type="number"
-                                value={cell.num_functions}
-                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'num_functions', e.target.value)}
-                                className="w-full px-1 py-1 text-center border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                min="0"
-                                step="1"
-                              />
-                            </td>
-                            <td className="px-1 py-1 border-r border-slate-200">
-                              <input
-                                type="number"
-                                value={cell.cache_total}
-                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'cache_total', e.target.value)}
-                                className="w-full px-1 py-1 text-center border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500 bg-green-50 font-medium"
-                                min="0"
-                                step="10"
-                              />
-                            </td>
-                            <td className="px-1 py-1 border-r border-slate-300">
-                              <input
-                                type="number"
-                                value={cell.weight}
-                                onChange={(e) => updateBudgetCell(section.id, level.id, event.id, 'weight', e.target.value)}
-                                className="w-full px-1 py-1 text-center border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500 bg-yellow-50"
-                                min="0"
-                                max="200"
-                                step="1"
-                              />
-                            </td>
-                          </React.Fragment>
-                        );
-                      })}
-                      <td className="px-3 py-2 text-center font-semibold text-slate-900 bg-slate-100 text-xs">
-                        {calculateRowTotal(section.id, level.id).toFixed(2)}€
-                      </td>
-                    </tr>
-                  ))}
-                  
-                  {/* Section Subtotal */}
-                  <tr className="bg-slate-100 border-b-2 border-slate-400 font-semibold">
-                    <td className="px-3 py-2 text-slate-800 sticky left-0 bg-slate-100 border-r border-slate-300 text-xs z-10">
-                      SUBTOTAL {section.name}
-                    </td>
-                    {(events || []).map(event => {
-                      const isCollapsed = collapsedEvents[event.id];
-                      const total = calculateSectionEventTotal(section.id, event.id);
-                      
+                    {eventos.map(ev => {
+                      const expanded = !collapsed[ev.id];
+                      const total = totalEvento(ev.id);
                       return (
-                        <td 
-                          key={`subtotal-${section.id}-${event.id}`} 
-                          colSpan={isCollapsed ? 1 : 4} 
-                          className="px-2 py-2 text-center text-slate-900 border-r border-slate-300 text-xs"
-                        >
-                          {total.toFixed(2)}€
+                        <td key={ev.id} colSpan={expanded ? 5 : 1}
+                            className="border-l border-slate-400 px-3 py-2 text-right tabular-nums font-bold text-emerald-700"
+                            data-testid={`total-evt-${ev.id}`}>
+                          {fmtEuro(total)}
                         </td>
                       );
                     })}
-                    <td className="px-3 py-2 text-center text-slate-900 bg-slate-200 text-xs">
-                      {STUDY_LEVELS.reduce((sum, level) => sum + calculateRowTotal(section.id, level.id), 0).toFixed(2)}€
+                    <td className="border-l-2 border-slate-500 bg-slate-300 px-3 py-2 text-right tabular-nums font-bold text-slate-900">
+                      {fmtEuro(totalGeneral)}
                     </td>
                   </tr>
-                </React.Fragment>
-              ))}
-              
-              {/* Grand Total */}
-              <tr className="bg-slate-800 text-white font-bold">
-                <td className="px-3 py-3 sticky left-0 bg-slate-800 border-r border-slate-600 text-sm uppercase z-10">
-                  TOTAL TEMPORADA
-                </td>
-                {events.map(event => {
-                  const isCollapsed = collapsedEvents[event.id];
-                  const total = calculateEventTotal(event.id);
-                  
-                  return (
-                    <td 
-                      key={`total-${event.id}`} 
-                      colSpan={isCollapsed ? 1 : 4} 
-                      className="px-2 py-3 text-center border-r border-slate-600 text-sm"
-                    >
-                      {total.toFixed(2)}€
-                    </td>
-                  );
-                })}
-                <td className="px-3 py-3 text-center bg-slate-900 text-base">
-                  {calculateGrandTotal().toFixed(2)}€
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      )}
-
-      {/* Legend */}
-      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2 text-sm">💡 Cómo usar esta tabla</h3>
-        <ul className="text-xs text-blue-800 space-y-1">
-          <li>• <strong># Ensayos:</strong> Número total de ensayos del evento (cantidad)</li>
-          <li>• <strong># Funciones:</strong> Número total de funciones del evento (cantidad)</li>
-          <li>• <strong>Caché Total €:</strong> Importe total a pagar por el evento completo (ensayos + funciones)</li>
-          <li>• <strong>Ponderación %:</strong> Factor de ajuste aplicable al total (100% = sin cambios, 80% = reducción 20%, 120% = incremento 20%)</li>
-          <li>• El importe final se calcula como: <strong>Caché Total × (Ponderación % / 100)</strong></li>
-          <li>• Los totales se actualizan automáticamente al modificar cualquier valor</li>
-          <li>• <strong className="text-green-600">Haz clic en "Guardar Presupuesto" para aplicar los cambios a Plantillas y Asistencia/Pagos</strong></li>
-        </ul>
-      </div>
-
-      {/* Info box */}
-      <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
-        <div className="flex items-start gap-3">
-          <svg className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div className="text-xs text-green-800">
-            <strong className="block mb-1">📊 Integración con otras secciones:</strong>
-            <p>Una vez guardado, los cachés configurados aquí se aplicarán automáticamente en:</p>
-            <ul className="mt-1 ml-4 list-disc">
-              <li><strong>Plantillas definitivas:</strong> Al asignar músicos a eventos</li>
-              <li><strong>Asistencia y pagos:</strong> Cálculo automático según asistencia real</li>
-            </ul>
-            <p className="mt-2">Los músicos se clasifican según su <strong>nivel de estudios</strong> y <strong>sección orquestal</strong> para aplicar el caché correspondiente.</p>
+                </tfoot>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

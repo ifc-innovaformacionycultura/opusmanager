@@ -8,6 +8,7 @@ import PortalCalendar from './PortalCalendar';
 import MiPerfil from './MiPerfil';
 import MiHistorial from './MiHistorial';
 import MiDisponibilidadPanel from './MiDisponibilidadPanel';
+import LogisticaMusicoPanel from './LogisticaMusicoPanel';
 import { computeProfileCompleteness } from '../../lib/profileCompleteness';
 
 const PortalDashboard = () => {
@@ -22,6 +23,7 @@ const PortalDashboard = () => {
   const [eventos, setEventos] = useState([]);
   const [eventoSeleccionado, setEventoSeleccionado] = useState(null);
   const [ensayos, setEnsayos] = useState([]);
+  const [logistica, setLogistica] = useState([]);
   const [materiales, setMateriales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -103,6 +105,17 @@ const PortalDashboard = () => {
       });
       const materialesData = await materialesRes.json();
       setMateriales(materialesData.materiales || []);
+
+      // Cargar logística (Bloque 2)
+      try {
+        const logRes = await fetch(`${API_URL}/portal/evento/${eventoId}/logistica`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const logData = await logRes.json();
+        setLogistica(logData.logistica || []);
+      } catch (e) {
+        setLogistica([]);
+      }
     } catch (err) {
       console.error('Error cargando detalles:', err);
     }
@@ -488,6 +501,15 @@ const PortalDashboard = () => {
                   })()}
 
                   {/* Ensayos — reemplazado por la tabla unificada MiDisponibilidadPanel arriba */}
+
+                  {/* Transporte y Alojamiento (Bloque 2) */}
+                  {logistica.length > 0 && (
+                    <LogisticaMusicoPanel
+                      logistica={logistica}
+                      apiUrl={API_URL}
+                      onRefresh={() => cargarDetallesEvento(asignacion.evento.id)}
+                    />
+                  )}
 
                   {/* Materiales */}
                   <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">

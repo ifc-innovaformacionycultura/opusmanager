@@ -14,7 +14,10 @@ const SECCIONES = [
 
 const ALL_INSTRUMENTOS = SECCIONES.flatMap(s => s.instrumentos);
 
-const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, ensayoAnteriorId, ensayoAnteriorLabel, onSaved }) => {
+const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, ensayoAnteriorId, ensayoAnteriorLabel, onSaved, mode, tempKey, onLocalChange }) => {
+  // mode === 'new' → ensayo aún no persistido; no llama API ni guarda;
+  //                  inicializa todo TRUE y propaga cambios al padre vía onLocalChange.
+  const isNew = mode === 'new' || !ensayoId;
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -24,6 +27,14 @@ const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, ensayoAnteriorId, ensayo
   const [loaded, setLoaded] = useState(false);
 
   const cargar = useCallback(async () => {
+    if (isNew) {
+      // ensayo aún no persistido: inicializar todos TRUE en local
+      const map = {};
+      ALL_INSTRUMENTOS.forEach(i => { map[i] = true; });
+      setState(map);
+      setLoaded(true);
+      return;
+    }
     if (!ensayoId) return;
     try {
       setLoading(true);
@@ -39,11 +50,31 @@ const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, ensayoAnteriorId, ensayo
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || err.message });
     } finally { setLoading(false); }
-  }, [ensayoId, api]);
+  }, [ensayoId, api, isNew]);
 
   useEffect(() => {
     if (open && !loaded) cargar();
   }, [open, loaded, cargar]);
+
+  // Si es nuevo, inicializar de inmediato sin esperar a abrir el panel
+  // y abrirlo automáticamente para que el gestor lo vea (Bloque 4).
+  useEffect(() => {
+    if (isNew && !loaded) {
+      const map = {};
+      ALL_INSTRUMENTOS.forEach(i => { map[i] = true; });
+      setState(map);
+      setLoaded(true);
+      setOpen(true);
+    }
+  }, [isNew, loaded]);
+
+  // Propagar cambios al padre cuando es ensayo nuevo
+  useEffect(() => {
+    if (isNew && loaded && typeof onLocalChange === 'function') {
+      onLocalChange(state);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, isNew, loaded]);
 
   const toggleInstrumento = (instr) => {
     setState(prev => ({ ...prev, [instr]: !prev[instr] }));
@@ -180,16 +211,24 @@ const ConvocatoriaInstrumentosPanel = ({ ensayoId, api, ensayoAnteriorId, ensayo
               </div>
 
               <div className="flex items-center gap-2 pt-1">
-                <button type="button" onClick={guardar} disabled={saving}
-                        data-testid={`btn-save-convocatoria-${ensayoId}`}
-                        className="px-3 py-1 bg-slate-800 hover:bg-slate-900 text-white text-xs rounded disabled:opacity-50">
-                  {saving ? 'Guardando…' : 'Guardar convocatoria'}
-                </button>
-                {msg && (
-                  <span className={`text-xs ${msg.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
-                        data-testid={`msg-convocatoria-${ensayoId}`}>
-                    {msg.text}
+                {isNew ? (
+                  <span className="text-xs italic text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200" data-testid={`convocatoria-pending-${tempKey || 'new'}`}>
+                    ℹ️ Los cambios se guardarán al guardar el evento.
                   </span>
+                ) : (
+                  <>
+                    <button type="button" onClick={guardar} disabled={saving}
+                            data-testid={`btn-save-convocatoria-${ensayoId}`}
+                            className="px-3 py-1 bg-slate-800 hover:bg-slate-900 text-white text-xs rounded disabled:opacity-50">
+                      {saving ? 'Guardando…' : 'Guardar convocatoria'}
+                    </button>
+                    {msg && (
+                      <span className={`text-xs ${msg.type === 'success' ? 'text-emerald-700' : msg.type === 'info' ? 'text-blue-700' : 'text-red-700'}`}
+                            data-testid={`msg-convocatoria-${ensayoId}`}>
+                        {msg.text}
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
             </>

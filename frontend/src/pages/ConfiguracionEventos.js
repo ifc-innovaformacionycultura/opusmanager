@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 import ComentariosPanel from "../components/ComentariosPanel";
 import ConvocatoriaInstrumentosPanel from "../components/ConvocatoriaInstrumentosPanel";
+import LogisticaSection from "../components/LogisticaSection";
 
 // Accordion Component
 const Accordion = ({ title, subtitle, isOpen, onToggle, children }) => (
@@ -35,7 +36,9 @@ const SectionTitle = ({ children, color }) => {
     green: 'bg-green-500',
     yellow: 'bg-yellow-500',
     orange: 'bg-orange-500',
-    purple: 'bg-purple-500'
+    purple: 'bg-purple-500',
+    indigo: 'bg-indigo-500',
+    pink: 'bg-pink-500'
   };
   return (
     <div className="flex items-center gap-2 mb-3 mt-4">
@@ -431,19 +434,30 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
           </div>
-          {rehearsal.id && (rehearsal.tipo || 'ensayo') === 'ensayo' && (() => {
-            // Ensayo anterior: rehearsal persistido más cercano con tipo ensayo
+          {/* Panel de convocatoria visible siempre que sea ensayo (incluso sin id) */}
+          {((rehearsal.tipo || 'ensayo') === 'ensayo') && (() => {
+            const isPersisted = !!rehearsal.id;
+            // Ensayo anterior persistido más cercano del mismo tipo
             const prev = rehearsals
               .slice(0, index)
               .reverse()
               .find(r => r.id && (r.tipo || 'ensayo') === 'ensayo');
             const prevLabel = prev ? `${prev.date || ''} ${prev.start || ''}${prev.lugar ? ' · ' + prev.lugar : ''}`.trim() : null;
+            const tempKey = `new-${index}`;
             return (
               <ConvocatoriaInstrumentosPanel
-                ensayoId={rehearsal.id}
+                ensayoId={isPersisted ? rehearsal.id : null}
                 api={api}
-                ensayoAnteriorId={prev?.id}
-                ensayoAnteriorLabel={prevLabel}
+                ensayoAnteriorId={isPersisted ? prev?.id : undefined}
+                ensayoAnteriorLabel={isPersisted ? prevLabel : undefined}
+                mode={isPersisted ? 'persisted' : 'new'}
+                tempKey={tempKey}
+                onLocalChange={(stateMap) => {
+                  // Recogemos el estado en el rehearsal mismo para luego persistirlo
+                  const next = [...rehearsals];
+                  next[index] = { ...next[index], pending_convocatoria: stateMap };
+                  setRehearsals(next);
+                }}
               />
             );
           })()}
@@ -458,6 +472,14 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
           Añadir ensayo/función
         </button>
       </div>
+
+      {/* Logística — Transportes y Alojamientos (Bloque 2) */}
+      {event.id && (
+        <div className="mt-4">
+          <SectionTitle color="indigo">Transportes y Alojamientos</SectionTitle>
+          <LogisticaSection eventoId={event.id} api={api} />
+        </div>
+      )}
 
       {/* Instrumentación */}
       <SectionTitle color="yellow">Propuesta de Plantilla</SectionTitle>
@@ -772,7 +794,7 @@ const ConfiguracionEventos = () => {
 
     const results = { created: 0, updated: 0, deleted: 0 };
     for (const r of toCreate) {
-      await api.post('/api/gestor/ensayos', {
+      const resp = await api.post('/api/gestor/ensayos', {
         evento_id: eventoId,
         fecha: r.date,
         hora: r.start || '00:00',
@@ -783,6 +805,19 @@ const ConfiguracionEventos = () => {
         notas: r.notas || null,
       });
       results.created++;
+      // Bloque 4: si el gestor configuró la convocatoria antes de guardar, persistirla
+      const newId = resp?.data?.ensayo?.id || resp?.data?.id;
+      if (newId && r.pending_convocatoria && (r.tipo || 'ensayo') === 'ensayo') {
+        const payload = Object.entries(r.pending_convocatoria).map(([instrumento, convocado]) => ({
+          instrumento,
+          convocado: !!convocado,
+        }));
+        try {
+          await api.put(`/api/gestor/ensayos/${newId}/instrumentos`, payload);
+        } catch (e) {
+          console.warn('[Eventos] No se pudo guardar convocatoria pendiente:', e?.response?.data || e?.message);
+        }
+      }
     }
     for (const r of toUpdate) {
       await api.put(`/api/gestor/ensayos/${r.id}`, {

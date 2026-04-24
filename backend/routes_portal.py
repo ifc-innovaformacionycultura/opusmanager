@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from supabase_client import supabase
 from auth_utils import get_current_user, get_current_musico
 from typing import List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
@@ -419,6 +419,85 @@ async def get_ensayos_evento(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al cargar ensayos: {str(e)}"
         )
+
+
+# ==================================================================
+# LOGÍSTICA del evento — vista del músico + confirmación
+# ==================================================================
+
+@router.get("/evento/{evento_id}/logistica")
+async def get_logistica_musico(
+    evento_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Devuelve la logística del evento + estado de confirmación del músico actual."""
+    try:
+        usuario_id = current_user.get("id") or (current_user.get("profile") or {}).get("id")
+        log_res = supabase.table('evento_logistica').select('*') \
+            .eq('evento_id', evento_id) \
+            .order('tipo', desc=False) \
+            .order('orden', desc=False) \
+            .execute()
+        items = log_res.data or []
+        if not items:
+            return {"logistica": []}
+
+        ids = [it['id'] for it in items]
+        confs = supabase.table('confirmaciones_logistica').select('*') \
+            .eq('usuario_id', usuario_id) \
+            .in_('logistica_id', ids).execute().data or []
+        conf_by_lid = {c['logistica_id']: c for c in confs}
+
+        for it in items:
+            c = conf_by_lid.get(it['id'])
+            it['mi_confirmacion'] = c.get('confirmado') if c else None
+            it['mi_confirmacion_at'] = c.get('updated_at') if c else None
+        return {"logistica": items}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al cargar logística: {str(e)}"
+        )
+
+
+class ConfirmacionLogisticaPayload(BaseModel):
+    confirmado: Optional[bool] = None  # True | False | None (resetear)
+
+
+@router.post("/logistica/{logistica_id}/confirmar")
+async def confirmar_logistica(
+    logistica_id: str,
+    payload: ConfirmacionLogisticaPayload,
+    current_user: dict = Depends(get_current_user)
+):
+    """El músico confirma o rechaza una pieza de logística."""
+    try:
+        usuario_id = current_user.get("id") or (current_user.get("profile") or {}).get("id")
+        if not usuario_id:
+            raise HTTPException(status_code=400, detail="Usuario no identificado")
+        # UPSERT manual
+        existing = supabase.table('confirmaciones_logistica').select('id') \
+            .eq('logistica_id', logistica_id) \
+            .eq('usuario_id', usuario_id).limit(1).execute().data or []
+        body = {
+            "logistica_id": logistica_id,
+            "usuario_id": usuario_id,
+            "confirmado": payload.confirmado,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if existing:
+            r = supabase.table('confirmaciones_logistica').update(body).eq('id', existing[0]['id']).execute()
+        else:
+            r = supabase.table('confirmaciones_logistica').insert(body).execute()
+        return {"confirmacion": r.data[0] if r.data else None}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al confirmar: {str(e)}"
+        )
+
 
 @router.get("/evento/{evento_id}/materiales")
 async def get_materiales_evento(

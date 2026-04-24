@@ -358,3 +358,47 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - Backend: los 4 endpoints clave responden 200 (cachets-base, presupuestos, tareas, incidencias).
 - POST /incidencias sigue funcionando (usuario_nombre "OPUS, Admin" correcto).
 - Frontend `/configuracion/eventos`: convocatoria por instrumento visible por cada ensayo; botón "Copiar del ensayo anterior" aparece correctamente desde el 2º ensayo.
+
+---
+
+## Changelog (Feb 2026 — Iteración 11 / Fork Resume #4)
+
+### ✅ BLOQUE 5 — Limpieza de código basura (DONE)
+- Eliminados console.log de debug en `/app/frontend/src/lib/supabaseClient.js` (`🔍 Debug -`, `✅ Supabase client initialized`).
+- No se encontraron llamadas a endpoints legacy (`/api/events`, `/api/contacts`, `/api/seasons`, `/api/budgets`, `/api/email-templates`).
+- ESLint: 0 issues en src completo.
+
+### ✅ BLOQUE 3 — Filtro `estado='abierto'` (DONE)
+- `GET /api/gestor/seguimiento` y `GET /api/gestor/plantillas-definitivas` ahora filtran por `estado='abierto'` (excluyen `borrador`, `cerrado`, etc.).
+- Verificado por curl: `/eventos` devuelve 7 (6 abiertos + 1 cerrado), `/seguimiento` y `/plantillas-definitivas` devuelven 6 (solo abiertos).
+- `/eventos`, `/analisis-economico`, `/gestion-economica`, `/presupuestos*` **NO** se modificaron — siguen mostrando todos los estados.
+
+### ✅ BLOQUE 4 — Convocatoria visible al añadir ensayo nuevo (DONE)
+- `ConvocatoriaInstrumentosPanel` acepta `mode='new'` cuando no hay `ensayoId`: inicializa todos los 19 instrumentos a TRUE en local, abre el panel automáticamente, muestra mensaje **"📋 Los cambios se guardarán al guardar el evento."**.
+- Propaga el state al padre vía `onLocalChange(stateMap)`.
+- En `persistEnsayos`, después de crear cada ensayo nuevo, persiste `pending_convocatoria` con `PUT /api/gestor/ensayos/{newId}/instrumentos`.
+
+### ✅ BLOQUE 2 — Logística: Transportes y Alojamientos (DONE)
+- **SQL**: tabla `evento_logistica` (con campos para transporte: fecha, hora_salida/llegada, lugar_salida/llegada, 3 puntos de recogida; y para alojamiento: hotel_nombre, dirección, check-in/out; común: fecha_limite_confirmacion, notas) + tabla `confirmaciones_logistica` (logistica_id × usuario_id UNIQUE).
+- **Backend gestor**: `GET/PUT /api/gestor/eventos/{id}/logistica` (bulk upsert), `DELETE /api/gestor/logistica/{id}`, `GET /api/gestor/logistica/{id}/confirmaciones` (lista de músicos confirmados/rechazados/sin respuesta entre los asignados al evento).
+- **Backend portal**: `GET /api/portal/evento/{id}/logistica` (incluye `mi_confirmacion`), `POST /api/portal/logistica/{id}/confirmar` (UPSERT por usuario+logística).
+- **Frontend gestor** `LogisticaSection.js`: toggle "Este evento requiere transporte/alojamiento", subsección Transportes (botón añadir, tipo Ida/Vuelta, fecha, horarios, lugares, 3 puntos de recogida, fecha límite, notas, eliminar), subsección Alojamientos (hotel, dirección, check-in/out, fecha límite, notas), botón "Guardar logística", panel colapsable "Confirmaciones de músicos" con 3 columnas (✅ confirmados, ❌ rechazados, ⏳ sin respuesta).
+- **Frontend portal** `LogisticaMusicoPanel.js`: tarjeta por cada pieza de logística con datos completos + botones "✓ Confirmo este transporte / Necesito alojamiento" y "✗ No necesito".
+
+### ✅ BLOQUE 1 — Presupuestos: matriz completa + eliminada Sección B (DONE)
+- **SQL**: añadida columna `cachets_config.factor_ponderacion NUMERIC(6,2) DEFAULT 100`.
+- `Presupuestos.js` reescrito como matriz: filas = (sección × instrumento × nivel) sticky a la izquierda; columnas = bloques de eventos abiertos con 5 subcolumnas cuando expandido (Caché €, Ens., Func., Pond. %, Total €) o 1 (Total €) cuando contraído. Botón ◧/▸ por evento para colapsar.
+- Cabecera de cada bloque: nombre, fechas cortas DD/MM/YY, conteo "X ens · Y func".
+- Total € por celda calculado en tiempo real: `Caché € × (Pond. % / 100)`. Total fila + Total por evento + Total temporada.
+- Colores por sección: Cuerda azul, Viento Madera verde, Viento Metal amarillo, Percusión naranja, Teclados violeta, Coro rosa. Filas alternas `bg-{color}-50` / `bg-{color}-100`.
+- **Botón "Precargar estándar"**: rellena solo celdas vacías con 400/320/260/200€ por nivel (no sobrescribe valores existentes).
+- **Botón "Guardar todos"**: envía solo las celdas marcadas como `_dirty` al endpoint bulk.
+- **Backend** `routes_economia.py`: `GET /api/gestor/presupuestos-matriz?temporada=X` (devuelve eventos abiertos + n_ensayos/n_funciones + cachets_config existentes con factor_ponderacion) y `POST /api/gestor/presupuestos-matriz/bulk`.
+- Sección B (otros gastos e ingresos) **eliminada del frontend**. Tabla `presupuestos` en Supabase **NO** se ha tocado (los endpoints CRUD siguen funcionando para futuros usos).
+
+### Validación end-to-end
+- Bloque 1: matriz renderiza 4 eventos × 76 filas = 304 inputs Caché + 304 Pond. %; tras precargar estándar el Total temporada salta a 134.725,00 €. Botón "Guardar todos" envía solo dirty rows.
+- Bloque 2: tras crear 1 transporte y 1 alojamiento, GET devuelve 1 fila cada uno con todos los campos correctamente persistidos.
+- Bloque 3: 6 abiertos vs 7 totales en /eventos (1 cerrado correctamente excluido).
+- Bloque 4: al añadir ensayo nuevo el panel se abre automáticamente con "(19/19)" y muestra mensaje de guardado pendiente.
+- Bloque 5: 0 lint errors en frontend.

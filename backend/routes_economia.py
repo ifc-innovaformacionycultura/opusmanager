@@ -289,3 +289,102 @@ async def bulk_presupuestos(data: PresupuestosBulkRequest, current_user: dict = 
         return {"ok": True, "creados": creados, "actualizados": actualizados, "borrados": borrados}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar presupuestos: {str(e)}")
+
+
+# ==================================================================
+# PRESUPUESTOS — Matriz completa (cachets + factor_ponderacion por evento)
+# ==================================================================
+
+class CachetMatrizRow(BaseModel):
+    id: Optional[str] = None
+    evento_id: str
+    instrumento: str
+    nivel_estudios: str
+    importe: Optional[float] = 0
+    factor_ponderacion: Optional[float] = 100
+
+
+class CachetMatrizBulk(BaseModel):
+    rows: List[CachetMatrizRow]
+
+
+@router.get("/presupuestos-matriz")
+async def get_presupuestos_matriz(
+    temporada: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Devuelve la matriz para la pantalla Presupuestos:
+    - eventos abiertos (estado='abierto') de la temporada (con nombre, fechas, n_ensayos, n_funciones)
+    - cachets_config para cada (evento, instrumento, nivel) con importe + factor_ponderacion
+    """
+    try:
+        # 1) Eventos abiertos
+        q = supabase.table('eventos').select('id,nombre,fecha_inicio,fecha_fin,temporada,estado') \
+            .eq('estado', 'abierto')
+        if temporada:
+            q = q.eq('temporada', temporada)
+        ev_res = q.order('fecha_inicio', desc=False).execute()
+        eventos = ev_res.data or []
+        if not eventos:
+            return {"eventos": [], "cachets": []}
+        evento_ids = [e['id'] for e in eventos]
+
+        # 2) Conteo de ensayos y funciones por evento
+        ens_res = supabase.table('ensayos').select('evento_id,tipo') \
+            .in_('evento_id', evento_ids).execute()
+        n_ens = {eid: 0 for eid in evento_ids}
+        n_func = {eid: 0 for eid in evento_ids}
+        for row in (ens_res.data or []):
+            t = (row.get('tipo') or 'ensayo').lower()
+            if t == 'ensayo':
+                n_ens[row['evento_id']] = n_ens.get(row['evento_id'], 0) + 1
+            else:
+                n_func[row['evento_id']] = n_func.get(row['evento_id'], 0) + 1
+        for ev in eventos:
+            ev['n_ensayos'] = n_ens.get(ev['id'], 0)
+            ev['n_funciones'] = n_func.get(ev['id'], 0)
+
+        # 3) Cachets de esos eventos
+        ca_res = supabase.table('cachets_config') \
+            .select('id,evento_id,instrumento,nivel_estudios,importe,factor_ponderacion') \
+            .in_('evento_id', evento_ids).execute()
+        return {"eventos": eventos, "cachets": ca_res.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/presupuestos-matriz/bulk")
+async def bulk_presupuestos_matriz(data: CachetMatrizBulk, current_user: dict = Depends(get_current_gestor)):
+    """UPSERT de cachets_config con importe + factor_ponderacion."""
+    try:
+        now = datetime.now().isoformat()
+        creados = 0
+        actualizados = 0
+        for row in data.rows:
+            payload = {
+                "evento_id": row.evento_id,
+                "instrumento": row.instrumento,
+                "nivel_estudios": (row.nivel_estudios or '').strip() or 'General',
+                "importe": float(row.importe or 0),
+                "factor_ponderacion": float(row.factor_ponderacion or 100),
+                "updated_at": now,
+            }
+            target_id = row.id
+            if not target_id:
+                # Buscar por (evento, instrumento, nivel)
+                existing = supabase.table('cachets_config').select('id') \
+                    .eq('evento_id', row.evento_id) \
+                    .eq('instrumento', payload['instrumento']) \
+                    .eq('nivel_estudios', payload['nivel_estudios']) \
+                    .limit(1).execute().data or []
+                if existing:
+                    target_id = existing[0]['id']
+            if target_id:
+                supabase.table('cachets_config').update(payload).eq('id', target_id).execute()
+                actualizados += 1
+            else:
+                supabase.table('cachets_config').insert(payload).execute()
+                creados += 1
+        return {"ok": True, "creados": creados, "actualizados": actualizados, "total": creados + actualizados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar matriz: {str(e)}")
