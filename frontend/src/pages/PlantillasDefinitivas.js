@@ -36,20 +36,28 @@ const BoolDot = ({ v }) => {
 };
 
 // Select Sí / No / — para asistencia real editable
-const TriSelect = ({ value, onChange, dataTestId }) => (
-  <select
-    value={value === true ? 'si' : value === false ? 'no' : ''}
+// Input numérico 0..100 para asistencia real (%). NULL = vacío.
+const PctInput = ({ value, onChange, dataTestId }) => (
+  <input
+    type="number"
+    min="0"
+    max="100"
+    step="1"
+    value={value === null || value === undefined || value === '' ? '' : value}
     onChange={(e) => {
-      const v = e.target.value;
-      onChange(v === 'si' ? true : v === 'no' ? false : null);
+      const raw = e.target.value;
+      if (raw === '') return onChange(null);
+      let n = parseFloat(raw);
+      if (Number.isNaN(n)) n = 0;
+      if (n < 0) n = 0;
+      if (n > 100) n = 100;
+      onChange(n);
     }}
+    placeholder="—"
     data-testid={dataTestId}
-    className="text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white w-14"
-  >
-    <option value="">—</option>
-    <option value="si">Sí</option>
-    <option value="no">No</option>
-  </select>
+    className="text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white w-14 text-right"
+    title="% asistencia real (0–100)"
+  />
 );
 
 // ==========================================================================
@@ -116,14 +124,18 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust }) => {
             const asistenciasEditadas = st.asistencias || {};
             const pctReal = (() => {
               if (!ensayos.length) return 0;
-              let si = 0;
+              const vals = [];
               for (const e of ensayos) {
                 const v = asistenciasEditadas[e.id];
                 const fallback = (m.asistencia.find(x => x.ensayo_id === e.id) || {}).asistencia_real;
                 const efectivo = v !== undefined ? v : fallback;
-                if (efectivo === true) si++;
+                if (efectivo !== null && efectivo !== undefined && efectivo !== '') {
+                  const n = typeof efectivo === 'number' ? efectivo : parseFloat(efectivo);
+                  if (!Number.isNaN(n)) vals.push(n);
+                }
               }
-              return Math.round((si / ensayos.length) * 100);
+              if (vals.length === 0) return 0;
+              return Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 100) / 100;
             })();
             const cachePrev = m.cache_previsto;
             const cacheReal = +(cachePrev * (pctReal / 100)).toFixed(2);
@@ -184,7 +196,7 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust }) => {
                     <React.Fragment key={e.id}>
                       <td className="px-1 py-1 text-center"><BoolDot v={disp.asiste} /></td>
                       <td className="px-1 py-1 text-center">
-                        <TriSelect
+                        <PctInput
                           value={asistActual}
                           onChange={(v) => onChange(m, evento.id, { asistenciaEnsayoId: e.id, asistenciaValor: v })}
                           dataTestId={`asist-${m.usuario_id}-${e.id}`}
@@ -400,14 +412,17 @@ const PlantillasDefinitivas = () => {
       const key = m.usuario_id + '_' + evento.id;
       const st = state[key] || {};
       const asistenciasEditadas = st.asistencias || {};
-      let si = 0;
+      const vals = [];
       for (const e of ensayos) {
         const v = asistenciasEditadas[e.id];
         const fallback = (m.asistencia.find(x => x.ensayo_id === e.id) || {}).asistencia_real;
         const efectivo = v !== undefined ? v : fallback;
-        if (efectivo === true) si++;
+        if (efectivo !== null && efectivo !== undefined && efectivo !== '') {
+          const n = typeof efectivo === 'number' ? efectivo : parseFloat(efectivo);
+          if (!Number.isNaN(n)) vals.push(n);
+        }
       }
-      const pctReal = ensayos.length ? Math.round((si / ensayos.length) * 100) : 0;
+      const pctReal = vals.length ? (vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
       const cachePrev = +m.cache_previsto || 0;
       const cacheReal = +(cachePrev * (pctReal / 100)).toFixed(2);
       const extra = st.cache_extra !== undefined ? +st.cache_extra || 0 : +m.cache_extra || 0;

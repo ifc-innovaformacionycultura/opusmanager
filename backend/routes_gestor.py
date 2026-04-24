@@ -693,9 +693,12 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                         "asistencia_real": d.get('asistencia_real') if d else None,
                     })
                 si_disp = sum(1 for x in disp_list if x["asiste"] is True)
-                si_real = sum(1 for x in asist_list if x["asistencia_real"] is True)
                 pct_disp = round((si_disp / total_e) * 100) if total_e else 0
-                pct_real = round((si_real / total_e) * 100) if total_e else 0
+
+                # pct_real = promedio de los porcentajes asistencia_real que NO son NULL.
+                # Si todos son NULL → 0.
+                valores_real = [float(x["asistencia_real"]) for x in asist_list if x["asistencia_real"] is not None]
+                pct_real = round(sum(valores_real) / len(valores_real), 2) if valores_real else 0
 
                 # Caché previsto: cachets_config → fallback asignaciones.cache_presupuestado → asignaciones.importe
                 nivel_efectivo = a.get('nivel_estudios') or _nivel_estudios_efectivo(u)
@@ -819,7 +822,7 @@ class AsistenciaItem(BaseModel):
     disponibilidad_id: Optional[str] = None
     usuario_id: Optional[str] = None
     ensayo_id: Optional[str] = None
-    asistencia_real: Optional[bool] = None
+    asistencia_real: Optional[float] = None  # porcentaje 0..100
 
 
 class GastoItem(BaseModel):
@@ -939,8 +942,9 @@ async def guardar_plantillas_definitivas(
                     all_ids = [x['id'] for x in all_e]
                     d = supabase.table('disponibilidad').select('asistencia_real') \
                         .eq('usuario_id', uid).in_('ensayo_id', all_ids).execute().data or []
-                    si = sum(1 for x in d if x.get('asistencia_real') is True)
-                    pct = round((si / total) * 100, 2)
+                    # Nueva lógica: promedio de los porcentajes asistencia_real no-NULL
+                    vals = [float(x['asistencia_real']) for x in d if x.get('asistencia_real') is not None]
+                    pct = round(sum(vals) / len(vals), 2) if vals else 0.0
                     supabase.table('asignaciones').update({
                         "porcentaje_asistencia": pct, "updated_at": now
                     }).eq('usuario_id', uid).eq('evento_id', evid).execute()

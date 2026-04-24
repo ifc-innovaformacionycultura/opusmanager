@@ -31,6 +31,41 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Febrero 2026 — Bloques 1-5 (CRÍTICO: ensayos persistidos + UX Seguimiento + asistencia_real NUMERIC)
+
+**Bloque 1 — Configuración de Eventos:**
+- ✅ Backend: `GET /api/gestor/eventos` ahora incluye `ensayos[]` por evento. Nuevo `PUT /api/gestor/ensayos/{id}` (antes solo POST/DELETE).
+- ✅ Frontend `ConfiguracionEventos.js`: `saveEvent` hace diff y POST/PUT/DELETE contra `/api/gestor/ensayos`. Feedback `"Ensayos: +N / ±N / −N"` por guardado.
+- ✅ **SQL ejecutado** (`/app/MIGRATION_BLOQUE1B.sql`): `ALTER TABLE eventos ADD COLUMN hora_inicio TIME, fecha_inicio_preparacion DATE`.
+- ✅ EventoCreate/Update Pydantic + `pickPayload` extendidos con los 2 campos nuevos.
+- ✅ UI Datos Generales reorganizada con 6 líneas de fechas: principal (fecha+hora), actuación 2/3/4 (fecha+hora), inicio preparación, fecha fin.
+- ✅ Sección "Fechas adicionales de función" eliminada.
+- ✅ Subcolumnas Seguimiento ordenadas: ensayos (fecha ASC) primero, conciertos/funciones (fecha ASC) después. Labels `Ens.1 · 5 may · 19:00`, `Conc.1 · 15 may · 20:00`.
+
+**Bloque 2 — Presupuestos:**
+- ✅ Bug fix: `event.name/date/season.name` → `event.nombre/fecha_inicio/season.nombre`. Cabeceras ahora muestran nombres de evento.
+- ✅ Bug fix: `calculateRowTotal` usaba `cell.rehearsals+functions` (inexistentes) → ahora `cache_total × weight/100`. Totales horizontales calculan en vivo.
+- ✅ ColSpan del TOTAL fila cuando evento expandido corregido de 3 a 4.
+- ✅ Sincronización con Config confirmada — ambos usan `/api/gestor/eventos?temporada=X`.
+
+**Bloque 3 — Seguimiento de Plantillas:**
+- ✅ Filtros acumulativos simultáneos: buscar nombre/apellidos, multi-select instrumentos (chips), select especialidad/nivel/localidad/evento. Botón "Limpiar filtros" con chips visibles de filtros activos.
+- ✅ Botón "Columnas" con menú de checkboxes para ocultar/mostrar Apellidos/Nombre/Instrumento/Especialidad/Nivel/Baremo/Localidad. Default: primeras 3 visibles. Persistido en `localStorage.seguimiento_visible_cols`.
+- ✅ Barra "⚡ ACCIONES MASIVAS" renombrada con texto explicativo. Multi-select de eventos con chips. Botón "Aplicar a seleccionados (N)" solo visible con selección.
+- ✅ Mensaje informativo permanente `💾 Los cambios individuales (...) se guardan automáticamente al instante` bajo la tabla.
+- ✅ Toggle Publicar y selector Acción guardan inmediatamente (ya funcionaba — `togglePublicar` y `cambiarAccion` hacen POST optimista).
+
+**Bloque 4 — Plantillas Definitivas (asistencia_real como %):**
+- ✅ **SQL ejecutado** por el usuario (`/app/MIGRATION_BLOQUE4.sql`): `ALTER TABLE disponibilidad ALTER COLUMN asistencia_real TYPE NUMERIC(5,2)`.
+- ✅ Backend: `AsistenciaItem.asistencia_real: float`. Cálculo `pct_real` = promedio de porcentajes no-NULL (ignora NULL). `cache_real = cache_prev × pct_real/100`.
+- ✅ Recálculo `asignaciones.porcentaje_asistencia` usa la misma fórmula de promedio.
+- ✅ Frontend: `TriSelect` reemplazado por `PctInput` (input number 0..100). `calcularTotalesSeccion` actualizado a promedio.
+- ✅ **Verificado con curl**: 100/0/50/75 → `pct_real=56.25% · cache_real=213.75€` (380×0.5625).
+
+**Bloque 5 — Sincronización global de eventos:**
+- ✅ Verificado E2E: crear evento BLOQUE5_TEST → aparece en Presupuestos + Configuración + Seguimiento inmediatamente. DELETE → desaparece de todos.
+- ✅ Todas las pantallas leen de `/api/gestor/eventos` (fuente única de verdad). Ensayos configurados aparecen como subcolumnas en Seguimiento y columnas de disponibilidad en Plantillas Definitivas.
+
 ### Febrero 2026 — Bloque D cerrado (fixes iteration_7)
 - ✅ **Fix backend `PUT /api/gestor/cachets-config/{evento_id}`**: `nivel_estudios=null` ahora se normaliza a `'General'` antes del UPSERT para respetar el NOT NULL de la constraint `ux_cachets_evento_instr_nivel`. Verificado con curl (`{"ok":true,"escritas":1}`).
 - ✅ **Fix frontend `MiDisponibilidadPanel.js`**: reemplazado `useAuth().api.post` inexistente por `fetch + supabase.auth.getSession()` (mismo patrón que `PortalDashboard`). Mensaje verde `[data-testid=disponibilidad-msg]` ahora renderiza `"N cambios guardados correctamente"` durante 6s tras guardar. Eliminado `onSaved={cargarMisEventos}` del parent para evitar unmount por `loading=true`.
