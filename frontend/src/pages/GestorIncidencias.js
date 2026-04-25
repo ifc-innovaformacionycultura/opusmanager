@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import IncidenciaModal from '../components/IncidenciaModal';
 import ImageLightbox from '../components/ImageLightbox';
+import IncidenciasKpiDashboard from '../components/IncidenciasKpiDashboard';
 
 const TIPO_BADGE = {
   incidencia: { label: '🐞 Incidencia', cls: 'bg-red-100 text-red-800' },
@@ -140,6 +141,9 @@ const GestorIncidencias = () => {
                  className="px-2 py-1.5 border border-slate-300 rounded-md text-sm bg-white" title="Hasta" />
         </div>
       </header>
+
+      {/* Mini-dashboard de KPIs */}
+      <IncidenciasKpiDashboard list={list} />
 
       {/* Tabs Todas / Mis incidencias */}
       <div className="border-b border-slate-200 mb-4 flex gap-1" data-testid="incidencias-tabs">

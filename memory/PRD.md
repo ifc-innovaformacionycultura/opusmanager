@@ -562,3 +562,24 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - pytest 22/22 PASS.
 - Screenshots end-to-end: modal abre vía Ctrl+Shift+B con captura pre-cargada, ambos atajos confirmados, "Mis incidencias (14)" tras backfill.
 
+
+
+## Iteración 18 (Feb 2026) — Verificación Presupuestos + Mini-dashboard KPI
+
+### ✅ Verificación de Presupuestos (sin cambios necesarios)
+- Tabla matriz renderiza siempre **76 filas** completas (16 cuerda + 16 viento madera + 16 viento metal + 4 percusión + 8 teclados + 16 coro), confirmado por screenshot automatizado.
+- Filas sin datos en `cachets_config` muestran inputs en `0`/vacío (placeholder "0", `value={c.importe || ''}`).
+- Niveles usados en frontend exactos: `Superior finalizado` · `Superior cursando` · `Profesional finalizado` · `Profesional cursando` (constante `NIVELES`).
+- Save (`guardarTodos`) y `PlantillaBaseModal` usan literalmente esos 4 strings vía `nivel_estudios: niv` en el bucle `for niv of NIVELES`.
+- Estado: **YA ERA CORRECTO antes de iter 18, sólo se verificó.**
+
+### ✅ Mini-dashboard de KPIs en `/admin/incidencias`
+- Nuevo componente `IncidenciasKpiDashboard.js` con 4 tarjetas (calculado client-side, sin endpoints extra):
+  1. **Abiertas**: total no-resuelto / total · badge "🔴 N de prioridad alta" si las hay.
+  2. **Distribución por tipo**: barras horizontales con conteo y %.
+  3. **Tiempo medio de resolución**: media `(updated_at - created_at)` sobre `estado='resuelto'`. Formato adaptativo (min / h / d).
+  4. **Top 5 páginas con más reportes**: ranking ordenado.
+- Insertado encima de los tabs en `GestorIncidencias.js`.
+
+### Tests
+- pytest `test_iter10_regression.py` → 22/22 PASS, 0 regresiones.
