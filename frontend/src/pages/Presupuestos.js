@@ -313,8 +313,8 @@ const Presupuestos = () => {
         <h1 className="text-2xl font-bold text-slate-900 mb-1">💰 Presupuestos</h1>
         <p className="text-sm text-slate-600 mb-4">Matriz de cachets por instrumento, nivel y evento. Solo se muestran eventos publicados (estado <em>abierto</em>).</p>
 
-        {/* Barra superior sticky */}
-        <div className="sticky top-0 z-30 bg-slate-50 border-b border-slate-200 py-3 flex flex-wrap items-center gap-3 mb-4">
+        {/* Barra superior — NO sticky para que el thead pueda fijarse correctamente al hacer scroll */}
+        <div className="bg-slate-50 border-b border-slate-200 py-3 flex flex-wrap items-center gap-3 mb-4">
           <label className="text-sm">
             <span className="text-slate-600 mr-2">Temporada:</span>
             <select value={selectedSeason || ''} onChange={(e) => setSelectedSeason(e.target.value)}
@@ -366,7 +366,7 @@ const Presupuestos = () => {
           <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
             <div className="overflow-x-auto" data-testid="presup-matriz-wrap">
               <table className="text-xs border-collapse" style={{ minWidth: 900 + eventos.length * 280 }}>
-                <thead className="bg-slate-100 sticky top-[60px] z-20">
+                <thead className="bg-slate-100 sticky top-0 z-20">
                   {/* Fila 1: secciones de columnas (header de evento) */}
                   <tr>
                     <th colSpan={3} className="sticky left-0 z-30 bg-slate-100 border-b border-slate-300 px-3 py-2 text-left text-slate-700 font-semibold" style={{ minWidth: 360 }}>
@@ -439,12 +439,10 @@ const Presupuestos = () => {
                       <tr key={row.key} className={`border-t border-slate-200 ${rowBg}`}>
                         {/* Sticky cols */}
                         <td className={`sticky left-0 z-10 px-2 py-1.5 ${rowBg} border-r border-slate-200`} style={{ width: 100 }}>
-                          {row.isFirstOfSec ? (
-                            <span className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded ${sec.bar} text-white`}>{sec.name}</span>
-                          ) : null}
+                          <span className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded ${sec.bar} text-white`}>{sec.name}</span>
                         </td>
                         <td className={`sticky z-10 px-2 py-1.5 ${rowBg} border-r border-slate-200 font-medium text-slate-800`} style={{ left: 100, width: 120 }}>
-                          {row.isFirstOfInstr ? row.instrumento : <span className="text-slate-400">↳</span>}
+                          {row.instrumento}
                         </td>
                         <td className={`sticky z-10 px-2 py-1.5 ${rowBg} border-r border-slate-200 text-slate-700`} style={{ left: 220, width: 140 }}>
                           {row.nivel}

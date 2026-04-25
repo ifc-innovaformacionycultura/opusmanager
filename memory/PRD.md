@@ -583,3 +583,27 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 
 ### Tests
 - pytest `test_iter10_regression.py` → 22/22 PASS, 0 regresiones.
+
+
+## Iteración 19 (Feb 2026) — Fix visual matriz Presupuestos
+
+### 🐞 Bug confirmado y resuelto: 2 primeras filas de Violín ocultas
+- **Síntoma**: la matriz parecía empezar en "Profesional finalizado", faltando "Violín · Superior finalizado/cursando".
+- **Causa**: solape sticky entre la barra superior (`sticky top-0 z-30`) y el `<thead>` (`sticky top-[60px] z-20`). El thead se solapaba con las primeras filas del tbody.
+- **Verificado por DOM**: antes `thead.bottom=349.5 / row[0].top=289.5` (60px de solape); después `thead.bottom == row[0].top`.
+
+### ✅ Fix
+- `Presupuestos.js`:
+  - Quitado `sticky top-0 z-30` de la barra superior.
+  - `<thead>` pasa de `top-[60px]` a `top-0` (queda fijo arriba al hacer scroll).
+- Las 76 filas íntegramente visibles desde el inicio, con `Violín · Superior finalizado` como primera.
+
+### ✅ Sección + Instrumento en TODAS las filas
+- Eliminado el `↳` y las condiciones `isFirstOfInstr/isFirstOfSec` en el render.
+
+### ✅ NIVELES verificado
+- Orden ya correcto: `Superior finalizado · Superior cursando · Profesional finalizado · Profesional cursando`.
+
+### Tests
+- pytest 22/22 PASS sin regresiones.
+- Verificación DOM: row[0..3] = Violín en los 4 niveles correctos en orden.
