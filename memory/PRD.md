@@ -639,3 +639,26 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 ### Tests
 - pytest 22/22 PASS · curl smoke OK en T1, T2, T4, T5A · screenshots E2E OK en T2 y T4.
 
+
+### Feb 2026 — Iter 22: Test de regresión completo backend (post Iter 13-21)
+
+**Resultado**: 39/39 tests pytest PASS sobre todos los endpoints implementados (auth, health, eventos, músicos, incidencias + upload Storage, presupuestos, tareas, mensajes, archivo musical, portal). Sin regresiones.
+
+**Verificaciones funcionales**:
+- ✅ Login admin + músico OK; guards de rol funcionan (musico → 401/403 en /api/gestor/*).
+- ✅ Health endpoint 200 con timestamp (Keep-alive operativo).
+- ✅ `POST /api/gestor/incidencias/upload-screenshot` sube a Supabase Storage correctamente.
+- ✅ Chat interno: canales/general/no-leidos/lista todos OK.
+- ✅ Archivo: CRUD obras + originales + partes + prestamos + alertas + plantilla-obras + atriles-evento OK.
+- ✅ Bulk pagos `/eventos/{id}/pagos-bulk` y bulk presupuestos `/presupuestos-matriz/bulk` OK.
+- ✅ Comentarios genéricos `/api/gestor/comentarios` (tipo + entidad_id) usados por tareas y eventos.
+- ✅ Sin leak de `_id` (BD es Postgres, no Mongo).
+
+**Limpieza**: Datos de prueba purgados (2 obras `TEST_iter11`, 3 mensajes test).
+
+**Pendiente**: Importación masiva del Excel `REGISTRO_DE_REPERTORIO.xlsx` (bloqueado por archivo no presente en contenedor).
+
+**Recomendaciones LOW priority** (del agente, pendientes de decisión):
+- Validar magic bytes / mime / tamaño máx en `upload-screenshot` (DoS Storage).
+- Añadir constraint UNIQUE en `obras.codigo` + retry para evitar duplicados en concurrencia.
+- Considerar AsyncSupabaseClient para evitar bloquear event loop en endpoints de alta latencia.
