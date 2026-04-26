@@ -29,7 +29,7 @@ const ProtectedGestorRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
   
-  return children;
+  return <><KeepAlive active /> {children}</>;
 };
 
 // Protected Route for Músicos (uses SupabaseAuthContext)
@@ -48,7 +48,7 @@ const ProtectedMusicoRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
   
-  return children;
+  return <><KeepAlive active /> {children}</>;
 };
 
 // Login Page (Legacy - will be replaced by LoginUnificado)
@@ -236,6 +236,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
         { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
         { id: "tareas", label: "Planificador de tareas", path: "/admin/tareas" },
         { id: "incidencias", label: "Feedback e incidencias", path: "/admin/incidencias" },
+        { id: "mensajes", label: "💬 Mensajes", path: "/admin/mensajes" },
         { id: "recordatorios", label: "Recordatorios auto.", path: "/admin/recordatorios" },
         { id: "emails", label: "Historial de emails", path: "/admin/emails" },
         { id: "config-email", label: "Configuración de email", path: "/admin/emails/configuracion" },
@@ -448,6 +449,8 @@ const Layout = ({ children }) => {
       return { page: "Administración", section: "Gestión de permisos" };
     } else if (path.startsWith("/admin/actividad")) {
       return { page: "Administración", section: "Registro de actividad" };
+    } else if (path.startsWith("/admin/mensajes")) {
+      return { page: "Administración", section: "Mensajes" };
     } else if (path.startsWith("/ayuda")) {
       return { page: "Manual de Usuario", section: null };
     }
@@ -718,6 +721,8 @@ import RegistroActividad from "./pages/RegistroActividad";
 import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
 import GestorMusicos from "./pages/GestorMusicos";
+import ChatInterno from "./pages/ChatInterno";
+import KeepAlive from "./components/KeepAlive";
 import GestorMusicoDetalle from "./pages/GestorMusicoDetalle";
 import GestorTareas from "./pages/GestorTareas";
 import GestorIncidencias from "./pages/GestorIncidencias";
@@ -783,6 +788,7 @@ function App() {
                         <Route path="/admin/reclamaciones" element={<GestorReclamaciones />} />
                         <Route path="/admin/permisos" element={<GestionPermisos />} />
                         <Route path="/admin/actividad" element={<RegistroActividad />} />
+                        <Route path="/admin/mensajes" element={<ChatInterno />} />
                         <Route path="/ayuda" element={<ManualUsuario />} />
                       </Routes>
                     </Layout>

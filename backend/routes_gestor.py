@@ -2530,7 +2530,29 @@ async def crear_comentario(
             "contenido": payload.contenido
         }
         res = supabase.table('comentarios_internos').insert(data).execute()
-        
+        comentario_creado = res.data[0] if res.data else None
+
+        # TAREA 3B — Si el comentario es sobre una tarea, notificar al responsable (si es distinto del autor)
+        if payload.tipo == 'tarea' and comentario_creado:
+            try:
+                tarea_row = supabase.table('tareas').select('id,titulo,responsable_id') \
+                    .eq('id', payload.entidad_id).limit(1).execute().data or []
+                if tarea_row:
+                    t = tarea_row[0]
+                    resp_id = t.get('responsable_id')
+                    if resp_id and resp_id != gestor_profile.get('id'):
+                        supabase.table('notificaciones_gestor').insert({
+                            "gestor_id": resp_id,
+                            "tipo": "comentario_tarea",
+                            "titulo": f"Nuevo comentario en: {t.get('titulo')}",
+                            "descripcion": f"{nombre}: {payload.contenido[:80]}",
+                            "entidad_tipo": "tarea",
+                            "entidad_id": t['id'],
+                            "leida": False,
+                        }).execute()
+            except Exception:
+                pass
+
         # Notificar a otros gestores si hay menciones @
         import re
         menciones = re.findall(r'@([\w]+)', payload.contenido)
@@ -2554,7 +2576,7 @@ async def crear_comentario(
             except Exception:
                 pass
         
-        return {"comentario": res.data[0] if res.data else None}
+        return {"comentario": comentario_creado}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
@@ -2737,7 +2759,9 @@ async def get_gestion_economica(
                 vals = [float(x['asistencia_real']) for x in asist_list if x['convocado'] and x['asistencia_real'] is not None]
                 pct_real = round(sum(vals) / len(vals), 2) if vals else 0
 
-                nivel_efectivo = a.get('nivel_estudios') or _nivel_estudios_efectivo(u)
+                # TAREA 1 — Gestión Económica lee nivel_estudios DIRECTAMENTE de usuarios
+                # (sin fallback a 'especialidad' ni priorizar asignaciones.nivel_estudios para evitar valores desactualizados como "Música clásica").
+                nivel_efectivo = u.get('nivel_estudios') or None
                 combined = cachets_by_evento.get(ev['id'], []) + cachets_base
                 lookup = _cachet_lookup_with_source(combined, u.get('instrumento'), nivel_efectivo)
                 if lookup is not None:
@@ -2858,6 +2882,28 @@ async def marcar_pago(asignacion_id: str, payload: dict, current_user: dict = De
         return {"ok": True, "asignacion": r.data[0] if r.data else None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al marcar pago: {str(e)}")
+
+
+@router.post("/eventos/{evento_id}/pagos-bulk")
+async def marcar_pagos_bulk(evento_id: str, payload: dict, current_user: dict = Depends(get_current_gestor)):
+    """TAREA 2 — Marca estado_pago en bulk para todas las asignaciones confirmadas de un evento.
+    Body: {estado_pago: 'pagado' | 'pendiente' | 'anulado'}
+    Devuelve: {ok: True, actualizadas: N, evento_id, estado_pago}
+    """
+    try:
+        estado = (payload or {}).get('estado_pago') or 'pendiente'
+        if estado not in ('pagado', 'pendiente', 'anulado'):
+            raise HTTPException(status_code=400, detail="estado_pago inválido")
+        r = supabase.table('asignaciones').update({
+            "estado_pago": estado,
+            "updated_at": datetime.now().isoformat(),
+        }).eq('evento_id', evento_id).eq('estado', 'confirmado').execute()
+        return {"ok": True, "actualizadas": len(r.data or []), "evento_id": evento_id, "estado_pago": estado}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al marcar pagos en bulk: {str(e)}")
+
 
 
 @router.get("/gestion-economica/export")

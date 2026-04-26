@@ -80,6 +80,22 @@ const AsistenciaPagos = () => {
     } finally { setBusy(false); }
   };
 
+  // TAREA 2 — Pagos masivos en cabecera de evento
+  const marcarPagosBulk = async (ev, nuevoEstado) => {
+    const total = (ev.secciones || []).reduce((acc, s) => acc + (s.musicos?.length || 0), 0);
+    if (total === 0) return;
+    const verbo = nuevoEstado === 'pagado' ? 'Pagado' : 'Pendiente';
+    const ok = window.confirm(`¿Marcar ${total} músicos del evento "${ev.nombre}" como ${verbo}?`);
+    if (!ok) return;
+    try {
+      setBusy(true);
+      await api.post(`/api/gestor/eventos/${ev.id}/pagos-bulk`, { estado_pago: nuevoEstado });
+      await cargar(temporada);
+    } catch (err) {
+      alert('Error en pago masivo: ' + (err.response?.data?.detail || err.message));
+    } finally { setBusy(false); }
+  };
+
   const exportXlsx = async (eventoId = null) => {
     try {
       const qs = new URLSearchParams();
@@ -174,8 +190,22 @@ const AsistenciaPagos = () => {
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold">{fmtEuro(ev.totales.total)}</span>
                 <button
+                  onClick={(e) => { e.stopPropagation(); marcarPagosBulk(ev, 'pagado'); }}
+                  disabled={busy}
+                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-xs rounded disabled:opacity-50"
+                  data-testid={`btn-bulk-pagado-${ev.id}`}
+                  title="Marcar todos los músicos confirmados como Pagado"
+                >✓ Marcar todos como Pagado</button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); marcarPagosBulk(ev, 'pendiente'); }}
+                  disabled={busy}
+                  className="px-2 py-0.5 bg-slate-600 hover:bg-slate-700 text-xs rounded disabled:opacity-50"
+                  data-testid={`btn-bulk-pendiente-${ev.id}`}
+                  title="Revertir todos a Pendiente"
+                >↩ Marcar todos como Pendiente</button>
+                <button
                   onClick={(e) => { e.stopPropagation(); exportXlsx(ev.id); }}
-                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-xs rounded"
+                  className="px-2 py-0.5 bg-emerald-700 hover:bg-emerald-800 text-xs rounded"
                   data-testid={`btn-export-ev-${ev.id}`}
                 >📥 Excel</button>
                 <button

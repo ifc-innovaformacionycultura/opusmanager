@@ -19,6 +19,7 @@ from routes_gestor import router as gestor_router
 from routes_incidencias import router as incidencias_router
 from routes_tareas import router as tareas_router
 from routes_economia import router as economia_router
+from routes_mensajes import router as mensajes_router
 
 # ==================== App Configuration ====================
 
@@ -61,17 +62,20 @@ app.include_router(gestor_router)    # /api/gestor/*
 app.include_router(incidencias_router)  # /api/gestor/incidencias/*
 app.include_router(tareas_router)    # /api/gestor/tareas/*
 app.include_router(economia_router)  # /api/gestor/{cachets-base,cachets-config,presupuestos}/*
+app.include_router(mensajes_router)  # /api/gestor/mensajes/*
 
 # ==================== Health Check ====================
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint usado por el frontend cada 14 min para evitar cold start de Railway."""
+    from datetime import datetime, timezone
     return {
-        "status": "healthy",
+        "status": "ok",
         "service": "OPUS MANAGER API",
         "version": "2.0.0",
-        "database": "Supabase PostgreSQL"
+        "database": "Supabase PostgreSQL",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 @app.get("/")

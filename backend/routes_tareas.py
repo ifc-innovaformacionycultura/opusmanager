@@ -56,18 +56,20 @@ async def create_tarea(data: TareaCreate, current_user: dict = Depends(get_curre
         payload = data.model_dump(exclude_none=True)
         r = supabase.table('tareas').insert(payload).execute()
         tarea = r.data[0] if r.data else None
-        # Notificar al responsable si hay uno y es distinto del autor
+        # TAREA 3B — Notificar al responsable si hay uno y es distinto del autor
         try:
             if tarea and tarea.get('responsable_id') and tarea['responsable_id'] != current_user['id']:
                 supabase.table('notificaciones_gestor').insert({
-                    "usuario_id": tarea['responsable_id'],
+                    "gestor_id": tarea['responsable_id'],
                     "tipo": "tarea_asignada",
-                    "titulo": "Nueva tarea asignada",
-                    "mensaje": f"Te han asignado la tarea: {tarea.get('titulo')}",
-                    "link": f"/admin/tareas?id={tarea['id']}",
+                    "titulo": f"Nueva tarea asignada: {tarea.get('titulo')}",
+                    "descripcion": f"Te han asignado la tarea \"{tarea.get('titulo')}\" con deadline {tarea.get('fecha_limite') or 'sin fecha'}",
+                    "entidad_tipo": "tarea",
+                    "entidad_id": tarea['id'],
+                    "leida": False,
                 }).execute()
         except Exception:
-            pass  # Notificación opcional — no romper el flujo si tabla no existe
+            pass
         return {"tarea": tarea}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
@@ -85,16 +87,18 @@ async def update_tarea(tarea_id: str, data: TareaUpdate, current_user: dict = De
         r = supabase.table('tareas').update(payload).eq('id', tarea_id).execute()
         tarea = r.data[0] if r.data else None
 
-        # Notificar al nuevo responsable si ha cambiado
+        # TAREA 3B — Notificar al nuevo responsable si ha cambiado
         try:
             new_resp = payload.get('responsable_id')
             if tarea and new_resp and new_resp != prev_responsable and new_resp != current_user['id']:
                 supabase.table('notificaciones_gestor').insert({
-                    "usuario_id": new_resp,
+                    "gestor_id": new_resp,
                     "tipo": "tarea_asignada",
-                    "titulo": "Tarea reasignada",
-                    "mensaje": f"Se te ha asignado la tarea: {tarea.get('titulo')}",
-                    "link": f"/admin/tareas?id={tarea['id']}",
+                    "titulo": f"Tarea reasignada: {tarea.get('titulo')}",
+                    "descripcion": f"Te han asignado la tarea \"{tarea.get('titulo')}\" con deadline {tarea.get('fecha_limite') or 'sin fecha'}",
+                    "entidad_tipo": "tarea",
+                    "entidad_id": tarea_id,
+                    "leida": False,
                 }).execute()
         except Exception:
             pass

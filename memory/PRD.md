@@ -607,3 +607,35 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 ### Tests
 - pytest 22/22 PASS sin regresiones.
 - Verificación DOM: row[0..3] = Violín en los 4 niveles correctos en orden.
+
+## Iteración 20 (Feb 2026) — 5 tareas en bloque
+
+### ✅ Tarea 1 — Gestión Económica lee `nivel_estudios` directo
+- `routes_gestor.get_gestion_economica` ahora usa `u.get('nivel_estudios')` literal en lugar de `a.get('nivel_estudios') or _nivel_estudios_efectivo(u)`. Adiós a fallback a `especialidad` (que devolvía "Música clásica").
+
+### ✅ Tarea 2 — Pagos masivos por evento
+- Nuevo `POST /api/gestor/eventos/{id}/pagos-bulk` con body `{estado_pago: 'pagado'|'pendiente'}` que actualiza todas las asignaciones `estado='confirmado'`.
+- `AsistenciaPagos.js`: dos botones nuevos en la cabecera de cada acordeón con `window.confirm` ("¿Marcar X músicos del evento Y como Pagado?"). `data-testid="btn-bulk-pagado-{id}"` y `btn-bulk-pendiente-{id}`.
+
+### ✅ Tarea 3 — Mejoras planificador
+- 3A: `ComentariosPanel` ya estaba conectado en GestorTareas (línea 365) — verificado.
+- 3B: Las notificaciones a responsable de tareas usaban `usuario_id`/`mensaje` (campos inexistentes). Corregido a `gestor_id`/`descripcion` con `entidad_tipo='tarea'`. Ahora se disparan al crear (POST) y al reasignar (PUT) la tarea.
+- 3B-bis: Cuando se inserta un comentario con `tipo='tarea'`, se notifica automáticamente al `responsable_id` con `tipo='comentario_tarea'`.
+- 3C: La regex `@([\w]+)` ya soporta tareas (es genérica por entidad). Verificado.
+
+### ✅ Tarea 4 — Chat interno `/admin/mensajes`
+- Tablas `mensajes` y `mensajes_leidos` creadas en Supabase + 5 índices de rendimiento.
+- Nuevo router `routes_mensajes.py`: `GET /canales`, `GET/POST /{canal}`, `PUT /leido/{canal}`, `GET /no-leidos/lista`. Soporta canal `general`, `evento:{id}` y `dm:{a}:{b}` (DMs ordenados alfabéticamente por id).
+- Menciones `@nombre` extraen handle por primer apellido y disparan notificación `mencion_chat`.
+- Frontend `ChatInterno.js`: sidebar con canales + DMs + badges de no leídos, área de mensajes con avatares de iniciales, polling 5 s mensajes / 30 s badges, dropdown de menciones, auto-scroll al final.
+- Sidebar admin con entrada **💬 Mensajes** + ruta `/admin/mensajes`.
+
+### ✅ Tarea 5 — Performance + keep-alive
+- 5A: `GET /api/health` devuelve `{status, timestamp}`. Nuevo componente `KeepAlive.js` con ping silencioso cada 14 min (5 s tras login + interval). Montado en ambos `ProtectedRoute` (gestor + músico) sin tocar AuthContext.
+- 5B: `PUT /cachets-config/{id}` y `POST /presupuestos-matriz/bulk` refactorizados. Antes: SELECT global por cada fila (O(n²)). Ahora: 1 SELECT global precargado + INSERT batch + UPDATE individual sin SELECT previo. Para N=76 filas: 76 UPDATEs en vez de 76 SELECT+UPDATE = ~50% menos queries.
+- 5C: Los endpoints `/gestion-economica` y `/plantillas-definitivas` ya hacían batch IN_('id', list) — sin cambios.
+- 5D: 6 índices ejecutados en SQL (mensajes, disponibilidad, asignaciones, cachets, gastos).
+
+### Tests
+- pytest 22/22 PASS · curl smoke OK en T1, T2, T4, T5A · screenshots E2E OK en T2 y T4.
+

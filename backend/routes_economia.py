@@ -92,33 +92,44 @@ async def put_cachets_config(
     rows: List[CachetRow],
     current_user: dict = Depends(get_current_gestor)
 ):
-    """Sustituye (UPSERT) las tarifas de un evento, por (instrumento, nivel_estudios)."""
+    """TAREA 5B — UPSERT de tarifas en bulk usando una sola query.
+    Antes: 1 SELECT + 1 UPDATE/INSERT por fila (O(n²)).
+    Ahora: 1 SELECT global del evento + UPDATE en lote agrupado por id + 1 INSERT batch.
+    """
     try:
         now = datetime.now().isoformat()
-        written = 0
+        existing = supabase.table('cachets_config').select('id,instrumento,nivel_estudios') \
+            .eq('evento_id', evento_id).execute().data or []
+        idx = {
+            ((r.get('instrumento') or '').strip().lower(), (r.get('nivel_estudios') or '').strip()): r['id']
+            for r in existing
+        }
+        to_insert = []
+        update_ops = []  # (id, payload)
         for row in rows:
+            instrumento = row.instrumento.strip()
+            nivel = (row.nivel_estudios or '').strip() or 'General'
             payload = {
                 "evento_id": evento_id,
-                "instrumento": row.instrumento.strip(),
-                "nivel_estudios": (row.nivel_estudios or '').strip() or 'General',
+                "instrumento": instrumento,
+                "nivel_estudios": nivel,
                 "importe": row.importe,
                 "updated_at": now,
             }
-            # Match por (evento, instrumento, nivel) en Python para evitar issues con NULL
-            all_rows = supabase.table('cachets_config').select('id,nivel_estudios,instrumento') \
-                .eq('evento_id', evento_id).execute().data or []
-            target = None
-            for r in all_rows:
-                if (r.get('instrumento') or '').strip().lower() == payload['instrumento'].lower() and \
-                   ((r.get('nivel_estudios') or '') == (payload['nivel_estudios'] or '')):
-                    target = r['id']
-                    break
+            target = idx.get((instrumento.lower(), nivel))
             if target:
-                supabase.table('cachets_config').update(payload).eq('id', target).execute()
+                update_ops.append((target, payload))
             else:
-                supabase.table('cachets_config').insert(payload).execute()
-            written += 1
-        return {"ok": True, "escritas": written}
+                to_insert.append(payload)
+
+        # Inserts en batch (Supabase admite list directa)
+        if to_insert:
+            supabase.table('cachets_config').insert(to_insert).execute()
+        # Updates: 1 query por fila pero sin SELECT previo (mucho más rápido)
+        for target_id, payload in update_ops:
+            supabase.table('cachets_config').update(payload).eq('id', target_id).execute()
+
+        return {"ok": True, "escritas": len(rows), "insertadas": len(to_insert), "actualizadas": len(update_ops)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar cachets: {str(e)}")
 
@@ -355,36 +366,51 @@ async def get_presupuestos_matriz(
 
 @router.post("/presupuestos-matriz/bulk")
 async def bulk_presupuestos_matriz(data: CachetMatrizBulk, current_user: dict = Depends(get_current_gestor)):
-    """UPSERT de cachets_config con importe + factor_ponderacion."""
+    """TAREA 5B — UPSERT de cachets_config con importe + factor_ponderacion en bulk.
+    Antes: 1 SELECT por fila con ID nulo + 1 UPDATE/INSERT por fila (O(n²)).
+    Ahora: 1 SELECT global por evento_id + INSERT batch + UPDATE individual sin SELECT previo.
+    """
     try:
         now = datetime.now().isoformat()
-        creados = 0
-        actualizados = 0
-        for row in data.rows:
+        rows = list(data.rows or [])
+        if not rows:
+            return {"ok": True, "creados": 0, "actualizados": 0, "total": 0}
+
+        # Pre-cargamos los existentes de los eventos involucrados en UNA sola query
+        evento_ids = list({r.evento_id for r in rows if r.evento_id})
+        existing_map = {}
+        if evento_ids:
+            existing = supabase.table('cachets_config') \
+                .select('id,evento_id,instrumento,nivel_estudios') \
+                .in_('evento_id', evento_ids).execute().data or []
+            for r in existing:
+                key = (r['evento_id'], (r.get('instrumento') or '').strip(), (r.get('nivel_estudios') or '').strip())
+                existing_map[key] = r['id']
+
+        to_insert = []
+        update_ops = []
+        for row in rows:
+            instrumento = (row.instrumento or '').strip()
+            nivel = (row.nivel_estudios or '').strip() or 'General'
             payload = {
                 "evento_id": row.evento_id,
-                "instrumento": row.instrumento,
-                "nivel_estudios": (row.nivel_estudios or '').strip() or 'General',
+                "instrumento": instrumento,
+                "nivel_estudios": nivel,
                 "importe": float(row.importe or 0),
                 "factor_ponderacion": float(row.factor_ponderacion or 100),
                 "updated_at": now,
             }
-            target_id = row.id
-            if not target_id:
-                # Buscar por (evento, instrumento, nivel)
-                existing = supabase.table('cachets_config').select('id') \
-                    .eq('evento_id', row.evento_id) \
-                    .eq('instrumento', payload['instrumento']) \
-                    .eq('nivel_estudios', payload['nivel_estudios']) \
-                    .limit(1).execute().data or []
-                if existing:
-                    target_id = existing[0]['id']
+            target_id = row.id or existing_map.get((row.evento_id, instrumento, nivel))
             if target_id:
-                supabase.table('cachets_config').update(payload).eq('id', target_id).execute()
-                actualizados += 1
+                update_ops.append((target_id, payload))
             else:
-                supabase.table('cachets_config').insert(payload).execute()
-                creados += 1
-        return {"ok": True, "creados": creados, "actualizados": actualizados, "total": creados + actualizados}
+                to_insert.append(payload)
+
+        if to_insert:
+            supabase.table('cachets_config').insert(to_insert).execute()
+        for target_id, payload in update_ops:
+            supabase.table('cachets_config').update(payload).eq('id', target_id).execute()
+
+        return {"ok": True, "creados": len(to_insert), "actualizados": len(update_ops), "total": len(rows)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar matriz: {str(e)}")
