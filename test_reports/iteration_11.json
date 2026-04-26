@@ -1,0 +1,117 @@
+{
+  "summary": "Iteración 11 — Regresión BACKEND completa post iter 13-21 (incidencias mejoradas + upload Supabase Storage, refactor pagos masivos en Economía, Tareas con comentarios+notificaciones, Chat Interno polling, Keep-alive, módulo COMPLETO Archivo musical con PDF reportlab). 39/39 tests pytest PASS. Cubre auth, health, eventos, músicos+filtros, incidencias (CRUD + upload-screenshot), economía (presupuestos), tareas (CRUD), mensajes (canales/general/no-leidos), archivo (obras CRUD/prestamos/alertas/plantilla-obras), portal (mis-eventos/calendario) y guards de rol. NO se ha roto nada de iteraciones previas. Sin embargo, varios endpoints declarados en el review NO están implementados con esos paths exactos.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/gestor/incidencias/mis-incidencias",
+        "issue": "Devuelve 405 Method Not Allowed. NO existe esa ruta — el path 'mis-incidencias' es interceptado por @router.put/delete('/gestor/incidencias/{inc_id}') que sólo acepta PUT/DELETE. Si se quiere exponer 'mis incidencias' del usuario actual, hay que registrar la ruta GET ANTES del catch-all {inc_id}."
+      },
+      {
+        "endpoint": "GET /api/gestor/economia/asistencia-pagos",
+        "issue": "Devuelve 404. NO existe en routes_economia.py. El router de economía monta prefix '/api/gestor' (NO '/api/gestor/economia') y no hay handler 'asistencia-pagos'."
+      },
+      {
+        "endpoint": "GET /api/gestor/economia/presupuestos",
+        "issue": "Devuelve 404. La ruta real es GET /api/gestor/presupuestos (verificada 200 OK). Si el frontend espera el path con /economia/, fallará. Sugerencia: re-prefijar el router a '/api/gestor/economia' o añadir alias."
+      },
+      {
+        "endpoint": "POST /api/gestor/economia/pagos/marcar-todos",
+        "issue": "Devuelve 404. NO existe esta ruta de bulk action en routes_economia.py. La 'refactorización de pagos masivos en Economía' descrita en el review no expone este endpoint con ese path."
+      },
+      {
+        "endpoint": "GET /api/gestor/tareas/{id}/comentarios",
+        "issue": "Devuelve 404. NO existe handler para comentarios de tareas en routes_tareas.py (sólo CRUD básico de la tarea). Las notas del review mencionan 'Tareas con comentarios y notificaciones' pero los comentarios NO están expuestos por API."
+      },
+      {
+        "endpoint": "GET /api/gestor/archivo/secciones",
+        "issue": "Devuelve 404. NO existe handler. Las secciones/papeles están definidos en /app/backend/papeles_archivo.py (PAPELES_POR_SECCION) pero no se exponen vía API. El review menciona 'secciones predefinidas (papeles)' — añadir un endpoint que lo devuelva."
+      },
+      {
+        "endpoint": "GET /api/gestor/mensajes/no-leidos",
+        "issue": "Devuelve 400 (no 404 ni 200). El path es interceptado por @router.get('/{canal}') con canal='no-leidos' y rechaza el canal. La ruta real implementada es GET /api/gestor/mensajes/no-leidos/lista (200 OK). Conviene añadir alias o re-ordenar rutas."
+      },
+      {
+        "endpoint": "POST /api/gestor/incidencias",
+        "issue": "El campo 'tipo' está restringido a Literal['incidencia','mejora','pregunta']. Si el frontend envía 'bug', responde 422 (correcto pero documentar). Esto NO es regresión, es validación bien hecha."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/health 200 OK con timestamp",
+    "POST /api/auth/login admin@convocatorias.com 200 + token",
+    "POST /api/auth/login jesusalonsodirector@gmail.com 200 + token",
+    "POST /api/auth/login credenciales inválidas → 400/401",
+    "GET /api/auth/me 200 con email correcto",
+    "GET /api/gestor/eventos 200 (lista)",
+    "GET /api/gestor/musicos 200 + filtro q='alonso'",
+    "GET /api/gestor/incidencias 200 (lista + estructura KPIs aceptada)",
+    "POST /api/gestor/incidencias 200/201 con tipo='incidencia' + persistencia verificada por re-GET",
+    "POST /api/gestor/incidencias/upload-screenshot SIN archivo → 400/422 (no 500)",
+    "POST /api/gestor/incidencias/upload-screenshot CON dummy png → 200/201 (Supabase Storage OK)",
+    "DELETE /api/gestor/incidencias/{id} cleanup OK",
+    "GET /api/gestor/presupuestos 200",
+    "GET /api/gestor/gestion-economica 200",
+    "GET /api/gestor/tareas 200 + POST /api/gestor/tareas 200/201 (con fecha_limite obligatoria)",
+    "GET /api/gestor/mensajes/canales 200",
+    "GET /api/gestor/mensajes/general 200",
+    "POST /api/gestor/mensajes/general 200/201",
+    "GET /api/gestor/mensajes/no-leidos/lista 200",
+    "GET /api/gestor/archivo/obras 200",
+    "POST /api/gestor/archivo/obras 200 (requiere campo `autor`, no `compositor`) + persistencia verificada",
+    "GET /api/gestor/archivo/obras/{id} 200 (devuelve {obra, originales, partes, eventos})",
+    "GET /api/gestor/archivo/prestamos 200",
+    "GET /api/gestor/archivo/alertas 200",
+    "GET /api/gestor/archivo/plantilla-obras 200",
+    "GET /api/portal/mis-eventos 200 con token músico",
+    "GET /api/portal/calendario 200 con token músico",
+    "Role guards: GET /api/gestor/eventos con token músico → 401/403",
+    "Role guards: GET /api/gestor/archivo/obras con token músico → 401/403",
+    "Role guards: GET /api/gestor/mensajes/general con token músico → 401/403",
+    "Role guards: GET /api/gestor/eventos sin token → 401/403",
+    "Verificación: NINGUNA respuesta JSON contiene `_id` de Mongo (todos los IDs son UUID Postgres)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_regression.py",
+    "/app/test_reports/pytest/iter11.xml"
+  ],
+  "action_items": [
+    "[BACKEND/MEDIUM] Implementar GET /api/gestor/incidencias/mis-incidencias DELANTE del catch-all {inc_id} para que devuelva las incidencias creadas por current_user. Hoy responde 405 porque la ruta {inc_id} sólo tiene PUT/DELETE.",
+    "[BACKEND/MEDIUM] Decidir prefijo del router de economía: o re-prefijarlo a '/api/gestor/economia' o documentar que los paths reales son /api/gestor/presupuestos. El frontend que espere /api/gestor/economia/presupuestos romperá.",
+    "[BACKEND/MEDIUM] Implementar (o eliminar de la spec) los endpoints declarados en el review pero ausentes: GET /api/gestor/economia/asistencia-pagos, POST /api/gestor/economia/pagos/marcar-todos.",
+    "[BACKEND/MEDIUM] Implementar GET /api/gestor/tareas/{id}/comentarios + POST equivalente — el review menciona 'tareas con comentarios y notificaciones' pero los comentarios NO están expuestos en routes_tareas.py.",
+    "[BACKEND/LOW] Añadir GET /api/gestor/archivo/secciones que devuelva PAPELES_POR_SECCION (de papeles_archivo.py). Útil para drop-downs en el frontend.",
+    "[BACKEND/LOW] Añadir alias o ruta concreta GET /api/gestor/mensajes/no-leidos (o re-ordenar el catch-all /{canal} para no interceptarla). Hoy devuelve 400 'canal inválido' cuando el frontend espera 200.",
+    "[BACKEND/LOW] Documentar valores válidos del campo 'tipo' en POST /api/gestor/incidencias: 'incidencia' | 'mejora' | 'pregunta' (no 'bug'). El handler responde 422 correctamente, sólo es DX."
+  ],
+  "critical_code_review_comments": [
+    "routes_incidencias.py: el orden de registro permite que GET /gestor/incidencias/mis-incidencias caiga en {inc_id} (PUT/DELETE) y devuelva 405 en vez de 404. Si se va a implementar 'mis-incidencias', hay que registrarla antes del catch-all.",
+    "routes_economia.py: el prefix del router es '/api/gestor' (no '/api/gestor/economia'), inconsistente con cómo el review/frontend probablemente espera consumirlo. Decidir y unificar.",
+    "routes_mensajes.py: la ruta @router.get('/{canal}') sin restringir el path captura cualquier sub-ruta nueva (no-leidos, no-leidos/X, etc). Mejor restringir con regex (`/{canal:str}` con un Literal) o registrar rutas concretas antes.",
+    "routes_archivo.py crear_obra (175): hace insert + 3 inserts secuenciales para obra_originales sin transacción. Si una de las inserts secundarias falla, la obra queda creada pero incompleta. Considerar transacción o un único insert múltiple.",
+    "routes_archivo.py _generar_codigo (124): hace .like('codigo','{iniciales}/N%') y luego regex en Python para encontrar el max(num)+1. En un entorno con concurrencia (dos creaciones simultáneas con mismo autor) puede producir códigos duplicados. Añadir constraint UNIQUE en obras.codigo + retry en caso de colisión.",
+    "routes_tareas.py: el módulo se llama 'tareas con comentarios' pero NO hay endpoint de comentarios. O se elimina la mención del review o se implementa el sub-recurso /tareas/{id}/comentarios.",
+    "Validación general: todos los routers usan supabase.table(...).execute() síncrono dentro de async def — es bloqueante (httpx síncrono). Si la latencia a Supabase sube, bloquea el event loop. Considerar AsyncSupabaseClient o run_in_executor.",
+    "routes_incidencias.py upload-screenshot: aceptar 200 con dummy PNG indica que el endpoint NO valida estrictamente magic bytes / mime / tamaño máx. Recomendable validar Content-Type y limitar tamaño (DoS storage)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_regression.py (nuevo, 39 tests pytest, 39 PASS)"
+  ],
+  "success_rate": {
+    "backend": "100% (39/39) sobre los endpoints implementados; 7 endpoints declarados en el review NO existen y se reportan como minor"
+  },
+  "test_credentials": {
+    "gestor_admin": "admin@convocatorias.com / Admin123!",
+    "musico": "jesusalonsodirector@gmail.com / Musico123!"
+  },
+  "seed_data_creation": "TestIncidencias creó y eliminó 1 incidencia TEST_iter11 (cleanup OK). TestTareas creó y eliminó 1 tarea TEST_iter11 (cleanup OK). TestMensajes posteó N mensajes 'TEST_iter11 ping {uuid}' en canal 'general' (NO purgados — no hay endpoint de delete expuesto). TestArchivo creó 1 obra 'TEST_iter11 Sinfonia X' con autor='Test Composer' codigo='TC/Nº001' + 3 obra_originales (general/partes/arcos). NO purgada — recomendable limpiarla manualmente o crear endpoint DELETE /archivo/obras/{id}.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-ejecutar: cd /app && python -m pytest backend/tests/test_iter11_regression.py -v. Resultado esperado: 39 passed. Notas de payloads críticos: (1) POST /gestor/incidencias requiere tipo ∈ {'incidencia','mejora','pregunta'} (NO 'bug'); (2) POST /gestor/tareas requiere fecha_limite (str ISO); (3) POST /gestor/archivo/obras requiere campo `autor` (NO 'compositor'); (4) GET /gestor/archivo/obras/{id} devuelve estructura ANIDADA {obra, originales, partes, eventos}; (5) Mensajes no-leidos: la ruta real es /no-leidos/lista, NO /no-leidos. Si el main agent implementa los endpoints faltantes (mis-incidencias, asistencia-pagos, pagos/marcar-todos, tareas/{id}/comentarios, archivo/secciones, mensajes/no-leidos alias) hay que ampliar el test file para validar 200 + estructura.",
+  "rca_of_the_issue": "No hay bug funcional crítico — los 39 tests sobre endpoints implementados pasan. La discrepancia es entre el review_request (que enumera endpoints supuestamente añadidos) y lo realmente implementado: 7 paths del review NO existen en el código actual. Causa raíz probable: el review_request describe la INTENCIÓN funcional pero el dev (E1) implementó estos features con paths/sub-recursos diferentes (p.ej. presupuestos en /gestor/presupuestos no /gestor/economia/presupuestos, no-leidos en /no-leidos/lista no /no-leidos, comentarios de tareas no expuestos vía API). Mitigación: actualizar la spec del review O añadir los endpoints/aliases que faltan. La auth/role guards funcionan correctamente, la integración con Supabase Storage para upload-screenshot responde, y no hay leaks de _id de Mongo."
+}
