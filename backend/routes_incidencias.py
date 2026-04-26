@@ -20,6 +20,31 @@ SCREENSHOT_BUCKET = "justificantes"
 SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 SCREENSHOT_ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
+# Magic bytes (signatures) por tipo. Se valida que el contenido real
+# corresponda a un formato de imagen permitido, no sólo el header `Content-Type`
+# enviado por el cliente (que es trivial de falsificar).
+def _detect_image_kind(buf: bytes) -> Optional[str]:
+    """Devuelve 'png' | 'jpeg' | 'webp' | 'gif' según los magic bytes, o None."""
+    if len(buf) < 12:
+        return None
+    if buf[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if buf[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if buf[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if buf[:4] == b"RIFF" and buf[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+_MIME_FOR_KIND = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+}
+
 
 class IncidenciaCreate(BaseModel):
     tipo: Literal['incidencia', 'mejora', 'pregunta']
@@ -171,17 +196,33 @@ async def _upload_screenshot(archivo: UploadFile, current_user: dict) -> dict:
             detail="Tipo de archivo no permitido. Usa PNG, JPEG, WEBP o GIF.",
         )
     content = await archivo.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
     if len(content) > SCREENSHOT_MAX_BYTES:
         raise HTTPException(status_code=413, detail="La imagen supera el tamaño máximo de 5 MB.")
+
+    # Validación de magic bytes — el Content-Type del cliente es falsificable.
+    kind = _detect_image_kind(content)
+    if kind is None:
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo no es una imagen válida (PNG/JPEG/WEBP/GIF).",
+        )
+    # Coherencia entre extensión declarada y magic bytes
+    expected_mime = _MIME_FOR_KIND[kind]
+    if archivo.content_type != expected_mime:
+        # Si el cliente declaró otro mime permitido pero el contenido es distinto, rechazar.
+        raise HTTPException(
+            status_code=400,
+            detail=f"Inconsistencia: el contenido es {kind} pero se declaró {archivo.content_type}.",
+        )
 
     uid = (
         current_user.get('id')
         or (current_user.get('profile') or {}).get('id')
         or 'anonymous'
     )
-    ext = (archivo.filename or "").rsplit(".", 1)[-1].lower() or "png"
-    if ext not in {"png", "jpg", "jpeg", "webp", "gif"}:
-        ext = "png"
+    ext = "jpg" if kind == "jpeg" else kind
     ts = int(datetime.now().timestamp() * 1000)
     path = f"incidencias/{uid}/{ts}.{ext}"
 
@@ -191,7 +232,7 @@ async def _upload_screenshot(archivo: UploadFile, current_user: dict) -> dict:
             path,
             content,
             {
-                "content-type": archivo.content_type or "image/png",
+                "content-type": expected_mime,
                 "upsert": "true",
             },
         )

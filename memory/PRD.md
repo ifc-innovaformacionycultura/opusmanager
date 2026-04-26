@@ -662,3 +662,27 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - Validar magic bytes / mime / tamaño máx en `upload-screenshot` (DoS Storage).
 - Añadir constraint UNIQUE en `obras.codigo` + retry para evitar duplicados en concurrencia.
 - Considerar AsyncSupabaseClient para evitar bloquear event loop en endpoints de alta latencia.
+
+### Feb 2026 — Iter 23: Hardening Archivo + Upload-Screenshot
+
+**Tareas completadas:**
+1. **`crear_obra` atómico (rollback automático)**: si los inserts de `obra_originales` (general/partes/arcos) fallan tras crear la obra, se borra la obra para no dejar registros huérfanos. Además, el insert ahora es batch (1 query en vez de 3) y reintenta una vez si choca con UNIQUE(codigo).
+2. **Magic bytes en `upload-screenshot`**: nueva función `_detect_image_kind()` valida los primeros bytes del fichero (PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `GIF8x`, WEBP `RIFF…WEBP`). Rechaza archivos vacíos, archivos con MIME mentido (e.g. `image/jpeg` con contenido PNG) y archivos no-imagen. Mantiene los límites previos (5 MB, MIME en {png,jpeg,webp,gif}).
+
+**Tests funcionales (`/app/backend/`):**
+- ✅ Crear obra → 3 originales creados (atomicidad).
+- ✅ Fake PNG (texto disfrazado) → 400 "El archivo no es una imagen válida".
+- ✅ PNG real → 200.
+- ✅ PNG declarado JPEG → 400 "Inconsistencia: el contenido es png pero se declaró image/jpeg".
+- ✅ Archivo vacío → 400 "El archivo está vacío".
+- ✅ 6 MB → 413 "supera el tamaño máximo".
+- ✅ JPEG real, WEBP real → 200.
+
+**SQL pendiente (NO ejecutar sin tu aprobación):**
+```sql
+-- Añade UNIQUE constraint en obras.codigo. Verificado: 0 duplicados actuales.
+ALTER TABLE public.obras ADD CONSTRAINT obras_codigo_unique UNIQUE (codigo);
+```
+
+**Pendiente bloqueante:**
+- Importación masiva del Excel `REGISTRO_DE_REPERTORIO__respuestas_.xlsx`. El archivo NO está presente en el contenedor (verificado vía `find /app /mnt /tmp`). El script `import_obras_inicial.py` ahora busca en 5 rutas; basta con copiarlo a cualquiera y ejecutar.

@@ -183,15 +183,43 @@ async def crear_obra(data: ObraIn, current_user: dict = Depends(get_current_gest
     payload = _validar_obra(payload)
     if not payload.get('codigo'):
         payload['codigo'] = _generar_codigo(payload['autor'])
-    res = supabase.table('obras').insert(payload).execute()
+
+    # ---- Insert atómico de obra + 3 obra_originales (general/partes/arcos) ----
+    # Si cualquiera de los 3 inserts secundarios falla, se hace rollback de
+    # todo (incluyendo la obra) para no dejar registros huérfanos.
+    try:
+        res = supabase.table('obras').insert(payload).execute()
+    except Exception as e:
+        # Posible colisión con UNIQUE(codigo) → reintentar una vez con nuevo número
+        if 'codigo' in str(e).lower() and ('unique' in str(e).lower() or 'duplicate' in str(e).lower()):
+            payload['codigo'] = _generar_codigo(payload['autor'])
+            res = supabase.table('obras').insert(payload).execute()
+        else:
+            raise HTTPException(status_code=400, detail=f"Error creando obra: {str(e)}")
+
     obra = (res.data or [None])[0]
-    # Crear filas de obra_originales por defecto
-    if obra:
-        for tipo in ('general', 'partes', 'arcos'):
-            try:
-                supabase.table('obra_originales').insert({"obra_id": obra['id'], "tipo": tipo, "estado": 'no'}).execute()
-            except Exception:
-                pass
+    if not obra:
+        raise HTTPException(status_code=500, detail="No se pudo crear la obra.")
+
+    obra_id = obra['id']
+    originales_payload = [
+        {"obra_id": obra_id, "tipo": tipo, "estado": 'no'}
+        for tipo in ('general', 'partes', 'arcos')
+    ]
+    try:
+        # Insert batch — Supabase lo procesa en una sola query al PostgREST.
+        supabase.table('obra_originales').insert(originales_payload).execute()
+    except Exception as e:
+        # Rollback compensatorio: borrar la obra recién creada para no dejar huérfana
+        try:
+            supabase.table('obras').delete().eq('id', obra_id).execute()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creando originales (rollback aplicado): {str(e)}",
+        )
+
     return {"obra": obra}
 
 

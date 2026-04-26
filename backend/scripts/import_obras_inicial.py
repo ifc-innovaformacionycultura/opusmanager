@@ -26,7 +26,10 @@ from supabase import create_client
 
 
 CANDIDATES = [
+    '/app/backend/scripts/REGISTRO_DE_REPERTORIO__respuestas_.xlsx',
+    '/app/backend/scripts/REGISTRO_DE_REPERTORIO.xlsx',
     '/app/REGISTRO_DE_REPERTORIO.xlsx',
+    '/app/REGISTRO_DE_REPERTORIO__respuestas_.xlsx',
     '/mnt/user-data/uploads/REGISTRO_DE_REPERTORIO__respuestas_.xlsx',
 ]
 
