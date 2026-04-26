@@ -74,6 +74,8 @@ def norm_fecha(v):
 
 def norm_genero(v):
     s = (str(v or '').strip().upper())
+    # Limpia corchetes tipo "[SINF.COR.]"
+    s = s.strip('[]').strip()
     if not s:
         return None
     return s if s in GENERO_VALIDOS else None
@@ -125,31 +127,42 @@ def main():
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not any(row):
             continue
-        autor = (str(col(row, 'A.AUTOR', 'autor') or '').strip())
-        titulo = (str(col(row, 'B.TITULO DE LA OBRA', 'titulo') or '').strip())
+        autor = (str(col(row, 'A. AUTOR', 'A.AUTOR', 'autor') or '').strip())
+        titulo = (str(col(row, 'B.TITULO DE LA OBRA', 'B. TITULO DE LA OBRA', 'titulo') or '').strip())
         if not autor or not titulo:
             continue
+        # Limpiar valores espurios "-" del Excel
+        if autor in ('-', '—'): continue
+        if titulo in ('-', '—'): continue
         key = (autor.lower(), titulo.lower())
         if key in ya:
             duplicadas += 1
             continue
 
-        ini = iniciales(autor)
-        nums_por_inicial[ini] = nums_por_inicial.get(ini, 0) + 1
-        codigo = f"{ini}/Nº{nums_por_inicial[ini]:03d}"
+        # Si el Excel trae CÓDIGO bien formado tipo "XX/Nº001" lo respetamos.
+        codigo_excel = (str(col(row, 'CÓDIGO', 'CODIGO', 'codigo') or '').strip())
+        m_cod = re.match(r'^([A-Z]{2})/Nº?(\d{1,4})$', codigo_excel)
+        if m_cod:
+            ini, n = m_cod.group(1), int(m_cod.group(2))
+            codigo = f"{ini}/Nº{n:03d}"
+            nums_por_inicial[ini] = max(nums_por_inicial.get(ini, 0), n)
+        else:
+            ini = iniciales(autor)
+            nums_por_inicial[ini] = nums_por_inicial.get(ini, 0) + 1
+            codigo = f"{ini}/Nº{nums_por_inicial[ini]:03d}"
 
         payload = {
             "codigo": codigo,
             "autor": autor,
             "titulo": titulo,
-            "arreglista": (str(col(row, 'ARREGLISTA') or '').strip() or None),
-            "co_autor": (str(col(row, 'CO-AUTOR/LETRISTA', 'co_autor') or '').strip() or None),
-            "movimiento": (str(col(row, 'C.MOVIMIENTO/SECCIÓN', 'C.MOVIMIENTO/SECCION', 'movimiento') or '').strip() or None),
-            "genero": norm_genero(col(row, 'D.GÉNERO', 'D.GENERO', 'genero')),
-            "subgenero": (str(col(row, 'E.SUBGÉNERO', 'E.SUBGENERO', 'subgenero') or '').strip() or None),
+            "arreglista": (str(col(row, 'ARREGLISTA') or '').strip().lstrip('-').strip() or None),
+            "co_autor": (str(col(row, 'CO-AUTOR/LETRISTA', 'co_autor') or '').strip().lstrip('-').strip() or None),
+            "movimiento": (str(col(row, 'C.MOVIMIENTO/SECCIÓN', 'C. MOVIMIENTO/SECCIÓN', 'C.MOVIMIENTO/SECCION', 'movimiento') or '').strip().lstrip('-').strip() or None),
+            "genero": norm_genero(col(row, 'D. GÉNERO', 'D.GÉNERO', 'D.GENERO', 'genero')),
+            "subgenero": (str(col(row, 'E. SUBGÉNERO', 'E.SUBGÉNERO', 'E.SUBGENERO', 'subgenero') or '').strip().lstrip('-').strip() or None),
             "procedencia": norm_procedencia(col(row, 'PROCEDENCIA DEL MATERIAL', 'procedencia')),
             "fecha_registro": norm_fecha(col(row, 'FECHA DE REGISTRO', 'fecha_registro')),
-            "observaciones": (str(col(row, 'OBSERVACIONES', 'observaciones') or '').strip() or None),
+            "observaciones": (str(col(row, 'OBSERVACIONES', 'observaciones') or '').strip().lstrip('-').strip() or None),
         }
         try:
             res = supa.table('obras').insert(payload).execute()
