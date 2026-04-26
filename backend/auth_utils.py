@@ -50,12 +50,12 @@ async def get_current_user(
 async def get_current_gestor(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> Dict:
-    """Dependency for gestor-only endpoints"""
+    """Dependency for gestor-only endpoints. El rol 'archivero' tiene acceso idéntico al 'gestor'."""
     user = await get_current_user(credentials)
-    if user.get("rol") != "gestor":
+    if user.get("rol") not in ("gestor", "archivero"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso denegado. Se requiere rol de gestor."
+            detail="Acceso denegado. Se requiere rol de gestor o archivero."
         )
     return user
 

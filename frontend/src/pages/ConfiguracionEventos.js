@@ -4,6 +4,81 @@ import ComentariosPanel from "../components/ComentariosPanel";
 import ConvocatoriaInstrumentosPanel from "../components/ConvocatoriaInstrumentosPanel";
 import LogisticaSection from "../components/LogisticaSection";
 
+// Bloque 7 — Indicador "verificar atriles" en cada obra del programa.
+// Busca en el catálogo por título y si encuentra match permite verificar copias físicas.
+const ProgramaArchivoCell = ({ item, eventoId }) => {
+  const { api } = useGestorAuth();
+  const [match, setMatch] = useState(null);    // {id, codigo, titulo, autor, completo}
+  const [verif, setVerif] = useState(null);    // resultado del cálculo
+  const [openModal, setOpenModal] = useState(false);
+  const titulo = (item.obra || '').trim();
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      if (!titulo || titulo.length < 3) { setMatch(null); return; }
+      try {
+        const r = await api.get(`/api/gestor/archivo/obras?q=${encodeURIComponent(titulo)}`);
+        const obras = r.data?.obras || [];
+        const exacto = obras.find(o => (o.titulo || '').toLowerCase().trim() === titulo.toLowerCase());
+        if (!cancel) setMatch(exacto || null);
+      } catch { if (!cancel) setMatch(null); }
+    })();
+    return () => { cancel = true; };
+  }, [titulo, api]);
+
+  if (!titulo) return null;
+  if (!match) {
+    return (
+      <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700" title="No encontrada en el catálogo de archivo">
+        ⚠ Pendiente registro archivo
+      </span>
+    );
+  }
+
+  const verificar = async () => {
+    if (!eventoId) return alert('Guarda primero el evento.');
+    const r = await api.get(`/api/gestor/archivo/obras/${match.id}/atriles-evento/${eventoId}`);
+    setVerif(r.data); setOpenModal(true);
+  };
+
+  return (
+    <span className="flex items-center gap-1">
+      <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700" title={`En catálogo: ${match.codigo}`}>🟢 archivo</span>
+      <button type="button" onClick={verificar}
+        data-testid={`btn-verif-atriles-${match.id}`}
+        className="text-[10px] text-blue-600 hover:underline">Ver atriles</button>
+      {openModal && verif && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4" onClick={() => setOpenModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl p-5 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold mb-2">Verificación de atriles — {match.titulo}</h3>
+            {(verif.alertas || []).length === 0 ? (
+              <p className="bg-emerald-50 text-emerald-700 px-3 py-2 rounded text-sm">✅ Material suficiente.</p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50">
+                  <tr><th className="px-2 py-1 text-left">Papel</th><th className="px-2 py-1">Necesarios</th><th className="px-2 py-1">Copias</th><th className="px-2 py-1 text-red-600">Déficit</th></tr>
+                </thead>
+                <tbody>
+                  {verif.alertas.map(a => (
+                    <tr key={a.papel} className="border-t border-slate-100">
+                      <td className="px-2 py-1">{a.label}</td>
+                      <td className="px-2 py-1 text-center">{a.necesarios}</td>
+                      <td className="px-2 py-1 text-center">{a.copias}</td>
+                      <td className="px-2 py-1 text-center text-red-600 font-bold">{a.deficit}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <button type="button" onClick={() => setOpenModal(false)} className="mt-3 px-3 py-1.5 bg-slate-100 text-sm rounded">Cerrar</button>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+};
+
 // Accordion Component
 const Accordion = ({ title, subtitle, isOpen, onToggle, children }) => (
   <div className="border border-slate-200 rounded-lg mb-3 bg-white">
@@ -533,7 +608,7 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
                     className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
                   />
                 </td>
-                <td className="px-3 py-2"></td>
+                <td className="px-3 py-2"><ProgramaArchivoCell item={item} eventoId={evento?.id} /></td>
               </tr>
             ))}
           </tbody>
