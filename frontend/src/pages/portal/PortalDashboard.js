@@ -211,8 +211,8 @@ const PortalDashboard = () => {
           </button>
         </div>
 
-        {/* Tabs con acento purple-500 */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 border-t border-slate-800">
+        {/* Tabs con acento purple-500 — se ocultan en móvil (se usa BottomNav) */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 border-t border-slate-800 hidden md:block">
           <nav className="flex gap-6 -mb-px overflow-x-auto">
             <button
               onClick={() => setVista('eventos')}
@@ -566,8 +566,36 @@ const PortalDashboard = () => {
           </div>
         )}
       </div>
-      {/* Feedback flotante para músicos */}
+      {/* Feedback flotante para músicos — con padding inferior en móvil
+          para no solaparse con la bottom-nav. */}
       <FeedbackButton mode="portal" />
+
+      {/* Navegación inferior fija — solo móvil (<768px).
+          Sustituye a los tabs superiores ocultos en pantallas pequeñas. */}
+      <nav className="fixed bottom-0 inset-x-0 z-40 bg-slate-900/95 backdrop-blur border-t border-slate-800 md:hidden" data-testid="portal-bottom-nav">
+        <div className="grid grid-cols-4" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          {[
+            { id: 'eventos',    icon: '🎼', label: 'Convocatorias', testid: 'bnav-eventos' },
+            { id: 'perfil',     icon: '👤', label: 'Perfil',        testid: 'bnav-perfil' },
+            { id: 'calendario', icon: '📅', label: 'Calendario',    testid: 'bnav-calendario' },
+            { id: 'historial',  icon: '📋', label: 'Historial',     testid: 'bnav-historial' },
+          ].map((t) => {
+            const active = vista === t.id;
+            return (
+              <button key={t.id}
+                      onClick={() => setVista(t.id)}
+                      data-testid={t.testid}
+                      className={`flex flex-col items-center justify-center py-2 min-h-[56px] text-[10px] font-medium transition-colors ${active ? 'text-white bg-slate-800' : 'text-slate-400 active:bg-slate-800/60'}`}>
+                <span className={`text-lg mb-0.5 ${active ? '' : 'opacity-80'}`}>{t.icon}</span>
+                <span>{t.label}</span>
+                {active && <span className="w-8 h-0.5 bg-purple-500 mt-0.5 rounded" />}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+      {/* Spacer para que el contenido no quede oculto tras la bottom-nav */}
+      <div className="h-16 md:hidden" aria-hidden="true" />
     </div>
   );
 };

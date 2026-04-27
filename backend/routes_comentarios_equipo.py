@@ -126,19 +126,26 @@ async def listar_comentarios(
     autor_id: Optional[str] = None,
     pagina: Optional[str] = None,
     mencionado_id: Optional[str] = None,
+    entidad_tipo: Optional[str] = None,
+    entidad_id: Optional[str] = None,
     incluye_resueltos: bool = True,
+    limit: int = 500,
     current_user: dict = Depends(get_current_gestor),
 ):
     """Lista hilos raíz (parent_id IS NULL) con filtros opcionales."""
     sel = supabase.table('comentarios_equipo').select('*') \
         .is_('parent_id', 'null') \
-        .order('created_at', desc=True).limit(500)
+        .order('created_at', desc=True).limit(limit)
     if estado:
         sel = sel.eq('estado', estado)
     if autor_id:
         sel = sel.eq('autor_id', autor_id)
     if pagina:
         sel = sel.ilike('pagina', f'%{pagina}%')
+    if entidad_tipo:
+        sel = sel.eq('entidad_tipo', entidad_tipo)
+    if entidad_id:
+        sel = sel.eq('entidad_id', entidad_id)
     if not incluye_resueltos:
         sel = sel.neq('estado', 'resuelto')
     rows = sel.execute().data or []

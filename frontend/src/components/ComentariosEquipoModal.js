@@ -56,7 +56,7 @@ const detectarEntidad = () => {
   return { entidad_nombre: null, entidad_tipo: null, entidad_id: null };
 };
 
-const ComentariosEquipoModal = ({ open, onClose, api, pagina }) => {
+const ComentariosEquipoModal = ({ open, onClose, api, pagina, prefill }) => {
   const [contenido, setContenido] = useState('');
   const [urgente, setUrgente] = useState(false);
   const [menciones, setMenciones] = useState([]);
@@ -68,11 +68,25 @@ const ComentariosEquipoModal = ({ open, onClose, api, pagina }) => {
   const textareaRef = useRef(null);
 
   const contexto = useMemo(() => {
+    // Si el componente recibe `prefill` (p.ej. desde ComentariosEquipoInline en
+    // una ficha), ignoramos la detección DOM y usamos los valores dados.
+    if (prefill && prefill.entidad_nombre) {
+      const pageLabel = prefill.seccion || detectarContextoPagina(pagina || '');
+      const full = `${pageLabel} → ${prefill.entidad_nombre}`;
+      return {
+        full,
+        entidad_nombre: prefill.entidad_nombre,
+        entidad_tipo: prefill.entidad_tipo || null,
+        entidad_id: prefill.entidad_id || null,
+        pageLabel,
+      };
+    }
     const pageLabel = detectarContextoPagina(pagina || '');
     const ent = detectarEntidad();
     const full = ent.entidad_nombre ? `${pageLabel} → ${ent.entidad_nombre}` : pageLabel;
     return { full, ...ent, pageLabel };
-  }, [pagina, open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagina, open, prefill]);
 
   useEffect(() => {
     if (!open) return;

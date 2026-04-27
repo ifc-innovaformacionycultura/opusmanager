@@ -4,6 +4,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { PAPELES_ARCHIVO, PAPELES_POR_SECCION, SECCIONES_LABEL } from '../lib/papelesArchivo';
+import ComentariosEquipoInline from '../components/ComentariosEquipoInline';
 
 const GENEROS = ['SINF.', 'SINF.COR.', 'ESC.', 'COR.'];
 const PROCEDENCIAS = ['PROPIO', 'COMPRADO', 'ALQUILER', 'INTERNET', 'INTERNET-LIBRE', 'CESIÓN'];
@@ -326,19 +327,31 @@ function FichaObraModal({ ficha, api, onClose, onRecargar, onEtiquetas }) {
 
         <div className="p-6">
           {tab === 'datos' && (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <Info label="Autor"      value={o.autor} />
-              <Info label="Arreglista" value={o.arreglista} />
-              <Info label="Co-autor"   value={o.co_autor} />
-              <Info label="Título"     value={o.titulo} />
-              <Info label="Movimiento" value={o.movimiento} />
-              <Info label="Género"     value={o.genero} />
-              <Info label="Subgénero"  value={o.subgenero} />
-              <Info label="Procedencia" value={o.procedencia} />
-              <Info label="Fecha registro" value={fmtDate(o.fecha_registro)} />
-              <Info label="Estado"     value={o.estado} />
-              <div className="col-span-2"><Info label="Observaciones" value={o.observaciones} /></div>
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <Info label="Autor"      value={o.autor} />
+                <Info label="Arreglista" value={o.arreglista} />
+                <Info label="Co-autor"   value={o.co_autor} />
+                <Info label="Título"     value={o.titulo} />
+                <Info label="Movimiento" value={o.movimiento} />
+                <Info label="Género"     value={o.genero} />
+                <Info label="Subgénero"  value={o.subgenero} />
+                <Info label="Procedencia" value={o.procedencia} />
+                <Info label="Fecha registro" value={fmtDate(o.fecha_registro)} />
+                <Info label="Estado"     value={o.estado} />
+                <div className="col-span-2"><Info label="Observaciones" value={o.observaciones} /></div>
+              </div>
+              <div className="mt-4">
+                <ComentariosEquipoInline
+                  api={api}
+                  entidadTipo="obra"
+                  entidadId={o.id}
+                  entidadNombre={o.titulo}
+                  pagina="/admin/archivo"
+                  seccion="Administración → Archivo musical"
+                />
+              </div>
+            </>
           )}
 
           {tab === 'originales' && (

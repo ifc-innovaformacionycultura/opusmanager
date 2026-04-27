@@ -180,57 +180,101 @@ const GestorTareas = () => {
       </div>
 
       {vista === 'lista' ? (
-        <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600 text-xs">
-              <tr>
-                <th className="text-left px-3 py-2">Título</th>
-                <th className="text-left px-3 py-2">Categoría</th>
-                <th className="text-left px-3 py-2">Prioridad</th>
-                <th className="text-left px-3 py-2">Responsable</th>
-                <th className="text-left px-3 py-2">Evento</th>
-                <th className="text-left px-3 py-2">Fecha límite</th>
-                <th className="text-left px-3 py-2">Estado</th>
-                <th className="text-right px-3 py-2">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {tareasFiltradas.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">No hay tareas.</td></tr>
-              )}
-              {tareasFiltradas.map(t => {
-                const cat = CATEGORIAS.find(c => c.value === t.categoria) || CATEGORIAS[5];
-                const pri = PRIORIDADES.find(p => p.value === t.prioridad) || PRIORIDADES[1];
-                const est = ESTADOS.find(e => e.value === t.estado) || ESTADOS[0];
-                const ev = eventos.find(e => e.id === t.evento_id);
-                const g = gestores.find(x => x.id === t.responsable_id);
-                return (
-                  <tr key={t.id} className="hover:bg-slate-50" data-testid={`row-tarea-${t.id}`}>
-                    <td className="px-3 py-2 font-medium text-slate-900">
-                      <button onClick={() => { setEdit(t); setShowForm(true); }} className="text-left hover:underline">
-                        {t.titulo}
-                      </button>
-                      {t.descripcion && <p className="text-xs text-slate-500 truncate max-w-md">{t.descripcion}</p>}
-                    </td>
-                    <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${cat.color}`}>{cat.label}</span></td>
-                    <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${pri.color}`}>{pri.label}</span></td>
-                    <td className="px-3 py-2 text-slate-600">{g ? `${g.apellidos}, ${g.nombre}` : (t.responsable_nombre || '—')}</td>
-                    <td className="px-3 py-2 text-slate-600">{ev?.nombre || '—'}</td>
-                    <td className={`px-3 py-2 ${urgencyColor(t.fecha_limite, t.estado)}`}>{fmtFecha(t.fecha_limite)}</td>
-                    <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${est.color}`}>{est.label}</span></td>
-                    <td className="px-3 py-2 text-right">
-                      {t.estado !== 'completada' && (
-                        <button onClick={() => completar(t)} className="text-xs text-emerald-700 hover:underline mr-2" data-testid={`btn-complete-${t.id}`}>✓ Completar</button>
-                      )}
-                      <button onClick={() => { setEdit(t); setShowForm(true); }} className="text-xs text-blue-600 hover:underline mr-2">Editar</button>
-                      <button onClick={() => eliminar(t)} className="text-xs text-red-600 hover:underline" data-testid={`btn-delete-${t.id}`}>Eliminar</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {/* Vista tabla — ≥ md */}
+          <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto hidden md:block">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-600 text-xs">
+                <tr>
+                  <th className="text-left px-3 py-2">Título</th>
+                  <th className="text-left px-3 py-2">Categoría</th>
+                  <th className="text-left px-3 py-2">Prioridad</th>
+                  <th className="text-left px-3 py-2">Responsable</th>
+                  <th className="text-left px-3 py-2">Evento</th>
+                  <th className="text-left px-3 py-2">Fecha límite</th>
+                  <th className="text-left px-3 py-2">Estado</th>
+                  <th className="text-right px-3 py-2">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {tareasFiltradas.length === 0 && (
+                  <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">No hay tareas.</td></tr>
+                )}
+                {tareasFiltradas.map(t => {
+                  const cat = CATEGORIAS.find(c => c.value === t.categoria) || CATEGORIAS[5];
+                  const pri = PRIORIDADES.find(p => p.value === t.prioridad) || PRIORIDADES[1];
+                  const est = ESTADOS.find(e => e.value === t.estado) || ESTADOS[0];
+                  const ev = eventos.find(e => e.id === t.evento_id);
+                  const g = gestores.find(x => x.id === t.responsable_id);
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50" data-testid={`row-tarea-${t.id}`}>
+                      <td className="px-3 py-2 font-medium text-slate-900">
+                        <button onClick={() => { setEdit(t); setShowForm(true); }} className="text-left hover:underline">
+                          {t.titulo}
+                        </button>
+                        {t.descripcion && <p className="text-xs text-slate-500 truncate max-w-md">{t.descripcion}</p>}
+                      </td>
+                      <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${cat.color}`}>{cat.label}</span></td>
+                      <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${pri.color}`}>{pri.label}</span></td>
+                      <td className="px-3 py-2 text-slate-600">{g ? `${g.apellidos}, ${g.nombre}` : (t.responsable_nombre || '—')}</td>
+                      <td className="px-3 py-2 text-slate-600">{ev?.nombre || '—'}</td>
+                      <td className={`px-3 py-2 ${urgencyColor(t.fecha_limite, t.estado)}`}>{fmtFecha(t.fecha_limite)}</td>
+                      <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${est.color}`}>{est.label}</span></td>
+                      <td className="px-3 py-2 text-right">
+                        {t.estado !== 'completada' && (
+                          <button onClick={() => completar(t)} className="text-xs text-emerald-700 hover:underline mr-2" data-testid={`btn-complete-${t.id}`}>✓ Completar</button>
+                        )}
+                        <button onClick={() => { setEdit(t); setShowForm(true); }} className="text-xs text-blue-600 hover:underline mr-2">Editar</button>
+                        <button onClick={() => eliminar(t)} className="text-xs text-red-600 hover:underline" data-testid={`btn-delete-${t.id}`}>Eliminar</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Vista cards móvil — < md */}
+          <div className="md:hidden space-y-3" data-testid="tareas-mobile-cards">
+            {tareasFiltradas.length === 0 && (
+              <div className="bg-white border border-slate-200 rounded-lg p-6 text-center text-slate-400 text-sm">No hay tareas.</div>
+            )}
+            {tareasFiltradas.map(t => {
+              const cat = CATEGORIAS.find(c => c.value === t.categoria) || CATEGORIAS[5];
+              const pri = PRIORIDADES.find(p => p.value === t.prioridad) || PRIORIDADES[1];
+              const est = ESTADOS.find(e => e.value === t.estado) || ESTADOS[0];
+              const ev = eventos.find(e => e.id === t.evento_id);
+              const g = gestores.find(x => x.id === t.responsable_id);
+              return (
+                <div key={t.id} className="bg-white border border-slate-200 rounded-lg p-4" data-testid={`card-tarea-${t.id}`}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <button onClick={() => { setEdit(t); setShowForm(true); }} className="font-semibold text-slate-900 text-base text-left flex-1">
+                      {t.titulo}
+                    </button>
+                    <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium ${est.color}`}>{est.label}</span>
+                  </div>
+                  {t.descripcion && <p className="text-xs text-slate-500 mb-2 line-clamp-2">{t.descripcion}</p>}
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] ${cat.color}`}>{cat.label}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] ${pri.color}`}>{pri.label}</span>
+                    {ev?.nombre && <span className="px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-700">{ev.nombre}</span>}
+                  </div>
+                  <div className="text-xs text-slate-600 mb-3">
+                    <div>👤 {g ? `${g.apellidos}, ${g.nombre}` : (t.responsable_nombre || '—')}</div>
+                    {t.fecha_limite && <div className={urgencyColor(t.fecha_limite, t.estado)}>📅 {fmtFecha(t.fecha_limite)}</div>}
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {t.estado !== 'completada' && (
+                      <button onClick={() => completar(t)} className="flex-1 min-h-[44px] px-3 py-2 bg-emerald-600 text-white rounded text-sm font-medium" data-testid={`mbtn-complete-${t.id}`}>✓ Completar</button>
+                    )}
+                    <button onClick={() => { setEdit(t); setShowForm(true); }} className="flex-1 min-h-[44px] px-3 py-2 bg-blue-50 text-blue-700 border border-blue-300 rounded text-sm font-medium">Editar</button>
+                    <button onClick={() => eliminar(t)} className="min-h-[44px] px-3 py-2 bg-red-50 text-red-700 border border-red-300 rounded text-sm font-medium" data-testid={`mbtn-delete-${t.id}`}>🗑</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       ) : vista === 'gantt' ? (
         <GanttView tareas={tareasFiltradas} onOpen={(t) => { setEdit(t); setShowForm(true); }} />
       ) : (

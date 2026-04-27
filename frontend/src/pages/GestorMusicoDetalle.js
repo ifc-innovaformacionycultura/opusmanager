@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import ComentariosEquipoInline from '../components/ComentariosEquipoInline';
 
 const estadoBadge = (e) => ({
   confirmado: 'bg-green-100 text-green-800',
@@ -147,6 +148,16 @@ const GestorMusicoDetalle = () => {
           </div>
         </div>
       </div>
+
+      {/* Comentarios del equipo sobre este músico */}
+      <ComentariosEquipoInline
+        api={api}
+        entidadTipo="musico"
+        entidadId={m.id}
+        entidadNombre={`${m.nombre || ''} ${m.apellidos || ''}`.trim()}
+        pagina="/admin/musicos"
+        seccion="Administración → Base de datos músicos"
+      />
 
       {/* Datos personales/profesionales */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

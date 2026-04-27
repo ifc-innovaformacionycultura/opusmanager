@@ -137,7 +137,7 @@ const FeedbackButton = ({ mode = 'gestor' }) => {
       <button
         onClick={() => setOpen(true)}
         data-testid="btn-feedback"
-        className="fixed bottom-6 right-6 z-40 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg px-4 py-2 text-sm font-medium flex items-center gap-1.5"
+        className="fixed bottom-20 md:bottom-6 right-6 z-40 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg px-4 py-2 text-sm font-medium flex items-center gap-1.5"
         title="Reportar incidencia, mejora o pregunta · atajo Ctrl/⌘+Shift+B"
       >
         💬 Feedback

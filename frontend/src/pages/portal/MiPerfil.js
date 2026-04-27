@@ -205,7 +205,7 @@ const MiPerfil = () => {
       value={form[k] || ''}
       onChange={(e) => setField(k, e.target.value)}
       data-testid={`perfil-${k}`}
-      className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-transparent"
+      className="w-full px-3 py-3 md:py-2 border border-slate-300 rounded-md text-base md:text-sm focus:ring-2 focus:ring-slate-400 focus:border-transparent"
       {...props}
     />
   );
@@ -318,9 +318,9 @@ const MiPerfil = () => {
             <Field label="Email (no editable)">
               <input type="email" value={profile?.email || ''} disabled className="w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md text-sm text-slate-600" />
             </Field>
-            <Field label="Teléfono">{input('telefono', { type: 'tel' })}</Field>
-            <Field label="Dirección">{input('direccion')}</Field>
-            <Field label="DNI/NIF">{input('dni')}</Field>
+            <Field label="Teléfono">{input('telefono', { type: 'tel', inputMode: 'tel', autoComplete: 'tel' })}</Field>
+            <Field label="Dirección">{input('direccion', { autoComplete: 'street-address' })}</Field>
+            <Field label="DNI/NIF">{input('dni', { inputMode: 'text', autoComplete: 'off' })}</Field>
             <Field label="Fecha de nacimiento">
               <input type="date" value={form.fecha_nacimiento || ''} onChange={(e) => setField('fecha_nacimiento', e.target.value)}
                 data-testid="perfil-fecha_nacimiento"

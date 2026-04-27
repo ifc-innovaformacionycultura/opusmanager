@@ -798,3 +798,33 @@ No se marcó `SeguimientoConvocatorias.js` porque la página muestra múltiples 
 - Plantillas definitivas → Nuevo Evento 4 ✅
 - Administración → Base de datos músicos → Jesús Alonso ✅
 - Desplazamientos y Alojamientos → Concierto de Navidad ✅
+
+### Feb 2026 — Iter 29: Inline Comentarios + PWA + Móvil
+
+**1. Comentarios inline en fichas**
+- Backend: `GET /api/gestor/comentarios-equipo` ahora acepta `entidad_tipo` + `entidad_id` + `limit`.
+- Componente reutilizable `ComentariosEquipoInline.js`: contador de hilos abiertos (badge azul), top-3 hilos con badge de estado, botón "Ver todos →" (lleva a `/admin/mensajes?tab=comentarios&entidad_tipo=X&entidad_id=Y`) y "💬 Nuevo" (abre modal con `prefill` de la entidad).
+- `ComentariosEquipoModal.js` extendido con prop `prefill` que sobrescribe la auto-detección DOM cuando se invoca desde una ficha concreta.
+- `ChatInterno.js` lee query params `?tab=comentarios&entidad_tipo=X&entidad_id=Y` para abrir la pestaña correcta y filtrar.
+- Insertado en: `GestorArchivo.js` (FichaObraModal — pestaña "Datos"), `GestorMusicoDetalle.js` (sobre datos personales), `ConfiguracionEventos.js` (al final del EventForm tras Logística).
+
+**2. PWA**
+- `public/manifest.json` (`OPUS MANAGER` / `OPUS`, theme + bg `#0D1B2A`, display `standalone`, orientation `portrait`, start `/login`, 3 iconos PNG generados con PIL: navy + "OM" en gold #C9920A — 192×192, 512×512, 512×512 maskable).
+- `public/sw.js` v1: cache `opus-v1` con app-shell (`/`, `/login`, `/dashboard`, `/seguimiento`, `/portal`, manifest, iconos). Estrategia network-first con fallback a cache. NO intercepta `/api/*` ni cross-origin. Registro al final de `<body>` en `index.html`.
+- Meta tags PWA: `theme-color`, `apple-mobile-web-app-*`, `mobile-web-app-capable`, viewport con `viewport-fit=cover`, `apple-touch-icon`.
+
+**3. Optimización móvil — Portal del músico**
+- `PortalDashboard.js`: tabs superiores ocultos en `<md` (`hidden md:block`). Nueva **bottom-nav fija** (`md:hidden`) con 4 pestañas (🎼 Convocatorias / 👤 Perfil / 📅 Calendario / 📋 Historial), indicador purple-500, soporta `safe-area-inset-bottom`. Spacer de 16 unidades para no solapar contenido.
+- `MiPerfil.js`: inputs con `py-3 md:py-2 text-base md:text-sm` (altura ≥44px + texto ≥16px que evita zoom de iOS). Teléfono `inputMode="tel"`, DNI `inputMode="text"`.
+- `FeedbackButton.js`: posición `bottom-20 md:bottom-6` para no solaparse con bottom-nav móvil.
+
+**4. Optimización móvil — Panel del gestor**
+- `ChatInterno.js`: nuevo state `mobileOpen` que controla qué columna se ve. En `<md` el sidebar de canales ocupa ancho completo; al pulsar un canal, `mobileOpen=true` → sidebar `hidden md:flex` y conversación visible con botón `← Canales` (`md:hidden`). En desktop (≥md) ambas columnas siempre visibles.
+- `GestorTareas.js` vista lista: tabla original envuelta en `hidden md:block`; nuevo bloque `md:hidden` con cards verticales por tarea, badges, botones de acción con `min-h-[44px]` y action principal "✓ Completar" en verde solid.
+
+**5. Verificación**
+- Backend: 10/10 endpoints clave OK (incluyendo nuevo filtro `entidad_tipo`/`entidad_id`).
+- PWA: manifest 200 + sw.js 200 + 2 iconos PNG accesibles.
+- Lint JS: ✅ sin errores en archivos tocados.
+
+**6. Páginas NO optimizadas para móvil (decisión documentada)**: Presupuestos, Seguimiento de Plantillas, Plantillas Definitivas, Gestión Económica — son tablas pivot/matriz que requieren pantalla amplia.

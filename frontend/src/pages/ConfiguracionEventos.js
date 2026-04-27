@@ -3,6 +3,7 @@ import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 import ComentariosPanel from "../components/ComentariosPanel";
 import ConvocatoriaInstrumentosPanel from "../components/ConvocatoriaInstrumentosPanel";
 import LogisticaSection from "../components/LogisticaSection";
+import ComentariosEquipoInline from "../components/ComentariosEquipoInline";
 
 // Bloque 7 — Indicador "verificar atriles" en cada obra del programa.
 // Busca en el catálogo por título y si encuentra match permite verificar copias físicas.
@@ -553,6 +554,20 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
         <div className="mt-4">
           <SectionTitle color="indigo">Transportes y Alojamientos</SectionTitle>
           <LogisticaSection eventoId={event.id} api={api} />
+        </div>
+      )}
+
+      {/* Comentarios del equipo sobre este evento */}
+      {event.id && (
+        <div className="mt-4">
+          <ComentariosEquipoInline
+            api={api}
+            entidadTipo="evento"
+            entidadId={event.id}
+            entidadNombre={event.nombre}
+            pagina="/configuracion/eventos"
+            seccion="Configuración → Eventos"
+          />
         </div>
       )}
 

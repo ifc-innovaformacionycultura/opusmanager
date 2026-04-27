@@ -45,7 +45,13 @@ const renderConMenciones = (texto) => {
 export default function ChatInterno() {
   // ===== Wrapper con pestañas Chat + Comentarios del equipo =====
   // El chat original se mantiene intacto en `ChatInternoView`.
-  const [tab, setTab] = React.useState('chat');
+  const initialTab = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return p.get('tab') === 'comentarios' ? 'comentarios' : 'chat';
+    } catch { return 'chat'; }
+  })();
+  const [tab, setTab] = React.useState(initialTab);
   return (
     <div className="flex flex-col h-[calc(100vh-80px)]" data-testid="mensajes-page">
       <div className="border-b border-slate-200 bg-white px-4 flex items-center gap-1">
@@ -71,6 +77,10 @@ function ChatInternoView() {
   const { api } = useAuth();
   const [canales, setCanales] = useState({ general: { id: 'general', nombre: 'General' }, eventos: [], gestores: [], mi_id: null });
   const [activo, setActivo] = useState('general');
+  // Móvil: controla si el usuario ha seleccionado explícitamente un canal
+  // para decidir si mostrar lista de canales o conversación. En desktop
+  // (md:flex) ambas columnas son visibles siempre.
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [mensajes, setMensajes] = useState([]);
   const [input, setInput] = useState('');
   const [unread, setUnread] = useState({});
@@ -137,6 +147,7 @@ function ChatInternoView() {
 
   const seleccionarCanal = async (canal) => {
     setActivo(canal);
+    setMobileOpen(true);
     setInput('');
     setMentionSugg({ open: false, query: '', start: 0 });
     setUnread(prev => ({ ...prev, [canal]: 0 }));
@@ -230,8 +241,11 @@ function ChatInternoView() {
 
   return (
     <div className="flex h-full bg-white" data-testid="chat-page">
-      {/* Sidebar canales */}
-      <aside className="w-72 border-r border-slate-200 flex flex-col bg-slate-50 overflow-hidden">
+      {/* Sidebar canales — ocupa ancho completo en móvil si no hay canal seleccionado */}
+      <aside className={`border-r border-slate-200 flex flex-col bg-slate-50 overflow-hidden
+                          w-full md:w-72 md:flex
+                          ${mobileOpen ? 'hidden md:flex' : 'flex'}`}
+             data-testid="chat-sidebar-canales">
         <div className="px-4 py-3 border-b border-slate-200 bg-slate-100">
           <h1 className="font-cabinet text-lg font-bold text-slate-900">💬 Mensajes</h1>
           <p className="text-[11px] text-slate-500 mt-0.5">{totalNoLeidos > 0 ? `${totalNoLeidos} sin leer` : 'Todo al día'}</p>
@@ -259,18 +273,26 @@ function ChatInternoView() {
         </div>
       </aside>
 
-      {/* Área principal */}
-      <section className="flex-1 flex flex-col min-w-0">
+      {/* Área principal — oculto en móvil si no hay canal activo */}
+      <section className={`flex-1 flex flex-col min-w-0 ${mobileOpen ? 'flex' : 'hidden md:flex'}`}>
         <header className="px-4 py-3 border-b border-slate-200 bg-white flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold text-slate-900" data-testid="chan-title">
-              {activo === 'general' && '# general'}
-              {activo.startsWith('evento:') && `# ${(canales.eventos.find(c => c.id === activo) || {}).nombre || activo}`}
-              {activo.startsWith('dm:') && `@ ${(canales.gestores.find(c => c.canal === activo) || {}).nombre || 'directo'}`}
-            </h2>
-            <p className="text-[11px] text-slate-500">
-              {(canales.gestores || []).length + 1} gestores · polling cada {POLL_MS / 1000}s
-            </p>
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Botón volver — solo móvil */}
+            <button type="button" onClick={() => setMobileOpen(false)}
+                    data-testid="chat-btn-back"
+                    className="md:hidden px-2 py-1 -ml-1 text-slate-600 hover:bg-slate-100 rounded">
+              ← <span className="text-xs">Canales</span>
+            </button>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-slate-900 truncate" data-testid="chan-title">
+                {activo === 'general' && '# general'}
+                {activo.startsWith('evento:') && `# ${(canales.eventos.find(c => c.id === activo) || {}).nombre || activo}`}
+                {activo.startsWith('dm:') && `@ ${(canales.gestores.find(c => c.canal === activo) || {}).nombre || 'directo'}`}
+              </h2>
+              <p className="text-[11px] text-slate-500">
+                {(canales.gestores || []).length + 1} gestores · polling cada {POLL_MS / 1000}s
+              </p>
+            </div>
           </div>
         </header>
 
@@ -388,7 +410,18 @@ function ComentariosEquipoTab() {
   const [gestores, setGestores] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
-  const [filtros, setFiltros] = React.useState({ estado: '', autor_id: '', pagina: '', mencionado_id: '' });
+  // Lee ?entidad_tipo=X&entidad_id=Y del query para preseleccionar al llegar desde una ficha
+  const initialQP = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return { entidad_tipo: p.get('entidad_tipo') || '', entidad_id: p.get('entidad_id') || '' };
+    } catch { return { entidad_tipo: '', entidad_id: '' }; }
+  })();
+  const [filtros, setFiltros] = React.useState({
+    estado: '', autor_id: '', pagina: '', mencionado_id: '',
+    entidad_tipo: initialQP.entidad_tipo,
+    entidad_id: initialQP.entidad_id,
+  });
   const [seleccionado, setSeleccionado] = React.useState(null);
 
   const cargarLista = useCallback(async () => {

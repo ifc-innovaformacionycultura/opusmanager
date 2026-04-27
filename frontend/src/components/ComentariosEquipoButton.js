@@ -20,7 +20,7 @@ const ComentariosEquipoButton = () => {
       <button
         onClick={() => setOpen(true)}
         data-testid="btn-comentarios-equipo"
-        className="fixed bottom-20 right-6 z-40 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg px-4 py-2 text-sm font-medium flex items-center gap-1.5"
+        className="fixed bottom-20 right-6 md:bottom-20 z-40 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg px-4 py-2 text-sm font-medium flex items-center gap-1.5"
         title="Comentar con el equipo"
       >
         💬 Comentar con el equipo
