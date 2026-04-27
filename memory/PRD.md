@@ -773,3 +773,11 @@ ERROR: Could not find a version that satisfies the requirement emergentintegrati
 **Tests backend (curl)**: 8/8 endpoints comentarios-equipo OK · GET /logistica devuelve 3 eventos con datos correctos · POST screenshot con magic bytes vigente.
 
 **Modificaciones quirúrgicas**: solo Sidebar (`App.js`), nuevos archivos creados, `ChatInterno.js` con wrapper de pestaña + componente nuevo (chat original intacto). Sin tocar AuthContext, login, portal del músico ni sistema de incidencias.
+
+### Feb 2026 — Iter 27: Badge sidebar + Icono Truck
+
+- **Backend**: añadido `comentarios_pendientes` al endpoint `/api/gestor/pendientes` (count de comentarios_equipo con estado='pendiente' y parent_id IS NULL). Verificado por curl: incrementa al crear y vuelve a 0 al marcar resuelto.
+- **Sidebar**: badge azul (`bg-blue-500`) en sub-ítem "Mensajes" + suma al contador de "Administración". `adminTotal` ahora suma reclamaciones + perfiles + comentarios pendientes.
+- **Icono Truck**: añadido SVG inline (estilo lucide-react oficial: cabina + caja + ruedas) al map de iconos. Eliminado emoji 🚌 del label de "Desplazamientos y Alojamientos".
+
+**Modificaciones quirúrgicas**: solo `App.js` (icons map + label + badgeFor + adminTotal) y `routes_gestor.py` (un bloque en `/pendientes`). Nada más tocado.

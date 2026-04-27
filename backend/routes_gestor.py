@@ -1575,12 +1575,24 @@ async def get_pendientes(current_user: dict = Depends(get_current_gestor)):
             tareas_proximas = t_res.count or 0
         except Exception:
             tareas_proximas = 0
-        
+
+        # Comentarios de equipo en estado 'pendiente' (sólo hilos raíz).
+        comentarios_pendientes = 0
+        try:
+            c_res = supabase.table('comentarios_equipo').select('id', count='exact') \
+                .eq('estado', 'pendiente') \
+                .is_('parent_id', 'null') \
+                .execute()
+            comentarios_pendientes = c_res.count or 0
+        except Exception:
+            comentarios_pendientes = 0
+
         return {
             "reclamaciones_pendientes": reclamaciones_pendientes,
             "perfiles_actualizados": perfiles_actualizados,
             "respuestas_nuevas": respuestas_nuevas,
             "tareas_proximas": tareas_proximas,
+            "comentarios_pendientes": comentarios_pendientes,
             "ultimo_acceso_gestor": ultimo_acceso
         }
     except Exception as e:

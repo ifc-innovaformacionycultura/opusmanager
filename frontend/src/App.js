@@ -175,9 +175,10 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
     if (id === 'reclamaciones') return { count: pendientes.reclamaciones_pendientes, color: 'bg-red-500' };
     if (id === 'musicos') return { count: pendientes.perfiles_actualizados, color: 'bg-amber-500' };
     if (id === 'seguimiento') return { count: pendientes.respuestas_nuevas, color: 'bg-orange-500' };
+    if (id === 'mensajes') return { count: pendientes.comentarios_pendientes, color: 'bg-blue-500' };
     return null;
   };
-  const adminTotal = (pendientes.reclamaciones_pendientes || 0) + (pendientes.perfiles_actualizados || 0);
+  const adminTotal = (pendientes.reclamaciones_pendientes || 0) + (pendientes.perfiles_actualizados || 0) + (pendientes.comentarios_pendientes || 0);
 
   const navItems = Array.isArray(user) ? [] : [
     { 
@@ -211,7 +212,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
     },
     {
       id: "logistica",
-      label: "🚌 Desplazamientos y Alojamientos",
+      label: "Desplazamientos y Alojamientos",
       icon: "Truck",
       path: "/asistencia/logistica"
     },
@@ -282,6 +283,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       Users: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
       CheckSquare: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>,
       CreditCard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
+      Truck: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>,
       BarChart3: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>,
       Shield: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
       HelpCircle: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
