@@ -781,3 +781,20 @@ ERROR: Could not find a version that satisfies the requirement emergentintegrati
 - **Icono Truck**: añadido SVG inline (estilo lucide-react oficial: cabina + caja + ruedas) al map de iconos. Eliminado emoji 🚌 del label de "Desplazamientos y Alojamientos".
 
 **Modificaciones quirúrgicas**: solo `App.js` (icons map + label + badgeFor + adminTotal) y `routes_gestor.py` (un bloque en `/pendientes`). Nada más tocado.
+
+### Feb 2026 — Iter 28: Atributos `data-entidad-nombre` para contexto auto
+
+Añadidos de forma quirúrgica (solo atributos, sin lógica nueva):
+- `ConfiguracionEventos.js:1079` — acordeón de evento marcado cuando `openAccordions[event.id]`.
+- `GestorMusicoDetalle.js:126` — card principal con `nombre+apellidos`.
+- `GestorArchivo.js:302` — modal FichaObraModal marcado con `titulo`.
+- `PlantillasDefinitivas.js:577` — acordeón de evento marcado cuando `open`.
+- `Logistica.js:34` — acordeón de evento marcado cuando `open`.
+
+No se marcó `SeguimientoConvocatorias.js` porque la página muestra múltiples eventos en columnas (sin concepto de "evento activo"); el contexto de página ya es suficiente.
+
+**Verificación E2E** (screenshots):
+- Configuración → Eventos → pruebas 7 ✅
+- Plantillas definitivas → Nuevo Evento 4 ✅
+- Administración → Base de datos músicos → Jesús Alonso ✅
+- Desplazamientos y Alojamientos → Concierto de Navidad ✅

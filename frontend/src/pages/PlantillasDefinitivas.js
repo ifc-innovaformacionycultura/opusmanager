@@ -574,7 +574,12 @@ const PlantillasDefinitivas = () => {
             const totEv = totalesEvento[ev.id] || { musicos: 0 };
             const open = !!openEvents[ev.id];
             return (
-              <div key={ev.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid={`evento-acordeon-${ev.id}`}>
+              <div key={ev.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid={`evento-acordeon-${ev.id}`}
+                   {...(open ? {
+                     'data-entidad-nombre': ev.nombre || '',
+                     'data-entidad-tipo': 'evento',
+                     'data-entidad-id': ev.id || '',
+                   } : {})}>
                 {/* Cabecera del acordeón de evento */}
                 <button
                   onClick={() => setOpenEvents(p => ({ ...p, [ev.id]: !p[ev.id] }))}

@@ -299,7 +299,10 @@ function FichaObraModal({ ficha, api, onClose, onRecargar, onEtiquetas }) {
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}
+           data-entidad-nombre={o.titulo || ''}
+           data-entidad-tipo="obra"
+           data-entidad-id={o.id || ''}>
         <header className="px-6 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white">
           <div>
             <h2 className="font-cabinet text-lg font-bold text-slate-900">{o.titulo}</h2>

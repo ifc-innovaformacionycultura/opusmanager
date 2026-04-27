@@ -1076,7 +1076,12 @@ const ConfiguracionEventos = () => {
       ) : (
         <div className="space-y-3">
           {events.map((event, index) => (
-            <div key={event.id} className="relative">
+            <div key={event.id} className="relative"
+                 {...(openAccordions[event.id] ? {
+                   'data-entidad-nombre': event.nombre || 'Sin nombre',
+                   'data-entidad-tipo': 'evento',
+                   'data-entidad-id': event.id || '',
+                 } : {})}>
               <Accordion
                 title={`Evento ${index + 1}`}
                 subtitle={`${event.nombre || 'Sin nombre'} — ${event.temporada || 'Sin temporada'} — ${event.estado || 'abierto'}`}

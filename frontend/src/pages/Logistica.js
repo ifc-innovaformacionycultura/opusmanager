@@ -30,7 +30,12 @@ function EventoAccordion({ ev }) {
   const limiteAlerta = dl !== null && dl <= 7;
 
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white" data-testid={`logistica-evento-${ev.evento_id}`}>
+    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white" data-testid={`logistica-evento-${ev.evento_id}`}
+         {...(open ? {
+           'data-entidad-nombre': ev.nombre || '',
+           'data-entidad-tipo': 'evento',
+           'data-entidad-id': ev.evento_id || '',
+         } : {})}>
       <button type="button" onClick={() => setOpen(o => !o)}
               data-testid={`btn-toggle-${ev.evento_id}`}
               className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors">

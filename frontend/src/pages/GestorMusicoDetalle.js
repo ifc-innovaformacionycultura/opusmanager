@@ -123,7 +123,10 @@ const GestorMusicoDetalle = () => {
       )}
 
       {/* Header con foto y datos básicos */}
-      <div className="bg-white rounded-lg border border-slate-200 p-6">
+      <div className="bg-white rounded-lg border border-slate-200 p-6"
+           data-entidad-nombre={`${m.nombre || ''} ${m.apellidos || ''}`.trim()}
+           data-entidad-tipo="musico"
+           data-entidad-id={m.id || ''}>
         <div className="flex items-start gap-6">
           <div className="w-28 h-28 rounded-full bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0">
             {m.foto_url ? <img src={m.foto_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-4xl text-slate-400">👤</div>}
