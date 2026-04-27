@@ -608,7 +608,7 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
                     className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
                   />
                 </td>
-                <td className="px-3 py-2"><ProgramaArchivoCell item={item} eventoId={evento?.id} /></td>
+                <td className="px-3 py-2"><ProgramaArchivoCell item={item} eventoId={event?.id} /></td>
               </tr>
             ))}
           </tbody>

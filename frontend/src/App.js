@@ -194,7 +194,6 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       children: [
         { id: "eventos", label: "Eventos", path: "/configuracion/eventos" },
         { id: "presupuestos", label: "Presupuestos", path: "/configuracion/presupuestos" },
-        { id: "base-datos", label: "Base de datos de músicos", path: "/configuracion/base-datos" },
         { id: "plantillas", label: "Plantillas de comunicación", path: "/configuracion/plantillas" }
       ]
     },
@@ -217,6 +216,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       path: "/asistencia",
       children: [
         { id: "asistencia-pagos", label: "Gestión económica", path: "/asistencia/pagos" },
+        { id: "logistica", label: "🚌 Logística", path: "/asistencia/logistica" },
         { id: "analisis-economico", label: "Análisis económico", path: "/asistencia/analisis" }
       ]
     },
@@ -430,6 +430,8 @@ const Layout = ({ children }) => {
       return { page: "Plantillas definitivas", section: null };
     } else if (path.startsWith("/asistencia/pagos")) {
       return { page: "Asistencia y pagos", section: "Gestión económica" };
+    } else if (path.startsWith("/asistencia/logistica")) {
+      return { page: "Asistencia y pagos", section: "Logística" };
     } else if (path.startsWith("/asistencia/analisis")) {
       return { page: "Asistencia y pagos", section: "Análisis económico" };
     } else if (path.startsWith("/informes")) {
@@ -717,6 +719,7 @@ import Presupuestos from "./pages/Presupuestos";
 import SeguimientoConvocatorias from "./pages/SeguimientoConvocatorias";
 import PlantillasDefinitivas from "./pages/PlantillasDefinitivas";
 import AsistenciaPagos from "./pages/AsistenciaPagos";
+import Logistica from "./pages/Logistica";
 import AnalisisEconomico from "./pages/AnalisisEconomico";
 import Informes from "./pages/Informes";
 import GestionUsuarios from "./pages/GestionUsuarios";
@@ -778,6 +781,7 @@ function App() {
                         <Route path="/plantillas-definitivas" element={<PlantillasDefinitivas />} />
                         <Route path="/asistencia" element={<Navigate to="/asistencia/pagos" replace />} />
                         <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
+                        <Route path="/asistencia/logistica" element={<Logistica />} />
                         <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
                         <Route path="/informes" element={<Informes />} />
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />

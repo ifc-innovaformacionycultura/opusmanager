@@ -1,5 +1,9 @@
 // Sección "Transportes y Alojamientos" para ConfiguracionEventos.js
 // Carga, edita y guarda evento_logistica + muestra confirmaciones de músicos.
+//
+// Modo de visualización:
+//  - Items YA guardados → tarjeta-resumen compacta + botón "Editar" / "Eliminar".
+//  - Items nuevos (sin id) o cuya tarjeta el gestor pulsó "Editar" → formulario expandido.
 import React, { useState, useEffect, useCallback } from 'react';
 
 const TIPOS_TRANSPORTE = [
@@ -7,8 +11,26 @@ const TIPOS_TRANSPORTE = [
   { value: 'transporte_vuelta', label: 'Vuelta' },
 ];
 
+const TIPO_ICON = {
+  transporte_ida:    '🚌➡️',
+  transporte_vuelta: '⬅️🚌',
+  alojamiento:       '🏨',
+};
+const TIPO_LABEL = {
+  transporte_ida:    'Ida',
+  transporte_vuelta: 'Vuelta',
+  alojamiento:       'Alojamiento',
+};
+
+const fmtDateES = (iso) => {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }); }
+  catch { return iso; }
+};
+const fmtTime = (t) => (t ? String(t).slice(0, 5) : '');
+
 const newTransporte = (tipo = 'transporte_ida') => ({
-  _local: true,  // marca cliente para evitar enviar id null
+  _local: true,
   tipo,
   orden: 1,
   fecha: '',
@@ -95,6 +117,69 @@ const ConfirmacionesPanel = ({ logisticaId, api }) => {
   );
 };
 
+// Tarjeta-resumen compacta para items ya guardados.
+const SummaryCard = ({ it, onEdit, onRemove, api }) => {
+  const isAloja = it.tipo === 'alojamiento';
+  return (
+    <div className="border border-indigo-200 bg-white rounded-lg p-3 shadow-sm" data-testid={`logistica-card-${it.id}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-base" aria-hidden>{TIPO_ICON[it.tipo] || '📍'}</span>
+            <span className="font-semibold text-sm text-slate-800">{TIPO_LABEL[it.tipo] || it.tipo}</span>
+            {it.fecha_limite_confirmacion && (
+              <span className="ml-1 text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-800" title="Fecha límite confirmación músicos">
+                Lím: {fmtDateES(it.fecha_limite_confirmacion)}
+              </span>
+            )}
+          </div>
+          {!isAloja && (
+            <div className="text-xs text-slate-700 space-y-0.5">
+              <div><span className="text-slate-500">Fecha:</span> <strong>{fmtDateES(it.fecha)}</strong>{it.hora_salida ? ` · ${fmtTime(it.hora_salida)}` : ''}</div>
+              <div className="flex items-center gap-1 truncate">
+                <span className="text-slate-500">Trayecto:</span>
+                <span className="font-medium">{it.lugar_salida || '—'}</span>
+                <span className="text-slate-400">→</span>
+                <span className="font-medium">{it.lugar_llegada || '—'}</span>
+                {it.hora_llegada && <span className="text-slate-500 ml-1">({fmtTime(it.hora_llegada)})</span>}
+              </div>
+              {(it.recogida_1_lugar || it.recogida_2_lugar || it.recogida_3_lugar) && (
+                <div className="text-[11px] text-slate-500">
+                  Recogidas: {[1,2,3].map(n => it[`recogida_${n}_lugar`] && `${it[`recogida_${n}_lugar`]}${it[`recogida_${n}_hora`] ? ` ${fmtTime(it[`recogida_${n}_hora`])}` : ''}`).filter(Boolean).join(' · ')}
+                </div>
+              )}
+            </div>
+          )}
+          {isAloja && (
+            <div className="text-xs text-slate-700 space-y-0.5">
+              <div><span className="text-slate-500">Hotel:</span> <strong>{it.hotel_nombre || '—'}</strong></div>
+              {it.hotel_direccion && <div className="text-[11px] text-slate-500 truncate">{it.hotel_direccion}</div>}
+              <div>
+                <span className="text-slate-500">Check-in:</span> <strong>{fmtDateES(it.fecha_checkin)}</strong>
+                <span className="text-slate-500 ml-2">Check-out:</span> <strong>{fmtDateES(it.fecha_checkout)}</strong>
+              </div>
+            </div>
+          )}
+          {it.notas && <div className="text-[11px] text-slate-500 mt-1 italic line-clamp-1">📝 {it.notas}</div>}
+        </div>
+        <div className="flex flex-col gap-1 shrink-0">
+          <button type="button" onClick={onEdit}
+                  data-testid={`btn-edit-${it.id}`}
+                  className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded">
+            ✏️ Editar
+          </button>
+          <button type="button" onClick={onRemove}
+                  data-testid={`btn-del-card-${it.id}`}
+                  className="px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded">
+            🗑 Eliminar
+          </button>
+        </div>
+      </div>
+      {it.id && <ConfirmacionesPanel logisticaId={it.id} api={api} />}
+    </div>
+  );
+};
+
 const LogisticaSection = ({ eventoId, api }) => {
   const [enabled, setEnabled] = useState(false);
   const [items, setItems] = useState([]);
@@ -102,6 +187,7 @@ const LogisticaSection = ({ eventoId, api }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [editingIds, setEditingIds] = useState(new Set());
 
   const cargar = useCallback(async () => {
     if (!eventoId) return;
@@ -112,15 +198,13 @@ const LogisticaSection = ({ eventoId, api }) => {
       setItems(list);
       setEliminarIds([]);
       setEnabled(list.length > 0);
+      setEditingIds(new Set());
     } catch (e) {
       setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
     } finally { setLoading(false); }
   }, [eventoId, api]);
 
   useEffect(() => { cargar(); }, [cargar]);
-
-  const transportes  = items.filter(i => i.tipo !== 'alojamiento');
-  const alojamientos = items.filter(i => i.tipo === 'alojamiento');
 
   const updateField = (idx, k, v) => {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [k]: v } : it));
@@ -130,10 +214,21 @@ const LogisticaSection = ({ eventoId, api }) => {
     const it = items[idx];
     if (it.id) setEliminarIds(prev => [...prev, it.id]);
     setItems(prev => prev.filter((_, i) => i !== idx));
+    setEditingIds(prev => {
+      if (!it.id) return prev;
+      const next = new Set(prev); next.delete(it.id); return next;
+    });
   };
 
   const addTransporte = () => setItems(prev => [...prev, newTransporte()]);
   const addAlojamiento = () => setItems(prev => [...prev, newAlojamiento()]);
+
+  const isEditing = (it) => !it.id || editingIds.has(it.id);
+  const toggleEdit = (id) => setEditingIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   const guardar = async () => {
     if (!eventoId) return;
@@ -157,7 +252,6 @@ const LogisticaSection = ({ eventoId, api }) => {
     } finally { setSaving(false); }
   };
 
-  // Toggle: si lo desactiva con items, no borramos nada — sólo ocultamos UI hasta que vuelva a activarlo
   if (!enabled) {
     return (
       <div className="mt-4 border-t pt-4" data-testid="logistica-section">
@@ -170,6 +264,137 @@ const LogisticaSection = ({ eventoId, api }) => {
       </div>
     );
   }
+
+  const renderEditTransporte = (it, idx) => (
+    <div key={it.id || `new-t-${idx}`} className="border border-amber-300 rounded p-3 bg-amber-50/60" data-testid={`logistica-transporte-${idx}`}>
+      <div className="flex items-center justify-between mb-2">
+        <select value={it.tipo} onChange={(e) => updateField(idx, 'tipo', e.target.value)}
+                className="text-xs border border-slate-300 rounded px-2 py-1 bg-white">
+          {TIPOS_TRANSPORTE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <div className="flex gap-1">
+          {it.id && (
+            <button type="button" onClick={() => toggleEdit(it.id)}
+                    className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded">
+              ↩ Cerrar edición
+            </button>
+          )}
+          <button type="button" onClick={() => removeItem(idx)}
+                  data-testid={`btn-del-transporte-${idx}`}
+                  className="px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded">
+            Eliminar
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Fecha</span>
+          <input type="date" value={it.fecha || ''} onChange={(e) => updateField(idx, 'fecha', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Hora salida</span>
+          <input type="time" value={it.hora_salida || ''} onChange={(e) => updateField(idx, 'hora_salida', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Lugar salida</span>
+          <input type="text" value={it.lugar_salida || ''} onChange={(e) => updateField(idx, 'lugar_salida', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Hora llegada</span>
+          <input type="time" value={it.hora_llegada || ''} onChange={(e) => updateField(idx, 'hora_llegada', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Lugar llegada</span>
+          <input type="text" value={it.lugar_llegada || ''} onChange={(e) => updateField(idx, 'lugar_llegada', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs mt-2">
+        {[1,2,3].map(n => (
+          <div key={n} className="flex flex-col gap-0.5">
+            <span className="text-slate-600">Recogida {n}</span>
+            <input type="text" value={it[`recogida_${n}_lugar`] || ''} onChange={(e) => updateField(idx, `recogida_${n}_lugar`, e.target.value)}
+                   className="border border-slate-300 rounded px-2 py-1 mb-1" placeholder="Lugar" />
+            <input type="time" value={it[`recogida_${n}_hora`] || ''} onChange={(e) => updateField(idx, `recogida_${n}_hora`, e.target.value)}
+                   className="border border-slate-300 rounded px-2 py-1" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 text-xs">
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Fecha límite confirmación músicos</span>
+          <input type="date" value={it.fecha_limite_confirmacion || ''}
+                 onChange={(e) => updateField(idx, 'fecha_limite_confirmacion', e.target.value)}
+                 data-testid={`input-flim-transporte-${idx}`}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Notas</span>
+          <textarea rows={2} value={it.notas || ''} onChange={(e) => updateField(idx, 'notas', e.target.value)}
+                    className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+      </div>
+    </div>
+  );
+
+  const renderEditAlojamiento = (it, idx) => (
+    <div key={it.id || `new-a-${idx}`} className="border border-amber-300 rounded p-3 bg-amber-50/60" data-testid={`logistica-alojamiento-${idx}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-slate-700">🏨 Alojamiento</span>
+        <div className="flex gap-1">
+          {it.id && (
+            <button type="button" onClick={() => toggleEdit(it.id)}
+                    className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded">
+              ↩ Cerrar edición
+            </button>
+          )}
+          <button type="button" onClick={() => removeItem(idx)}
+                  data-testid={`btn-del-alojamiento-${idx}`}
+                  className="px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded">
+            Eliminar
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Hotel / Alojamiento</span>
+          <input type="text" value={it.hotel_nombre || ''} onChange={(e) => updateField(idx, 'hotel_nombre', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" placeholder="Hotel Carlton" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Dirección</span>
+          <input type="text" value={it.hotel_direccion || ''} onChange={(e) => updateField(idx, 'hotel_direccion', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" placeholder="Plaza Federico Moyúa, 2" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Check-in</span>
+          <input type="date" value={it.fecha_checkin || ''} onChange={(e) => updateField(idx, 'fecha_checkin', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Check-out</span>
+          <input type="date" value={it.fecha_checkout || ''} onChange={(e) => updateField(idx, 'fecha_checkout', e.target.value)}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Fecha límite confirmación músicos</span>
+          <input type="date" value={it.fecha_limite_confirmacion || ''}
+                 onChange={(e) => updateField(idx, 'fecha_limite_confirmacion', e.target.value)}
+                 data-testid={`input-flim-alojamiento-${idx}`}
+                 className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-slate-600">Notas</span>
+          <textarea rows={2} value={it.notas || ''} onChange={(e) => updateField(idx, 'notas', e.target.value)}
+                    className="border border-slate-300 rounded px-2 py-1" />
+        </label>
+      </div>
+    </div>
+  );
 
   return (
     <div className="mt-4 border-t pt-4" data-testid="logistica-section">
@@ -206,80 +431,18 @@ const LogisticaSection = ({ eventoId, api }) => {
                 + Añadir desplazamiento
               </button>
             </div>
-            {transportes.length === 0 && (
+            {items.filter(i => i.tipo !== 'alojamiento').length === 0 && (
               <p className="text-xs text-slate-500 italic">Sin desplazamientos configurados.</p>
             )}
-            <div className="space-y-3">
-              {items.map((it, idx) => it.tipo === 'alojamiento' ? null : (
-                <div key={it.id || `new-t-${idx}`} className="border border-slate-200 rounded p-3 bg-slate-50/50" data-testid={`logistica-transporte-${idx}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <select value={it.tipo} onChange={(e) => updateField(idx, 'tipo', e.target.value)}
-                            className="text-xs border border-slate-300 rounded px-2 py-1 bg-white">
-                      {TIPOS_TRANSPORTE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
-                    <button type="button" onClick={() => removeItem(idx)}
-                            data-testid={`btn-del-transporte-${idx}`}
-                            className="px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded">
-                      Eliminar
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Fecha</span>
-                      <input type="date" value={it.fecha || ''} onChange={(e) => updateField(idx, 'fecha', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Hora salida</span>
-                      <input type="time" value={it.hora_salida || ''} onChange={(e) => updateField(idx, 'hora_salida', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Lugar salida</span>
-                      <input type="text" value={it.lugar_salida || ''} onChange={(e) => updateField(idx, 'lugar_salida', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" placeholder="Madrid, P.º del Prado" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Hora llegada</span>
-                      <input type="time" value={it.hora_llegada || ''} onChange={(e) => updateField(idx, 'hora_llegada', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                    <label className="flex flex-col gap-0.5 md:col-span-2">
-                      <span className="text-slate-600">Lugar llegada</span>
-                      <input type="text" value={it.lugar_llegada || ''} onChange={(e) => updateField(idx, 'lugar_llegada', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" placeholder="Auditorio Bilbao" />
-                    </label>
-                  </div>
-
-                  <div className="mt-2 border-t border-slate-200 pt-2">
-                    <div className="text-[11px] font-semibold text-slate-600 mb-1">Puntos de recogida (opcionales)</div>
-                    {[1,2,3].map(n => (
-                      <div key={n} className="grid grid-cols-3 gap-2 mb-1">
-                        <input type="text" value={it[`recogida_${n}_lugar`] || ''} onChange={(e) => updateField(idx, `recogida_${n}_lugar`, e.target.value)}
-                               className="border border-slate-300 rounded px-2 py-1 text-xs col-span-2" placeholder={`Punto ${n}: lugar`} />
-                        <input type="time" value={it[`recogida_${n}_hora`] || ''} onChange={(e) => updateField(idx, `recogida_${n}_hora`, e.target.value)}
-                               className="border border-slate-300 rounded px-2 py-1 text-xs" />
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 text-xs">
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Fecha límite confirmación músicos</span>
-                      <input type="date" value={it.fecha_limite_confirmacion || ''}
-                             onChange={(e) => updateField(idx, 'fecha_limite_confirmacion', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Notas</span>
-                      <textarea rows={2} value={it.notas || ''} onChange={(e) => updateField(idx, 'notas', e.target.value)}
-                                className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                  </div>
-
-                  {it.id && <ConfirmacionesPanel logisticaId={it.id} api={api} />}
-                </div>
-              ))}
+            <div className="space-y-2">
+              {items.map((it, idx) => {
+                if (it.tipo === 'alojamiento') return null;
+                return isEditing(it)
+                  ? renderEditTransporte(it, idx)
+                  : <SummaryCard key={it.id} it={it} api={api}
+                                 onEdit={() => toggleEdit(it.id)}
+                                 onRemove={() => removeItem(idx)} />;
+              })}
             </div>
           </div>
 
@@ -293,56 +456,18 @@ const LogisticaSection = ({ eventoId, api }) => {
                 + Añadir alojamiento
               </button>
             </div>
-            {alojamientos.length === 0 && (
+            {items.filter(i => i.tipo === 'alojamiento').length === 0 && (
               <p className="text-xs text-slate-500 italic">Sin alojamientos configurados.</p>
             )}
-            <div className="space-y-3">
-              {items.map((it, idx) => it.tipo !== 'alojamiento' ? null : (
-                <div key={it.id || `new-a-${idx}`} className="border border-slate-200 rounded p-3 bg-slate-50/50" data-testid={`logistica-alojamiento-${idx}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-700">🏨 Alojamiento</span>
-                    <button type="button" onClick={() => removeItem(idx)}
-                            data-testid={`btn-del-alojamiento-${idx}`}
-                            className="px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded">
-                      Eliminar
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Hotel / Alojamiento</span>
-                      <input type="text" value={it.hotel_nombre || ''} onChange={(e) => updateField(idx, 'hotel_nombre', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" placeholder="Hotel Carlton" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Dirección</span>
-                      <input type="text" value={it.hotel_direccion || ''} onChange={(e) => updateField(idx, 'hotel_direccion', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" placeholder="Plaza Federico Moyúa, 2" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Check-in</span>
-                      <input type="date" value={it.fecha_checkin || ''} onChange={(e) => updateField(idx, 'fecha_checkin', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Check-out</span>
-                      <input type="date" value={it.fecha_checkout || ''} onChange={(e) => updateField(idx, 'fecha_checkout', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Fecha límite confirmación músicos</span>
-                      <input type="date" value={it.fecha_limite_confirmacion || ''}
-                             onChange={(e) => updateField(idx, 'fecha_limite_confirmacion', e.target.value)}
-                             className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-slate-600">Notas</span>
-                      <textarea rows={2} value={it.notas || ''} onChange={(e) => updateField(idx, 'notas', e.target.value)}
-                                className="border border-slate-300 rounded px-2 py-1" />
-                    </label>
-                  </div>
-                  {it.id && <ConfirmacionesPanel logisticaId={it.id} api={api} />}
-                </div>
-              ))}
+            <div className="space-y-2">
+              {items.map((it, idx) => {
+                if (it.tipo !== 'alojamiento') return null;
+                return isEditing(it)
+                  ? renderEditAlojamiento(it, idx)
+                  : <SummaryCard key={it.id} it={it} api={api}
+                                 onEdit={() => toggleEdit(it.id)}
+                                 onRemove={() => removeItem(idx)} />;
+              })}
             </div>
           </div>
         </div>

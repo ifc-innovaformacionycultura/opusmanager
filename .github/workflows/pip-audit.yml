@@ -1,0 +1,53 @@
+name: pip-audit (PyPI resolvability)
+
+# Detecta dependencias en backend/requirements.txt que no se pueden
+# resolver desde PyPI público (típicamente librerías de índices privados
+# que romperán el deploy en Railway / Heroku / cualquier host externo).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/requirements.txt'
+      - '.github/workflows/pip-audit.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/requirements.txt'
+      - '.github/workflows/pip-audit.yml'
+
+jobs:
+  audit:
+    name: Validate requirements.txt resolves on PyPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Dry-run resolve against PyPI public index ONLY
+        # `pip download` con `--no-deps`, `--dest /tmp/wheels` y SIN extra-index-url
+        # privado fuerza a que TODAS las dependencias se resuelvan desde PyPI público.
+        # Si alguna no existe (ej: `emergentintegrations`), falla aquí.
+        run: |
+          mkdir -p /tmp/wheels
+          pip download --no-deps --dest /tmp/wheels \
+            --index-url https://pypi.org/simple/ \
+            -r backend/requirements.txt
+
+      - name: Run pip-audit (vulnerabilidades conocidas)
+        # Auditoría de seguridad: alerta de CVEs en las dependencias
+        # pero NO falla el build (modo informativo).
+        continue-on-error: true
+        run: pip-audit -r backend/requirements.txt --strict

@@ -1633,14 +1633,14 @@ def _generate_temp_password(length: int = 12) -> str:
 # Columnas aceptadas en la plantilla (orden visible en el Excel).
 IMPORT_MUSICOS_HEADERS = [
     "nombre", "apellidos", "email", "telefono", "instrumento",
-    "especialidad", "dni", "direccion", "fecha_nacimiento",
-    "nacionalidad", "bio"
+    "especialidad", "nivel_estudios", "localidad", "baremo",
+    "dni", "direccion", "fecha_nacimiento", "nacionalidad", "bio"
 ]
 
 
 @router.get("/musicos-import/plantilla")
 async def descargar_plantilla_musicos(current_user: dict = Depends(get_current_gestor)):
-    """Genera y descarga un Excel con sólo las cabeceras de importación."""
+    """Genera y descarga un Excel con cabeceras + fila de ejemplo + hoja INSTRUCCIONES."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Músicos"
@@ -1655,12 +1655,53 @@ async def descargar_plantilla_musicos(current_user: dict = Depends(get_current_g
         ws.column_dimensions[cell.column_letter].width = max(14, len(name) + 4)
     # Fila de ejemplo (comentada con color) para guiar al usuario
     ejemplo = ["Ana", "García", "ana@ejemplo.com", "+34600111222", "Violín",
-               "Música clásica", "12345678A", "Calle Mayor 1, Madrid",
+               "Música clásica", "Superior finalizado", "Madrid", "8.5",
+               "12345678A", "Calle Mayor 1, Madrid",
                "1990-05-12", "Española", "Breve biografía opcional"]
     for idx, value in enumerate(ejemplo, start=1):
         c = ws.cell(row=2, column=idx, value=value)
         c.font = Font(color="94A3B8", italic=True)
     ws.row_dimensions[2].height = 18
+
+    # ---- Pestaña INSTRUCCIONES ----
+    ws2 = wb.create_sheet("INSTRUCCIONES")
+    ws2.column_dimensions['A'].width = 22
+    ws2.column_dimensions['B'].width = 80
+    title_font = Font(bold=True, size=14, color="0F172A")
+    bold = Font(bold=True)
+    h = ws2.cell(row=1, column=1, value="Plantilla de importación de músicos")
+    h.font = title_font
+    ws2.merge_cells('A1:B1')
+
+    instrucciones = [
+        ("", ""),
+        ("Campo", "Descripción / valores aceptados"),
+        ("nombre", "Texto libre. Obligatorio."),
+        ("apellidos", "Texto libre. Obligatorio."),
+        ("email", "Email único. Obligatorio."),
+        ("telefono", "Teléfono con prefijo internacional, ej: +34600111222."),
+        ("instrumento", "Violín / Viola / Violonchelo / Contrabajo / Flauta / Oboe / Clarinete / Fagot / Trompa / Trompeta / Trombón / Tuba / Percusión / Piano / Arpa / Coro / etc."),
+        ("especialidad", "Texto libre. Ej: Música clásica, Jazz, Música antigua…"),
+        ("nivel_estudios", "Uno de: Superior finalizado / Superior cursando / Profesional finalizado / Profesional cursando."),
+        ("localidad", "Ciudad o localidad de residencia."),
+        ("baremo", "Número decimal entre 0 y 10 (ej: 8.5). Se acepta coma o punto decimal."),
+        ("dni", "DNI/NIE/Pasaporte. Texto libre."),
+        ("direccion", "Dirección postal completa."),
+        ("fecha_nacimiento", "Formato ISO YYYY-MM-DD (ej: 1990-05-12) o reconocido por Excel."),
+        ("nacionalidad", "Nacionalidad. Texto libre."),
+        ("bio", "Biografía breve. Texto libre opcional."),
+    ]
+    for i, (campo, desc) in enumerate(instrucciones, start=2):
+        a = ws2.cell(row=i, column=1, value=campo)
+        b = ws2.cell(row=i, column=2, value=desc)
+        if i == 3:  # cabecera "Campo / Descripción"
+            a.font = bold; b.font = bold
+            a.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
+            b.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
+        else:
+            a.font = bold
+            b.alignment = Alignment(wrap_text=True, vertical="top")
+        ws2.row_dimensions[i].height = 22
 
     buf = BytesIO()
     wb.save(buf)
@@ -1799,6 +1840,15 @@ async def importar_musicos(
                 errores.append({"fila": idx, "email": email, "motivo": f"Auth: {str(e)[:150]}"})
             continue
 
+        # Normalizar baremo (acepta coma decimal)
+        baremo_raw = row.get("baremo")
+        baremo_val = None
+        if baremo_raw not in (None, ""):
+            try:
+                baremo_val = float(str(baremo_raw).strip().replace(",", "."))
+            except (ValueError, TypeError):
+                baremo_val = None
+
         # Perfil en usuarios
         profile_payload = {
             "user_id": created_user_id,
@@ -1808,6 +1858,9 @@ async def importar_musicos(
             "telefono": row.get("telefono") or None,
             "instrumento": row.get("instrumento") or None,
             "especialidad": row.get("especialidad") or None,
+            "nivel_estudios": row.get("nivel_estudios") or None,
+            "localidad": row.get("localidad") or None,
+            "baremo": baremo_val,
             "dni": row.get("dni") or None,
             "direccion": row.get("direccion") or None,
             "fecha_nacimiento": row.get("fecha_nacimiento") or None,
@@ -3262,3 +3315,143 @@ async def get_confirmaciones_logistica(logistica_id: str, current_user: dict = D
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+
+@router.get("/logistica")
+async def listar_logistica_global(current_user: dict = Depends(get_current_gestor)):
+    """Vista global de logística para `/asistencia/logistica`.
+    Devuelve eventos con logística (estado=abierto) + músicos confirmados
+    en cada pieza de logística para mostrar en acordeón.
+    """
+    try:
+        # 1. Eventos abiertos con logística asociada
+        log_rows = supabase.table('evento_logistica') \
+            .select('*, evento:eventos(id,nombre,fecha_inicio,fecha_fin,estado)') \
+            .order('evento_id').execute().data or []
+
+        # Filtrar solo eventos con estado=abierto (o sin estado=cerrado)
+        log_rows = [
+            l for l in log_rows
+            if (l.get('evento') or {}).get('estado') != 'cerrado'
+        ]
+        if not log_rows:
+            return {"eventos": []}
+
+        # Agrupar por evento_id
+        eventos_map: Dict[str, dict] = {}
+        for l in log_rows:
+            ev = l.pop('evento', None) or {}
+            eid = l.get('evento_id')
+            if not eid:
+                continue
+            if eid not in eventos_map:
+                eventos_map[eid] = {
+                    "evento_id": eid,
+                    "nombre": ev.get('nombre'),
+                    "fecha_inicio": ev.get('fecha_inicio'),
+                    "fecha_fin": ev.get('fecha_fin'),
+                    "items_logistica": [],
+                }
+            eventos_map[eid]["items_logistica"].append(l)
+
+        # 2. Cargar todas las confirmaciones de cada pieza
+        all_log_ids = [l['id'] for l in log_rows]
+        confs_all: List[dict] = []
+        for i in range(0, len(all_log_ids), 200):
+            chunk = all_log_ids[i:i + 200]
+            res = supabase.table('confirmaciones_logistica').select('*') \
+                .in_('logistica_id', chunk).execute().data or []
+            confs_all.extend(res)
+        confs_by_log: Dict[str, List[dict]] = {}
+        for c in confs_all:
+            confs_by_log.setdefault(c['logistica_id'], []).append(c)
+
+        # 3. Asignaciones (músicos confirmados por evento)
+        ev_ids = list(eventos_map.keys())
+        asigs_all: List[dict] = []
+        for i in range(0, len(ev_ids), 200):
+            chunk = ev_ids[i:i + 200]
+            res = supabase.table('asignaciones') \
+                .select('id,evento_id,usuario_id,estado') \
+                .in_('evento_id', chunk).eq('estado', 'confirmado').execute().data or []
+            asigs_all.extend(res)
+        asigs_by_ev: Dict[str, List[dict]] = {}
+        all_user_ids: set = set()
+        for a in asigs_all:
+            asigs_by_ev.setdefault(a['evento_id'], []).append(a)
+            all_user_ids.add(a['usuario_id'])
+
+        # 4. Datos de usuarios
+        users_map: Dict[str, dict] = {}
+        if all_user_ids:
+            uid_list = list(all_user_ids)
+            for i in range(0, len(uid_list), 200):
+                chunk = uid_list[i:i + 200]
+                res = supabase.table('usuarios') \
+                    .select('id,nombre,apellidos,instrumento,email') \
+                    .in_('id', chunk).execute().data or []
+                for u in res:
+                    users_map[u['id']] = u
+
+        # 5. Construir respuesta agregada
+        out: List[dict] = []
+        for eid, ev in eventos_map.items():
+            asigs = asigs_by_ev.get(eid, [])
+            # Para cada músico, calcular estado de cada pieza
+            confs_by_user_log: Dict[str, dict] = {}
+            for it in ev["items_logistica"]:
+                for c in confs_by_log.get(it['id'], []):
+                    confs_by_user_log[f"{c['usuario_id']}|{it['id']}"] = c
+
+            musicos = []
+            tot_ida_ok = tot_vuelta_ok = tot_aloja_ok = 0
+            for a in asigs:
+                u = users_map.get(a['usuario_id'])
+                if not u:
+                    continue
+                fila = {
+                    "usuario_id": u['id'],
+                    "nombre": u.get('nombre'),
+                    "apellidos": u.get('apellidos'),
+                    "instrumento": u.get('instrumento'),
+                    "email": u.get('email'),
+                    "ida": None,
+                    "vuelta": None,
+                    "alojamiento": None,
+                    "punto_recogida": None,
+                    "fecha_confirmacion": None,
+                }
+                for it in ev["items_logistica"]:
+                    c = confs_by_user_log.get(f"{u['id']}|{it['id']}")
+                    confirmado = c.get('confirmado') if c else None
+                    estado = '✅' if confirmado is True else ('❌' if confirmado is False else '⏳')
+                    if it['tipo'] == 'transporte_ida':
+                        fila['ida'] = estado
+                        if confirmado is True: tot_ida_ok += 1
+                    elif it['tipo'] == 'transporte_vuelta':
+                        fila['vuelta'] = estado
+                        if confirmado is True: tot_vuelta_ok += 1
+                    elif it['tipo'] == 'alojamiento':
+                        fila['alojamiento'] = estado
+                        if confirmado is True: tot_aloja_ok += 1
+                    if c and c.get('updated_at') and not fila.get('fecha_confirmacion'):
+                        fila['fecha_confirmacion'] = c['updated_at']
+                    if c and c.get('punto_recogida') and not fila.get('punto_recogida'):
+                        fila['punto_recogida'] = c.get('punto_recogida')
+                musicos.append(fila)
+
+            # Fecha límite mínima entre todos los items
+            limites = [it.get('fecha_limite_confirmacion') for it in ev["items_logistica"] if it.get('fecha_limite_confirmacion')]
+            ev["fecha_limite_min"] = min(limites) if limites else None
+            ev["totales"] = {
+                "asignados_confirmados": len(asigs),
+                "ida_confirmada": tot_ida_ok,
+                "vuelta_confirmada": tot_vuelta_ok,
+                "alojamiento_confirmado": tot_aloja_ok,
+            }
+            ev["musicos"] = musicos
+            out.append(ev)
+
+        out.sort(key=lambda e: (e.get('fecha_inicio') or '9999-99-99'))
+        return {"eventos": out}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en logística global: {str(e)}")
