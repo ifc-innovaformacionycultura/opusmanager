@@ -686,3 +686,42 @@ ALTER TABLE public.obras ADD CONSTRAINT obras_codigo_unique UNIQUE (codigo);
 
 **Pendiente bloqueante:**
 - Importación masiva del Excel `REGISTRO_DE_REPERTORIO__respuestas_.xlsx`. El archivo NO está presente en el contenedor (verificado vía `find /app /mnt /tmp`). El script `import_obras_inicial.py` ahora busca en 5 rutas; basta con copiarlo a cualquiera y ejecutar.
+
+### Feb 2026 — Iter 24: Importación masiva + Full-Text + Filtros + Alertas
+
+**1. Importación Excel completada** (`/app/backend/scripts/import_obras_inicial.py`):
+- 178 obras nuevas + 2 previas = **180 obras totales** en BD.
+- 0 errores · 0 duplicadas. Códigos del Excel respetados, géneros normalizados (corchetes eliminados), enlaces de Drive preservados en `observaciones`.
+- 89 originales en estado `necesita_revision` detectados automáticamente.
+
+**2. SQL ejecutado** (Iteration 23 follow-up):
+```sql
+ALTER TABLE obras ADD CONSTRAINT obras_codigo_unique UNIQUE (codigo);
+CREATE EXTENSION IF NOT EXISTS unaccent;
+ALTER TABLE obras ADD COLUMN tsv tsvector GENERATED ALWAYS AS (
+  setweight(to_tsvector('simple', immutable_unaccent(coalesce(codigo,''))), 'A') ||
+  setweight(to_tsvector('spanish', immutable_unaccent(coalesce(titulo,''))), 'B') ||
+  setweight(to_tsvector('simple', immutable_unaccent(coalesce(autor,''))), 'C')
+) STORED;
+CREATE INDEX obras_tsv_idx ON obras USING GIN (tsv);
+```
+
+**3. Endpoint `GET /api/gestor/archivo/obras` — búsqueda híbrida**:
+- Branch A: `text_search('tsv', q, type='plain', config='spanish')` — stemming en títulos.
+- Branch B: `or_(autor.ilike, codigo.ilike, titulo.ilike)` — substring para nombres propios y códigos.
+- Unión de IDs. Verificado: 'alonso'→32, 'navidad'→1, 'Mexico'→MÉXICO LINDO (acentos), 'marchas'→4 (stemming), 'ave maria'→3 (espacios OK), 'cediel'→1.
+- Nuevo parámetro `subgenero` (ILIKE %x%).
+- Nueva propiedad `total_copias_atril` por obra (suma de `obra_partes.copias_fisicas`).
+
+**4. Frontend `/admin/archivo` (`GestorArchivo.js`)**:
+- Filtros: Género (select), **Subgénero (input nuevo)**, Procedencia (select), Estado material (select).
+- Tabla catálogo con nueva columna **Nº atriles** (centrada, con tooltip).
+- data-testids: `archivo-search`, `filtro-genero`, `filtro-subgenero`, `filtro-procedencia`, `filtro-estado`, `atriles-{id}`.
+
+**5. Endpoint `/alertas` ampliado** con 5ª categoría `originales_necesita_revision` (89 actualmente). Eliminado bug del `en_7` mal calculado.
+
+**6. UI Alertas (`AlertasTab`)**: nueva tarjeta "🟠 Originales que necesitan revisión" full-width con lista scrollable, badge del tipo (general/partes/arcos), código + autor + título de la obra. Pre-truncada a 100 ítems.
+
+**Tests**: PDF SUITE DE NAVIDAD de Cediel, P. → 2288 bytes, magic bytes `%PDF` ✅.
+
+**Observación**: La columna "Nº atriles" muestra 0 para todas las obras importadas porque el Excel histórico solo trae estados de originales (SI/NO/REVISIÓN), no recuento de copias por papel. Las cuentas se llenarán al editar cada obra y registrar partes en su ficha.

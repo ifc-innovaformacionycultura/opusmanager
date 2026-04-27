@@ -148,27 +148,111 @@ def _validar_obra(p: dict) -> dict:
 async def listar_obras(
     q: Optional[str] = None,
     genero: Optional[str] = None,
+    subgenero: Optional[str] = None,
     procedencia: Optional[str] = None,
     estado: Optional[str] = None,
     current_user: dict = Depends(get_current_gestor),
 ):
-    """Lista obras del catálogo con filtros opcionales."""
-    sel = supabase.table('obras').select('*').order('autor').limit(2000)
+    """Lista obras del catálogo con filtros opcionales.
+
+    - `q`: búsqueda full-text sobre `tsv` (titulo+autor+codigo) con
+      stemming en español + unaccent (índice GIN). Fallback automático a
+      ILIKE en Python si la columna `tsv` aún no existe.
+    - Devuelve `total_copias_atril` por obra (suma de `obra_partes.copias_fisicas`).
+    """
+    sel = supabase.table('obras').select('*').order('autor').order('codigo').limit(2000)
     if genero:
         sel = sel.eq('genero', genero)
     if procedencia:
         sel = sel.eq('procedencia', procedencia)
     if estado:
         sel = sel.eq('estado', estado)
-    obras = sel.execute().data or []
+    if subgenero:
+        sel = sel.ilike('subgenero', f'%{subgenero}%')
+
+    obras: list = []
     if q:
-        ql = q.lower()
-        obras = [
-            o for o in obras
-            if ql in (o.get('titulo') or '').lower()
-            or ql in (o.get('autor') or '').lower()
-            or ql in (o.get('codigo') or '').lower()
-        ]
+        # Estrategia híbrida:
+        #   - Branch A (full-text con stemming spanish): cubre títulos.
+        #     'navidad' → indexa 'navid' y query 'navid':* matchea.
+        #   - Branch B (ILIKE substring): cubre autor + codigo (nombres
+        #     propios y códigos donde el stemming es contraproducente).
+        # Unión de ambos por id. Si la columna `tsv` no existiera, sólo
+        # contribuye la branch B.
+        q_norm = _strip_accents(q).strip()
+        ids_a: set = set()
+        ids_b: set = set()
+
+        # Branch A: full-text. Usamos plain ('plfts') para que los espacios
+        # se traten como AND y no rompan la sintaxis tsquery.
+        try:
+            sel_a = supabase.table('obras').select('id')
+            if genero: sel_a = sel_a.eq('genero', genero)
+            if procedencia: sel_a = sel_a.eq('procedencia', procedencia)
+            if estado: sel_a = sel_a.eq('estado', estado)
+            if subgenero: sel_a = sel_a.ilike('subgenero', f'%{subgenero}%')
+            ra = sel_a.text_search(
+                'tsv', q_norm,
+                options={'config': 'spanish', 'type': 'plain'},
+            ).execute().data or []
+            ids_a = {r['id'] for r in ra}
+        except Exception:
+            ids_a = set()
+
+        # Branch B: ILIKE sobre autor + codigo (sin stemming). Sustituye
+        # también de fallback total si la columna tsv no estuviera creada.
+        sel_b = supabase.table('obras').select('id,autor,codigo,titulo')
+        if genero: sel_b = sel_b.eq('genero', genero)
+        if procedencia: sel_b = sel_b.eq('procedencia', procedencia)
+        if estado: sel_b = sel_b.eq('estado', estado)
+        if subgenero: sel_b = sel_b.ilike('subgenero', f'%{subgenero}%')
+        # Escapar comas y comillas en el patrón ILIKE para PostgREST or_
+        q_safe = q.replace(',', '').replace('(', '').replace(')', '')
+        try:
+            rb = sel_b.or_(
+                f'autor.ilike.*{q_safe}*,codigo.ilike.*{q_safe}*,titulo.ilike.*{q_safe}*'
+            ).execute().data or []
+            ids_b = {r['id'] for r in rb}
+        except Exception:
+            # Último fallback: traer todo y filtrar en Python
+            todo = sel.execute().data or []
+            ql = q.lower()
+            return {
+                "obras": [
+                    {**o, 'total_copias_atril': 0}
+                    for o in todo
+                    if ql in (o.get('titulo') or '').lower()
+                    or ql in (o.get('autor') or '').lower()
+                    or ql in (o.get('codigo') or '').lower()
+                ],
+                "total": 0,
+            }
+
+        ids_match = ids_a | ids_b
+        if not ids_match:
+            obras = []
+        else:
+            ids_list = list(ids_match)
+            obras = []
+            for i in range(0, len(ids_list), 200):
+                chunk = ids_list[i:i + 200]
+                sel_c = supabase.table('obras').select('*').in_('id', chunk).order('autor').order('codigo')
+                obras.extend(sel_c.execute().data or [])
+    else:
+        obras = sel.execute().data or []
+
+    # Calcular Nº copias atril (suma de obra_partes.copias_fisicas) por obra
+    obra_ids = [o['id'] for o in obras]
+    copias_por_obra: Dict[str, int] = {}
+    for i in range(0, len(obra_ids), 200):
+        chunk = obra_ids[i:i + 200]
+        r = supabase.table('obra_partes').select('obra_id,copias_fisicas').in_('obra_id', chunk).execute()
+        for p in (r.data or []):
+            oid = p['obra_id']
+            copias_por_obra[oid] = copias_por_obra.get(oid, 0) + (p.get('copias_fisicas') or 0)
+    for o in obras:
+        o['total_copias_atril'] = copias_por_obra.get(o['id'], 0)
+
     return {"obras": obras, "total": len(obras)}
 
 
@@ -697,8 +781,8 @@ async def actualizar_prestamo(prestamo_id: str, data: PrestamoUpdate,
 # ============================================================
 @router.get("/alertas")
 async def alertas_archivo(current_user: dict = Depends(get_current_gestor)):
-    hoy = datetime.now().date().isoformat()
-    en_7 = (datetime.now().date() + (datetime.now().date().resolution * 0)).isoformat()  # Always now
+    from datetime import date
+    today = date.today()
     # Pendientes de registrar
     obras_provisionales = supabase.table('evento_obras') \
         .select('*, evento:eventos(id,nombre,fecha_inicio)') \
@@ -708,8 +792,6 @@ async def alertas_archivo(current_user: dict = Depends(get_current_gestor)):
         .select('*, obra:obras(id,codigo,titulo,autor)') \
         .eq('estado', 'activo').execute().data or []
     vencidos, proximos = [], []
-    from datetime import date, timedelta
-    today = date.today()
     for p in prestamos_act:
         fp = p.get('fecha_prevista_devolucion')
         if not fp:
@@ -726,11 +808,17 @@ async def alertas_archivo(current_user: dict = Depends(get_current_gestor)):
     incompletas = supabase.table('obra_partes') \
         .select('obra_id,papel,copias_fisicas,estado') \
         .eq('estado', 'incompleto').execute().data or []
+    # Originales que necesitan revisión (importados del Excel histórico)
+    orig_revision = supabase.table('obra_originales') \
+        .select('obra_id,tipo,estado,notas, obra:obras(id,codigo,titulo,autor,genero)') \
+        .eq('estado', 'necesita_revision') \
+        .order('obra_id').execute().data or []
     return {
         "obras_pendientes_registro": obras_provisionales,
         "prestamos_vencidos": vencidos,
         "prestamos_proximos": proximos,
         "partes_incompletas": incompletas,
+        "originales_necesita_revision": orig_revision,
     }
 
 

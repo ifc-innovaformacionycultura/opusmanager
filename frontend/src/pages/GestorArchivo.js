@@ -21,7 +21,7 @@ export default function GestorArchivo() {
   const [tab, setTab] = useState('catalogo');
   const [obras, setObras] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filtros, setFiltros] = useState({ q: '', genero: '', procedencia: '', estado: '' });
+  const [filtros, setFiltros] = useState({ q: '', genero: '', subgenero: '', procedencia: '', estado: '' });
   const [ficha, setFicha] = useState(null);          // obra abierta en el modal
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -37,6 +37,7 @@ export default function GestorArchivo() {
       const params = new URLSearchParams();
       if (filtros.q) params.set('q', filtros.q);
       if (filtros.genero) params.set('genero', filtros.genero);
+      if (filtros.subgenero) params.set('subgenero', filtros.subgenero);
       if (filtros.procedencia) params.set('procedencia', filtros.procedencia);
       if (filtros.estado) params.set('estado', filtros.estado);
       const r = await api.get(`/api/gestor/archivo/obras?${params.toString()}`);
@@ -170,16 +171,19 @@ function CatalogoTab({ obras, loading, filtros, setFiltros, onAbrirFicha, onNuev
           data-testid="archivo-search"
           className="flex-1 min-w-[200px] px-3 py-1.5 text-sm border border-slate-300 rounded-md"
         />
-        <select value={filtros.genero} onChange={(e) => setFiltros({ ...filtros, genero: e.target.value })} className="px-2 py-1.5 text-sm border border-slate-300 rounded-md">
+        <select value={filtros.genero} onChange={(e) => setFiltros({ ...filtros, genero: e.target.value })} data-testid="filtro-genero" className="px-2 py-1.5 text-sm border border-slate-300 rounded-md">
           <option value="">Género</option>
           {GENEROS.map(g => <option key={g} value={g}>{g}</option>)}
         </select>
-        <select value={filtros.procedencia} onChange={(e) => setFiltros({ ...filtros, procedencia: e.target.value })} className="px-2 py-1.5 text-sm border border-slate-300 rounded-md">
+        <input type="text" value={filtros.subgenero} onChange={(e) => setFiltros({ ...filtros, subgenero: e.target.value })}
+          placeholder="Subgénero…" data-testid="filtro-subgenero"
+          className="w-32 px-2 py-1.5 text-sm border border-slate-300 rounded-md" />
+        <select value={filtros.procedencia} onChange={(e) => setFiltros({ ...filtros, procedencia: e.target.value })} data-testid="filtro-procedencia" className="px-2 py-1.5 text-sm border border-slate-300 rounded-md">
           <option value="">Procedencia</option>
           {PROCEDENCIAS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select value={filtros.estado} onChange={(e) => setFiltros({ ...filtros, estado: e.target.value })} className="px-2 py-1.5 text-sm border border-slate-300 rounded-md">
-          <option value="">Estado</option>
+        <select value={filtros.estado} onChange={(e) => setFiltros({ ...filtros, estado: e.target.value })} data-testid="filtro-estado" className="px-2 py-1.5 text-sm border border-slate-300 rounded-md">
+          <option value="">Estado material</option>
           <option value="activo">Activo</option>
           <option value="archivado">Archivado</option>
         </select>
@@ -202,13 +206,14 @@ function CatalogoTab({ obras, loading, filtros, setFiltros, onAbrirFicha, onNuev
                 <th className="px-3 py-2 text-left">Género</th>
                 <th className="px-3 py-2 text-left">Subgénero</th>
                 <th className="px-3 py-2 text-left">Procedencia</th>
+                <th className="px-3 py-2 text-center" title="Nº de copias de atril (suma de copias_fisicas)">Nº atriles</th>
                 <th className="px-3 py-2 text-left">Estado</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {obras.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">Sin obras.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-400">Sin obras.</td></tr>
               )}
               {obras.map(o => (
                 <tr key={o.id} className="hover:bg-slate-50" data-testid={`obra-row-${o.id}`}>
@@ -218,6 +223,11 @@ function CatalogoTab({ obras, loading, filtros, setFiltros, onAbrirFicha, onNuev
                   <td className="px-3 py-2 text-xs">{o.genero || '—'}</td>
                   <td className="px-3 py-2 text-xs">{o.subgenero || '—'}</td>
                   <td className="px-3 py-2 text-xs">{o.procedencia || '—'}</td>
+                  <td className="px-3 py-2 text-center text-xs font-mono" data-testid={`atriles-${o.id}`}>
+                    <span className={(o.total_copias_atril || 0) === 0 ? 'text-slate-400' : 'text-slate-700'}>
+                      {o.total_copias_atril ?? 0}
+                    </span>
+                  </td>
                   <td className="px-3 py-2">
                     <span className={`px-2 py-0.5 text-[10px] rounded ${o.estado === 'activo' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                       {o.estado}
@@ -840,6 +850,25 @@ function AlertasTab({ alertas }) {
         {(alertas.partes_incompletas || []).map((p, i) => (
           <li key={i} className="text-xs">obra {p.obra_id?.slice(0, 8)} · {p.papel} · copias {p.copias_fisicas}</li>
         ))}
+      </Card>
+      <Card title="🟠 Originales que necesitan revisión" count={(alertas.originales_necesita_revision || []).length} cls="border-orange-300 bg-orange-50 md:col-span-2">
+        <div className="max-h-72 overflow-y-auto pr-1">
+          {(alertas.originales_necesita_revision || []).slice(0, 100).map((o, i) => (
+            <li key={i} className="text-xs flex justify-between gap-2 py-0.5 border-b border-orange-100 last:border-0" data-testid={`alerta-rev-${i}`}>
+              <span className="truncate">
+                <span className="font-mono text-[10px] text-slate-500">{o.obra?.codigo || '—'}</span>{' '}
+                <span className="text-slate-700">{o.obra?.autor || '?'}</span>{' · '}
+                <span className="font-medium">{o.obra?.titulo || '?'}</span>
+              </span>
+              <span className="px-1.5 py-0.5 bg-amber-200 text-amber-800 rounded text-[10px] uppercase font-mono shrink-0">
+                {o.tipo}
+              </span>
+            </li>
+          ))}
+          {(alertas.originales_necesita_revision || []).length > 100 && (
+            <li className="text-xs text-slate-500 italic mt-2">...y {(alertas.originales_necesita_revision || []).length - 100} más</li>
+          )}
+        </div>
       </Card>
     </div>
   );
