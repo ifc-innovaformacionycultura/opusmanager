@@ -725,3 +725,22 @@ CREATE INDEX obras_tsv_idx ON obras USING GIN (tsv);
 **Tests**: PDF SUITE DE NAVIDAD de Cediel, P. → 2288 bytes, magic bytes `%PDF` ✅.
 
 **Observación**: La columna "Nº atriles" muestra 0 para todas las obras importadas porque el Excel histórico solo trae estados de originales (SI/NO/REVISIÓN), no recuento de copias por papel. Las cuentas se llenarán al editar cada obra y registrar partes en su ficha.
+
+### Feb 2026 — Iter 25: Fix bloqueo deploy Railway (emergentintegrations)
+
+**Problema reportado**: Build de Railway fallaba con
+```
+ERROR: Could not find a version that satisfies the requirement emergentintegrations==0.1.0
+```
+
+**Diagnóstico**:
+- La línea `emergentintegrations==0.1.0` estaba en `/app/backend/requirements.txt:23`.
+- `grep -rn` confirmó que **NO se importa en NINGÚN archivo .py del backend ni del frontend**. Era una dependencia huérfana del template inicial.
+- La librería sólo existe en el índice privado de Emergent (`d33sy5i8bnduwe.cloudfront.net/simple/`), no en PyPI público → Railway no la encuentra.
+
+**Fix aplicado**:
+1. Eliminada la línea 23 de `requirements.txt`.
+2. Desinstalada del entorno local (`pip uninstall -y emergentintegrations`).
+3. Verificado: backend arranca limpio, 9/9 endpoints clave responden 200 (health, auth/me, eventos, músicos, archivo/obras, archivo/alertas, incidencias, mensajes, tareas).
+
+**Próximo paso para el usuario**: hacer commit y push a `main` desde el botón "Save to Github" de la chat de Emergent. Railway re-buildeará automáticamente.
