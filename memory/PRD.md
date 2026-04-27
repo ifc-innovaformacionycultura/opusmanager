@@ -744,3 +744,32 @@ ERROR: Could not find a version that satisfies the requirement emergentintegrati
 3. Verificado: backend arranca limpio, 9/9 endpoints clave responden 200 (health, auth/me, eventos, músicos, archivo/obras, archivo/alertas, incidencias, mensajes, tareas).
 
 **Próximo paso para el usuario**: hacer commit y push a `main` desde el botón "Save to Github" de la chat de Emergent. Railway re-buildeará automáticamente.
+
+### Feb 2026 — Iter 26: Bloques 1-4 + Logística + GitHub Action
+
+**Bloque 1 — Fix crítico** ✅
+- `ConfiguracionEventos.js` línea 611: `evento?.id` → `event?.id`. ReferenceError resuelto.
+
+**Bloque 2 — Logística**
+- 2A ✅: Verificado por curl: backend persiste `fecha_limite_confirmacion` correctamente. El "bug" era UX.
+- 2B ✅: `LogisticaSection.js` reescrito con tarjetas-resumen para items ya guardados (icono tipo, fecha/hora, trayecto/hotel, badge fecha límite con color amber/red según urgencia, botones "Editar" / "Eliminar"). Items nuevos abren formulario directamente.
+- 2C ✅: Nueva página `/asistencia/logistica` (`Logistica.js`) con acordeón por evento + tabla de músicos confirmados (Ida/Vuelta/Alojamiento ✅⏳—). Endpoint `GET /api/gestor/logistica` agrega datos en 4 batches (logística + asignaciones + confirmaciones + usuarios). Fecha límite con alerta si ≤7d.
+
+**Bloque 3 — Base de datos de músicos**
+- 3A ✅: Eliminado duplicado de "Configuración de temporada". Solo en "Administración".
+- 3B ✅: Plantilla Excel con 14 columnas (incluye `nivel_estudios`, `localidad`, `baremo`) + nueva pestaña INSTRUCCIONES con valores aceptados. Endpoint import normaliza `baremo` (coma→punto).
+
+**Bloque 4 — Comentarios de Equipo (SQL ejecutado)**
+- Backend `routes_comentarios_equipo.py`: CRUD + hilos (parent_id) + estados + menciones + auto-notificaciones a `notificaciones_gestor`. Endpoints: GET/POST `/api/gestor/comentarios-equipo`, GET `/{id}`, POST `/{id}/responder`, PUT `/{id}/estado`, GET `/_meta/gestores`.
+- 4A ✅: `ComentariosEquipoButton.js` (azul, `bottom-20 right-6`, encima del FeedbackButton) + `ComentariosEquipoModal.js` con detección automática de contexto (página + entidad vía `[data-entidad-nombre]` o H1), checkbox de menciones, radio Normal/Urgente.
+- 4B ✅: Pestaña "📋 Comentarios del equipo" en `/admin/mensajes` con filtros (estado, autor, mencionado, página), tabla de hilos con badge de estado/urgencia/respuestas, panel lateral de hilo con respuestas anidadas + botones cambiar estado + responder. Chat original intacto (envuelto en `ChatInternoView`).
+
+**Reorganización menú** ✅
+- "🚌 Desplazamientos y Alojamientos" promovido a primer nivel del sidebar entre "Plantillas definitivas" y "Asistencia y pagos". Path `/asistencia/logistica` invariante.
+
+**GitHub Action** ✅
+- `.github/workflows/pip-audit.yml`: en cada push a main valida que TODOS los paquetes de `backend/requirements.txt` resuelven en PyPI público (`pip download --index-url https://pypi.org/simple/`). Probado localmente: 144 deps OK en <60s.
+
+**Tests backend (curl)**: 8/8 endpoints comentarios-equipo OK · GET /logistica devuelve 3 eventos con datos correctos · POST screenshot con magic bytes vigente.
+
+**Modificaciones quirúrgicas**: solo Sidebar (`App.js`), nuevos archivos creados, `ChatInterno.js` con wrapper de pestaña + componente nuevo (chat original intacto). Sin tocar AuthContext, login, portal del músico ni sistema de incidencias.

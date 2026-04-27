@@ -21,6 +21,7 @@ from routes_tareas import router as tareas_router
 from routes_economia import router as economia_router
 from routes_mensajes import router as mensajes_router
 from routes_archivo import router as archivo_router
+from routes_comentarios_equipo import router as comentarios_equipo_router
 
 # ==================== App Configuration ====================
 
@@ -65,6 +66,7 @@ app.include_router(tareas_router)    # /api/gestor/tareas/*
 app.include_router(economia_router)  # /api/gestor/{cachets-base,cachets-config,presupuestos}/*
 app.include_router(mensajes_router)  # /api/gestor/mensajes/*
 app.include_router(archivo_router)  # /api/gestor/archivo/*
+app.include_router(comentarios_equipo_router)  # /api/gestor/comentarios-equipo/*
 
 # ==================== Health Check ====================
 

@@ -209,6 +209,12 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       icon: "CheckSquare",
       path: "/plantillas-definitivas"
     },
+    {
+      id: "logistica",
+      label: "🚌 Desplazamientos y Alojamientos",
+      icon: "Truck",
+      path: "/asistencia/logistica"
+    },
     { 
       id: "asistencia", 
       label: "Asistencia y pagos", 
@@ -216,7 +222,6 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       path: "/asistencia",
       children: [
         { id: "asistencia-pagos", label: "Gestión económica", path: "/asistencia/pagos" },
-        { id: "logistica", label: "🚌 Logística", path: "/asistencia/logistica" },
         { id: "analisis-economico", label: "Análisis económico", path: "/asistencia/analisis" }
       ]
     },
@@ -431,7 +436,7 @@ const Layout = ({ children }) => {
     } else if (path.startsWith("/asistencia/pagos")) {
       return { page: "Asistencia y pagos", section: "Gestión económica" };
     } else if (path.startsWith("/asistencia/logistica")) {
-      return { page: "Asistencia y pagos", section: "Logística" };
+      return { page: "Desplazamientos y Alojamientos", section: null };
     } else if (path.startsWith("/asistencia/analisis")) {
       return { page: "Asistencia y pagos", section: "Análisis económico" };
     } else if (path.startsWith("/informes")) {
@@ -473,6 +478,8 @@ const Layout = ({ children }) => {
         {children}
         {/* Botón flotante de feedback - visible en todas las páginas */}
         <FeedbackButton />
+        {/* Botón flotante de comentarios al equipo (separado, encima del de feedback) */}
+        <ComentariosEquipoButton />
       </main>
     </div>
   );
@@ -738,6 +745,7 @@ import GestorEmailLog from "./pages/GestorEmailLog";
 import GestorReclamaciones from "./pages/GestorReclamaciones";
 import ConfiguracionEmail from "./pages/ConfiguracionEmail";
 import FeedbackButton from "./components/FeedbackButton";
+import ComentariosEquipoButton from "./components/ComentariosEquipoButton";
 import NotificacionesBell from "./components/NotificacionesBell";
 
 function App() {

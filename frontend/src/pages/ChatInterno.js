@@ -43,6 +43,31 @@ const renderConMenciones = (texto) => {
 };
 
 export default function ChatInterno() {
+  // ===== Wrapper con pestañas Chat + Comentarios del equipo =====
+  // El chat original se mantiene intacto en `ChatInternoView`.
+  const [tab, setTab] = React.useState('chat');
+  return (
+    <div className="flex flex-col h-[calc(100vh-80px)]" data-testid="mensajes-page">
+      <div className="border-b border-slate-200 bg-white px-4 flex items-center gap-1">
+        <button onClick={() => setTab('chat')}
+                data-testid="tab-chat"
+                className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'chat' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
+          💬 Chat
+        </button>
+        <button onClick={() => setTab('comentarios')}
+                data-testid="tab-comentarios"
+                className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'comentarios' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
+          📋 Comentarios del equipo
+        </button>
+      </div>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {tab === 'chat' ? <ChatInternoView /> : <ComentariosEquipoTab />}
+      </div>
+    </div>
+  );
+}
+
+function ChatInternoView() {
   const { api } = useAuth();
   const [canales, setCanales] = useState({ general: { id: 'general', nombre: 'General' }, eventos: [], gestores: [], mi_id: null });
   const [activo, setActivo] = useState('general');
@@ -204,7 +229,7 @@ export default function ChatInterno() {
   if (loading) return <div className="p-6 text-slate-500">Cargando chat…</div>;
 
   return (
-    <div className="flex h-[calc(100vh-80px)] bg-white" data-testid="chat-page">
+    <div className="flex h-full bg-white" data-testid="chat-page">
       {/* Sidebar canales */}
       <aside className="w-72 border-r border-slate-200 flex flex-col bg-slate-50 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-200 bg-slate-100">
@@ -346,3 +371,273 @@ const ChannelItem = ({ label, active, unread, onClick, testid }) => (
     )}
   </button>
 );
+
+
+// ============================================================
+// Pestaña "Comentarios del equipo" — TAREA 4B (CRUD + hilos)
+// ============================================================
+const ESTADO_LABEL = {
+  pendiente:  { txt: '🟡 Pendiente',  cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
+  en_proceso: { txt: '🔵 En proceso', cls: 'bg-blue-100 text-blue-800 border-blue-300' },
+  resuelto:   { txt: '✅ Resuelto',   cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+};
+
+function ComentariosEquipoTab() {
+  const { api } = useAuth();
+  const [comentarios, setComentarios] = React.useState([]);
+  const [gestores, setGestores] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(null);
+  const [filtros, setFiltros] = React.useState({ estado: '', autor_id: '', pagina: '', mencionado_id: '' });
+  const [seleccionado, setSeleccionado] = React.useState(null);
+
+  const cargarLista = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const params = new URLSearchParams();
+      Object.entries(filtros).forEach(([k, v]) => { if (v) params.set(k, v); });
+      const r = await api.get(`/api/gestor/comentarios-equipo${params.toString() ? '?' + params.toString() : ''}`);
+      setComentarios(r.data?.comentarios || []);
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message);
+    } finally { setLoading(false); }
+  }, [api, filtros]);
+
+  React.useEffect(() => { cargarLista(); }, [cargarLista]);
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get('/api/gestor/comentarios-equipo/_meta/gestores');
+        setGestores(r.data?.gestores || []);
+      } catch { /* noop */ }
+    })();
+  }, [api]);
+
+  const nombreGestor = (id) => {
+    const g = gestores.find(x => x.id === id);
+    return g ? `${g.apellidos || ''}, ${g.nombre || ''}`.trim() : '?';
+  };
+
+  const fmtFecha = (iso) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      const today = new Date();
+      if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' });
+    } catch { return iso; }
+  };
+
+  return (
+    <div className="flex h-full bg-white" data-testid="ce-tab">
+      <section className="flex-1 flex flex-col min-w-0 border-r border-slate-200">
+        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-2">
+          <select value={filtros.estado} onChange={(e) => setFiltros({ ...filtros, estado: e.target.value })}
+                  data-testid="ce-filter-estado"
+                  className="text-xs border border-slate-300 rounded px-2 py-1 bg-white">
+            <option value="">Estado: todos</option>
+            <option value="pendiente">🟡 Pendiente</option>
+            <option value="en_proceso">🔵 En proceso</option>
+            <option value="resuelto">✅ Resuelto</option>
+          </select>
+          <select value={filtros.autor_id} onChange={(e) => setFiltros({ ...filtros, autor_id: e.target.value })}
+                  data-testid="ce-filter-autor"
+                  className="text-xs border border-slate-300 rounded px-2 py-1 bg-white">
+            <option value="">Autor: cualquiera</option>
+            {gestores.map(g => <option key={g.id} value={g.id}>{g.apellidos}, {g.nombre}</option>)}
+          </select>
+          <select value={filtros.mencionado_id} onChange={(e) => setFiltros({ ...filtros, mencionado_id: e.target.value })}
+                  data-testid="ce-filter-mencionado"
+                  className="text-xs border border-slate-300 rounded px-2 py-1 bg-white">
+            <option value="">Mencionado: cualquiera</option>
+            {gestores.map(g => <option key={g.id} value={g.id}>{g.apellidos}, {g.nombre}</option>)}
+          </select>
+          <input type="text" placeholder="Página…"
+                 value={filtros.pagina} onChange={(e) => setFiltros({ ...filtros, pagina: e.target.value })}
+                 data-testid="ce-filter-pagina"
+                 className="text-xs border border-slate-300 rounded px-2 py-1 bg-white w-40" />
+          <span className="ml-auto text-xs text-slate-500">{comentarios.length} hilos</span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {loading && <div className="p-6 text-slate-500 text-sm">Cargando…</div>}
+          {error && <div className="p-4 text-sm text-red-700 bg-red-50 border border-red-200 m-3 rounded" data-testid="ce-list-error">{error}</div>}
+          {!loading && !error && comentarios.length === 0 && (
+            <div className="p-12 text-center text-slate-400 text-sm">Sin comentarios.</div>
+          )}
+          <table className="w-full text-xs">
+            <tbody className="divide-y divide-slate-100">
+              {comentarios.map(c => (
+                <tr key={c.id}
+                    onClick={() => setSeleccionado(c.id)}
+                    data-testid={`ce-row-${c.id}`}
+                    className={`cursor-pointer hover:bg-slate-50 ${seleccionado === c.id ? 'bg-blue-50' : ''}`}>
+                  <td className="px-3 py-2.5 align-top">
+                    <span className={`inline-block px-1.5 py-0.5 text-[10px] uppercase font-mono rounded border ${ESTADO_LABEL[c.estado]?.cls || 'bg-slate-100 border-slate-300'}`}>
+                      {ESTADO_LABEL[c.estado]?.txt || c.estado}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 align-top">
+                    <div className="font-medium text-slate-800 truncate max-w-xs">{(c.contenido || '').slice(0, 60)}{(c.contenido || '').length > 60 ? '…' : ''}</div>
+                    <div className="text-[11px] text-slate-500 truncate max-w-xs">
+                      {c.entidad_nombre ? `${c.seccion || c.pagina} → ${c.entidad_nombre}` : (c.seccion || c.pagina)}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 align-top text-slate-600">
+                    <div>{c.autor_nombre || '?'}</div>
+                    {(c.menciones || []).length > 0 && (
+                      <div className="flex flex-wrap gap-0.5 mt-1">
+                        {(c.menciones || []).slice(0, 3).map(m => (
+                          <span key={m} className="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px]">@{nombreGestor(m).split(',')[0]}</span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 align-top text-center">{c.urgente && <span className="text-red-600">🔴</span>}</td>
+                  <td className="px-3 py-2.5 align-top text-slate-500 whitespace-nowrap">
+                    {fmtFecha(c.created_at)}
+                    {c.respuestas_count > 0 && <div className="text-[10px] text-blue-600">💬 {c.respuestas_count}</div>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {seleccionado && (
+        <ComentarioHiloPanel
+          comentarioId={seleccionado}
+          gestores={gestores}
+          api={api}
+          onClose={() => setSeleccionado(null)}
+          onChanged={cargarLista}
+        />
+      )}
+    </div>
+  );
+}
+
+function ComentarioHiloPanel({ comentarioId, gestores, api, onClose, onChanged }) {
+  const [data, setData] = React.useState(null);
+  const [respuesta, setRespuesta] = React.useState('');
+  const [enviando, setEnviando] = React.useState(false);
+  const [error, setError] = React.useState(null);
+
+  const cargar = React.useCallback(async () => {
+    try {
+      const r = await api.get(`/api/gestor/comentarios-equipo/${comentarioId}`);
+      setData(r.data);
+    } catch (e) { setError(e.response?.data?.detail || e.message); }
+  }, [api, comentarioId]);
+
+  React.useEffect(() => { cargar(); setRespuesta(''); setError(null); }, [cargar]);
+
+  const cambiarEstado = async (nuevo) => {
+    try {
+      await api.put(`/api/gestor/comentarios-equipo/${comentarioId}/estado`, { estado: nuevo });
+      await cargar();
+      onChanged && onChanged();
+    } catch (e) { setError(e.response?.data?.detail || e.message); }
+  };
+
+  const responder = async () => {
+    if ((respuesta || '').trim().length < 3) return;
+    setEnviando(true); setError(null);
+    try {
+      await api.post(`/api/gestor/comentarios-equipo/${comentarioId}/responder`, { contenido: respuesta.trim() });
+      setRespuesta('');
+      await cargar();
+      onChanged && onChanged();
+    } catch (e) { setError(e.response?.data?.detail || e.message); }
+    finally { setEnviando(false); }
+  };
+
+  if (!data) {
+    return (
+      <aside className="w-[28rem] border-l border-slate-200 flex items-center justify-center text-slate-400">
+        {error ? <span className="text-red-600 text-sm p-4">{error}</span> : 'Cargando…'}
+      </aside>
+    );
+  }
+  const c = data.comentario;
+  const respuestas = data.respuestas || [];
+  const fmt = (iso) => iso ? new Date(iso).toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+
+  return (
+    <aside className="w-[28rem] border-l border-slate-200 flex flex-col bg-white" data-testid="ce-panel">
+      <header className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-start justify-between gap-2">
+        <div>
+          <h3 className="font-semibold text-slate-900 text-sm">Hilo</h3>
+          <p className="text-[11px] text-slate-500">{c.entidad_nombre ? `${c.seccion || c.pagina} → ${c.entidad_nombre}` : (c.seccion || c.pagina)}</p>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+      </header>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+        <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+            <span><strong className="text-slate-800">{c.autor_nombre}</strong> · {fmt(c.created_at)}</span>
+            {c.urgente && <span className="text-red-600 font-bold">🔴 URGENTE</span>}
+          </div>
+          <div className="text-sm text-slate-800 whitespace-pre-wrap">{c.contenido}</div>
+          {(c.menciones || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {c.menciones.map(m => {
+                const g = gestores.find(x => x.id === m);
+                return <span key={m} className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px]">@{g ? `${g.apellidos}, ${g.nombre}` : 'gestor'}</span>;
+              })}
+            </div>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <span className={`inline-block px-1.5 py-0.5 text-[10px] uppercase font-mono rounded border ${ESTADO_LABEL[c.estado]?.cls || 'bg-slate-100 border-slate-300'}`}>
+              {ESTADO_LABEL[c.estado]?.txt}
+            </span>
+            {c.estado === 'resuelto' && c.resuelto_por && (
+              <span className="text-[10px] text-slate-500">por {c.resuelto_por} · {fmt(c.resuelto_at)}</span>
+            )}
+          </div>
+        </div>
+        {respuestas.map(r => (
+          <div key={r.id} className="bg-white border border-slate-200 rounded-lg p-3 ml-6">
+            <div className="text-xs text-slate-500 mb-1">
+              <strong className="text-slate-800">{r.autor_nombre}</strong> · {fmt(r.created_at)}
+            </div>
+            <div className="text-sm text-slate-800 whitespace-pre-wrap">{r.contenido}</div>
+          </div>
+        ))}
+      </div>
+      <footer className="border-t border-slate-200 p-3 bg-white">
+        <div className="flex items-center gap-2 mb-2">
+          <button onClick={() => cambiarEstado('en_proceso')}
+                  data-testid="ce-btn-en-proceso"
+                  className="px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-300 rounded hover:bg-blue-100">
+            🔵 En proceso
+          </button>
+          <button onClick={() => cambiarEstado('resuelto')}
+                  data-testid="ce-btn-resuelto"
+                  className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-300 rounded hover:bg-emerald-100">
+            ✅ Marcar como resuelto
+          </button>
+          {c.estado === 'resuelto' && (
+            <button onClick={() => cambiarEstado('pendiente')}
+                    className="px-2 py-1 text-xs bg-yellow-50 text-yellow-700 border border-yellow-300 rounded hover:bg-yellow-100">
+              ↩ Reabrir
+            </button>
+          )}
+        </div>
+        <textarea value={respuesta} onChange={(e) => setRespuesta(e.target.value)} rows={3}
+                  data-testid="ce-respuesta"
+                  placeholder="Responder al hilo… (mín. 3 caracteres)"
+                  className="w-full text-sm border border-slate-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500" />
+        {error && <div className="text-xs text-red-600 mt-1">{error}</div>}
+        <div className="mt-2 flex justify-end">
+          <button onClick={responder} disabled={enviando}
+                  data-testid="ce-enviar-respuesta"
+                  className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50">
+            {enviando ? 'Enviando…' : 'Responder'}
+          </button>
+        </div>
+      </footer>
+    </aside>
+  );
+}
