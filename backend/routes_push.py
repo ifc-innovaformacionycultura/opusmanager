@@ -188,10 +188,25 @@ def notify_push(usuario_id: str, titulo: str, body: str, url: str = "/", tipo: s
             # 404 / 410 → suscripción caducada, purgar
             if status in (404, 410):
                 purgar.append(r['id'])
+                try:
+                    from routes_recordatorios import push_log_error
+                    push_log_error(f"purga_{status}", f"Suscripción caducada (HTTP {status})", usuario_id)
+                except Exception:
+                    pass
             else:
                 logger.warning(f"WebPush fallo {status}: {we}")
+                try:
+                    from routes_recordatorios import push_log_error
+                    push_log_error(f"webpush_{status or 'err'}", str(we)[:200], usuario_id)
+                except Exception:
+                    pass
         except Exception as e:
             logger.warning(f"Push fallo: {e}")
+            try:
+                from routes_recordatorios import push_log_error
+                push_log_error("push_exception", str(e)[:200], usuario_id)
+            except Exception:
+                pass
 
     # Limpiar suscripciones inválidas
     if purgar:

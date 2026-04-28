@@ -251,7 +251,8 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
         { id: "config-email", label: "Configuración de email", path: "/admin/emails/configuracion" },
         { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
         { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
-        { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" }
+        { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" },
+        { id: "recordatorios", label: "Recordatorios push", path: "/admin/recordatorios" }
       ]
     },
     { 
@@ -751,6 +752,7 @@ import AnalisisEconomico from "./pages/AnalisisEconomico";
 import Informes from "./pages/Informes";
 import GestionUsuarios from "./pages/GestionUsuarios";
 import MiPerfilGestor from "./pages/MiPerfilGestor";
+import RecordatoriosAdmin from "./pages/RecordatoriosAdmin";
 import RegistroActividad from "./pages/RegistroActividad";
 import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
@@ -834,6 +836,7 @@ function App() {
                         <Route path="/informes" element={<Informes />} />
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
                         <Route path="/admin/mi-perfil" element={<MiPerfilGestor />} />
+                        <Route path="/admin/recordatorios" element={<RecordatoriosAdmin />} />
                         <Route path="/admin/usuarios" element={<GestionUsuarios />} />
                         <Route path="/admin/musicos" element={<GestorMusicos />} />
                         <Route path="/admin/musicos/:id" element={<GestorMusicoDetalle />} />

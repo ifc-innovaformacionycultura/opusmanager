@@ -39,6 +39,39 @@ def _dias_logistica() -> int:
         return 2
 
 
+def _dias_tareas() -> int:
+    try:
+        return int(os.environ.get("DIAS_ANTES_TAREAS", "1"))
+    except Exception:
+        return 1
+
+
+# Buffer en memoria para los últimos errores de push (suscripciones purgadas, fallos).
+# No persiste tras reinicio, pero es suficiente para diagnosticar el día actual.
+_PUSH_ERRORS = []  # [{when, kind, message, usuario_id}]
+_PUSH_ERRORS_MAX = 50
+
+
+def push_log_error(kind: str, message: str, usuario_id: Optional[str] = None):
+    """Llamado por routes_push cuando una suscripción falla (404/410 u otra)."""
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        _PUSH_ERRORS.insert(0, {
+            "when": _dt.now(_tz.utc).isoformat(),
+            "kind": kind,
+            "message": (message or "")[:240],
+            "usuario_id": usuario_id,
+        })
+        if len(_PUSH_ERRORS) > _PUSH_ERRORS_MAX:
+            del _PUSH_ERRORS[_PUSH_ERRORS_MAX:]
+    except Exception:
+        pass
+
+
+def get_recent_errors() -> List[Dict]:
+    return list(_PUSH_ERRORS)
+
+
 # ============ Idempotencia ============
 
 def _ya_enviado(usuario_id: str, tipo: str, entidad_id: str, dias_antes: int) -> bool:
@@ -111,9 +144,13 @@ def _push(usuario_id: str, titulo: str, body: str, url: str = "/portal"):
 
 # ============ Job: disponibilidad ============
 
-def job_disponibilidad() -> Dict:
-    """Recordatorio: a X días del deadline de disponibilidad para músicos sin disponibilidad confirmada."""
-    dias = _dias_disponibilidad()
+def job_disponibilidad(force_dias_antes: Optional[int] = None) -> Dict:
+    """Recordatorio: a X días del deadline de disponibilidad para músicos sin disponibilidad confirmada.
+
+    Si `force_dias_antes` se pasa (p.ej. 0 para "última llamada"), se usa ese valor
+    en vez de la variable de entorno.
+    """
+    dias = force_dias_antes if force_dias_antes is not None else _dias_disponibilidad()
     today = date.today()
     target = today + timedelta(days=dias)
     enviados = 0
@@ -157,9 +194,9 @@ def job_disponibilidad() -> Dict:
 
 # ============ Job: logística (transporte / alojamiento) ============
 
-def job_logistica() -> Dict:
+def job_logistica(force_dias_antes: Optional[int] = None) -> Dict:
     """Recordatorio: a X días del fecha_limite_confirmacion de cada item de logística."""
-    dias = _dias_logistica()
+    dias = force_dias_antes if force_dias_antes is not None else _dias_logistica()
     today = date.today()
     target_iso = (today + timedelta(days=dias)).isoformat()
     enviados = 0
@@ -208,12 +245,69 @@ def run_all_jobs() -> Dict:
     started_at = datetime.now(timezone.utc).isoformat()
     rj = job_disponibilidad()
     rl = job_logistica()
+    rt = job_tareas()
+    return {
+        "started_at": started_at,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "results": [rj, rl, rt],
+        "total_enviados": rj.get('enviados', 0) + rl.get('enviados', 0) + rt.get('enviados', 0),
+    }
+
+
+def run_last_call_jobs() -> Dict:
+    """Segundo recordatorio @ 12:00: SOLO el día del deadline (dias_antes=0).
+
+    Aviso "última llamada" para músicos que aún no han confirmado disponibilidad
+    o logística cuyo deadline cae HOY.
+    """
+    started_at = datetime.now(timezone.utc).isoformat()
+    rj = job_disponibilidad(force_dias_antes=0)
+    rl = job_logistica(force_dias_antes=0)
     return {
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "results": [rj, rl],
         "total_enviados": rj.get('enviados', 0) + rl.get('enviados', 0),
+        "tipo": "ultima_llamada",
     }
+
+
+# ============ Job: tareas ============
+
+def job_tareas() -> Dict:
+    """Recordatorio: tareas cuyo `fecha_limite` está a `DIAS_ANTES_TAREAS` días y NO están completadas."""
+    dias = _dias_tareas()
+    today = date.today()
+    target_iso = (today + timedelta(days=dias)).isoformat()
+    enviados = 0
+    revisados = 0
+    try:
+        # Tareas con deadline el día target. Excluimos completadas/canceladas.
+        rows = supabase.table('tareas').select('id,titulo,fecha_limite,responsable_id,estado').execute().data or []
+        for t in rows:
+            limite = t.get('fecha_limite')
+            if not limite:
+                continue
+            limite_d = str(limite)[:10]
+            if limite_d != target_iso:
+                continue
+            estado = (t.get('estado') or '').lower()
+            if estado in ('completada', 'completado', 'cancelada', 'cancelado', 'hecha', 'finalizada'):
+                continue
+            uid = t.get('responsable_id')
+            if not uid:
+                continue
+            revisados += 1
+            if _ya_enviado(uid, 'tarea', t['id'], dias):
+                continue
+            titulo_n = f"📋 Recordatorio tarea: {t.get('titulo') or 'tarea'}"
+            body = f"Tu tarea vence en {dias} día{'s' if dias != 1 else ''} ({limite_d})."
+            _push(uid, titulo_n, body, url='/admin/tareas')
+            _marcar_enviado(uid, 'tarea', t['id'], dias, target_iso)
+            enviados += 1
+    except Exception as e:
+        logger.error(f"Job tareas error: {e}")
+    return {"job": "tareas", "enviados": enviados, "revisados": revisados, "dias_antes": dias}
 
 
 # ============ APScheduler bootstrap ============
@@ -236,9 +330,14 @@ def init_scheduler():
             run_all_jobs, CronTrigger(hour=9, minute=0, timezone=tz),
             id="recordatorios_diarios", replace_existing=True, max_instances=1,
         )
+        # Segundo recordatorio: "última llamada" el mismo día del deadline @ 12:00
+        sched.add_job(
+            run_last_call_jobs, CronTrigger(hour=12, minute=0, timezone=tz),
+            id="recordatorios_ultima_llamada", replace_existing=True, max_instances=1,
+        )
         sched.start()
         _scheduler = sched
-        logger.info("APScheduler iniciado: recordatorios diarios @ 09:00 Europe/Madrid")
+        logger.info("APScheduler iniciado: recordatorios diarios @ 09:00 + última llamada @ 12:00 Europe/Madrid")
     except Exception as e:
         logger.error(f"No se pudo iniciar APScheduler: {e}")
     return _scheduler
@@ -282,4 +381,93 @@ async def status(current_user: dict = Depends(get_current_gestor)):
         info["error"] = str(e)
     info["dias_antes_disponibilidad"] = _dias_disponibilidad()
     info["dias_antes_logistica"] = _dias_logistica()
+    info["dias_antes_tareas"] = _dias_tareas()
     return info
+
+
+# ============ Endpoints admin: historial, suscripciones, errores ============
+
+def _es_admin(current_user: dict) -> bool:
+    profile = current_user.get('profile') or {}
+    rol = profile.get('rol') or current_user.get('rol') or ''
+    return rol in ('admin', 'director_general')
+
+
+@router.post("/run-last-call")
+async def run_last_call(current_user: dict = Depends(get_current_gestor)):
+    """Ejecuta sólo el job 'última llamada' (mismo día del deadline). Admin/Director."""
+    if not _es_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo admin o director_general.")
+    return run_last_call_jobs()
+
+
+@router.get("/historial")
+async def historial(
+    limit: int = 50,
+    tipo: Optional[str] = None,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Histórico de recordatorios enviados, ordenado por fecha DESC."""
+    if not _es_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo admin o director_general.")
+    try:
+        q = supabase.table('recordatorios_enviados') \
+            .select('id,usuario_id,tipo,entidad_id,dias_antes,fecha_objetivo,enviado_at') \
+            .order('enviado_at', desc=True).limit(min(max(limit, 1), 500))
+        if tipo:
+            q = q.eq('tipo', tipo)
+        rows = q.execute().data or []
+        # Enriquecer con nombre del músico
+        uids = list({r['usuario_id'] for r in rows if r.get('usuario_id')})
+        users = {}
+        if uids:
+            ur = supabase.table('usuarios').select('id,nombre,apellidos,email') \
+                .in_('id', uids).execute().data or []
+            users = {u['id']: u for u in ur}
+        out = []
+        for r in rows:
+            u = users.get(r.get('usuario_id'), {}) or {}
+            r['usuario_nombre'] = (f"{u.get('apellidos','') or ''}, {u.get('nombre','') or ''}").strip(', ').strip() or u.get('email') or '—'
+            out.append(r)
+        return {"historial": out, "total": len(out)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/suscriptores")
+async def suscriptores(current_user: dict = Depends(get_current_gestor)):
+    """Listado de suscripciones push activas con nombre del usuario y user_agent (truncado)."""
+    if not _es_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo admin o director_general.")
+    try:
+        rows = supabase.table('push_suscripciones') \
+            .select('id,usuario_id,user_agent,created_at') \
+            .order('created_at', desc=True).execute().data or []
+        uids = list({r['usuario_id'] for r in rows if r.get('usuario_id')})
+        users = {}
+        if uids:
+            ur = supabase.table('usuarios').select('id,nombre,apellidos,email,rol') \
+                .in_('id', uids).execute().data or []
+            users = {u['id']: u for u in ur}
+        out = []
+        for r in rows:
+            u = users.get(r.get('usuario_id'), {}) or {}
+            out.append({
+                "id": r['id'],
+                "usuario_id": r['usuario_id'],
+                "usuario_nombre": (f"{u.get('apellidos','') or ''}, {u.get('nombre','') or ''}").strip(', ').strip() or u.get('email') or '—',
+                "rol": u.get('rol'),
+                "user_agent": (r.get('user_agent') or '')[:120],
+                "created_at": r.get('created_at'),
+            })
+        return {"suscriptores": out, "total": len(out)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/errores")
+async def errores(current_user: dict = Depends(get_current_gestor)):
+    """Devuelve el buffer en memoria con los últimos errores de envío push."""
+    if not _es_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo admin o director_general.")
+    return {"errores": get_recent_errors(), "total": len(get_recent_errors())}

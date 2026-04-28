@@ -31,6 +31,34 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Feb 28, 2026 (madrugada — sesión nocturna) — Página /admin/recordatorios + 2º cron + recordatorios de tareas
+
+**Cron @ 12:00 Madrid (última llamada)**:
+- 2º job `recordatorios_ultima_llamada` añadido al scheduler con `CronTrigger(hour=12, minute=0, timezone=Europe/Madrid)`.
+- Reutiliza `job_disponibilidad(force_dias_antes=0)` y `job_logistica(force_dias_antes=0)` para enviar recordatorios el MISMO DÍA del deadline a quien aún no haya respondido.
+
+**Recordatorios de tareas**:
+- Nuevo `job_tareas()` en `routes_recordatorios.py`. Sin SQL nueva — reutiliza `recordatorios_enviados` con `tipo='tarea'`.
+- Variable env nueva (también en Railway): `DIAS_ANTES_TAREAS=1`.
+- Filtra `tareas` con `fecha_limite = today + DIAS_ANTES_TAREAS`, `estado != completada/cancelada/etc`, `responsable_id IS NOT NULL` → push `📋 Recordatorio tarea: {titulo}`.
+
+**Página `/admin/recordatorios` (`RecordatoriosAdmin.js`)**:
+- 4 secciones: Estado del cron (KPIs + próximos disparos), Histórico, Suscriptores activos, Errores recientes.
+- Botones **"▶ Ejecutar ahora"** (POST `/run-now`) y **"Actualizar"** (refresca todo).
+- Filtro por tipo en histórico.
+- Solo accesible para `admin`/`director_general`.
+- Entrada en sidebar: "Recordatorios push" bajo Administración.
+
+**Endpoints backend nuevos** (todos admin/director_general):
+- `GET /api/admin/recordatorios/historial?limit=&tipo=` — lectura de `recordatorios_enviados` con nombre del usuario enriquecido.
+- `GET /api/admin/recordatorios/suscriptores` — listado de `push_suscripciones` con usuario/rol/dispositivo.
+- `GET /api/admin/recordatorios/errores` — buffer en memoria con últimos 50 fallos de envío push (purga 410, exception, etc.).
+- `POST /api/admin/recordatorios/run-last-call` — ejecuta sólo los jobs "última llamada".
+- `routes_push` ahora registra errores en este buffer al fallar webpush (404/410, exception genérica).
+
+### Feb 28, 2026 (madrugada) — Botón push test + Recordatorios automáticos cron
+*(ver entrada anterior)*
+
 ### Feb 28, 2026 (madrugada) — Botón push test + Recordatorios automáticos cron
 
 **Botón "🔔 Enviarme un push de prueba":**
