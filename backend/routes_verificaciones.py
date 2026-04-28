@@ -11,7 +11,6 @@ from pydantic import BaseModel
 
 from supabase_client import supabase
 from auth_utils import get_current_gestor, is_super_admin
-
 router = APIRouter(prefix="/api/gestor/eventos", tags=["verificaciones"])
 
 SECCIONES_VALIDAS = {
@@ -149,6 +148,21 @@ async def solicitar_verificacion(evento_id: str, seccion: str,
         except Exception:
             pass
     return {'ok': True, 'enviados': enviados, 'total_admins': len(emails)}
+
+
+@router.get("/{evento_id}/verificaciones-historial")
+async def historial_verificaciones(evento_id: str, current_user: dict = Depends(get_current_gestor)):
+    """Devuelve el historial completo de verificaciones de un evento (DESC).
+    Solo visible para super admins."""
+    if not is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo administradores y director general pueden ver el historial.")
+    rows = supabase.table('evento_verificaciones').select('*') \
+        .eq('evento_id', evento_id) \
+        .order('verificado_at', desc=True).execute().data or []
+    # Etiquetas legibles
+    for r in rows:
+        r['seccion_label'] = ICONOS_SECCION_LABELS.get(r.get('seccion'), r.get('seccion'))
+    return {'historial': rows, 'total': len(rows)}
 
 
 # Etiquetas legibles

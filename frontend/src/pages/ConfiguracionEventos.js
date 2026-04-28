@@ -1005,6 +1005,13 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
         </Section>
       )}
 
+      {/* Historial de verificaciones — solo super admins */}
+      {event.id && !String(event.id).startsWith('temp-') && verifMeta.puede_editar && (
+        <Section titulo="Historial de verificaciones" icono="📋" color="indigo" sectionKey="historial_verificaciones">
+          <HistorialVerificaciones api={api} eventoId={event.id} />
+        </Section>
+      )}
+
       {/* Save Button + Eliminar evento (condicional) */}
       <div className="flex items-center justify-between pt-4 gap-3 flex-wrap">
         <div>
@@ -1442,6 +1449,72 @@ const ConfiguracionEventos = () => {
           ))}
         </div>
       )}
+    </div>
+  );
+};
+
+// ============================================================
+// Historial de verificaciones por evento
+// ============================================================
+const ESTADO_BADGE = {
+  verificado: { l: '✅ Verificado', c: 'bg-emerald-600 text-white' },
+  autorizado_sin_verificar: { l: '⚡ Autorizado', c: 'bg-blue-600 text-white' },
+  pendiente: { l: '🟡 Pendiente', c: 'bg-amber-400 text-amber-950' },
+};
+const HistorialVerificaciones = ({ api, eventoId }) => {
+  const [rows, setRows] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setCargando(true);
+      try {
+        const r = await api.get(`/api/gestor/eventos/${eventoId}/verificaciones-historial`);
+        if (!cancel) setRows(r.data?.historial || []);
+      } catch (e) {
+        if (!cancel) setError(e.response?.data?.detail || e.message);
+      } finally {
+        if (!cancel) setCargando(false);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [api, eventoId]);
+  if (cargando) return <div className="text-sm text-slate-500 py-4 text-center">Cargando historial…</div>;
+  if (error) return <div className="bg-red-50 border border-red-200 text-red-700 rounded p-2 text-sm">{error}</div>;
+  if (!rows.length) return <div className="text-sm text-slate-500 py-4 text-center" data-testid="hist-verif-vacio">Aún no hay verificaciones registradas para este evento.</div>;
+  return (
+    <div className="overflow-x-auto" data-testid="hist-verif-tabla">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-[#1A3A5C] text-white text-[11px] uppercase tracking-wide">
+            <th className="text-left px-2.5 py-1.5">Sección</th>
+            <th className="text-left px-2.5 py-1.5 w-32">Estado</th>
+            <th className="text-left px-2.5 py-1.5 w-44">Verificado por</th>
+            <th className="text-left px-2.5 py-1.5 w-32">Fecha y hora</th>
+            <th className="text-left px-2.5 py-1.5">Notas</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((r, i) => {
+            const e = ESTADO_BADGE[r.estado] || ESTADO_BADGE.pendiente;
+            const f = r.verificado_at ? new Date(r.verificado_at) : null;
+            return (
+              <tr key={r.id || i} data-testid={`hist-verif-row-${i}`} className={i % 2 ? 'bg-slate-50/30' : ''}>
+                <td className="px-2.5 py-1.5 font-medium text-slate-800">{r.seccion_label || r.seccion}</td>
+                <td className="px-2.5 py-1.5">
+                  <span className={`text-[11px] px-2 py-0.5 rounded font-bold ${e.c}`}>{e.l}</span>
+                </td>
+                <td className="px-2.5 py-1.5 text-xs text-slate-700">{r.verificado_por_nombre || '—'}</td>
+                <td className="px-2.5 py-1.5 text-xs text-slate-600">
+                  {f ? <>{f.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' })}<div className="text-slate-400">{f.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</div></> : '—'}
+                </td>
+                <td className="px-2.5 py-1.5 text-xs text-slate-600 italic">{r.notas || '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 };
