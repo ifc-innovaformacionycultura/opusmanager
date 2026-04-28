@@ -652,6 +652,9 @@ const DashboardPage = () => {
         </div>
       </div>
 
+      {/* Widget Próximos 7 días (Bloque 9) */}
+      <Proximos7Dias />
+
       {/* Recent Events */}
       <div className="bg-white rounded-lg border border-slate-200">
         <div className="p-4 border-b border-slate-200">
@@ -753,6 +756,7 @@ import GestorReclamaciones from "./pages/GestorReclamaciones";
 import ConfiguracionEmail from "./pages/ConfiguracionEmail";
 import FeedbackButton from "./components/FeedbackButton";
 import HilosPendientesDrawer from "./components/HilosPendientesDrawer";
+import Proximos7Dias from "./components/Proximos7Dias";
 
 // Detección automática de página para Hilos pendientes (Bloque 4)
 const HILOS_PAGES = [

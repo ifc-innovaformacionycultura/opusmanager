@@ -1,0 +1,72 @@
+{
+  "summary": "Iter 13 — Validación masiva Bloques 1-12 + director_general. Backend: 22/22 pytest PASS sobre auth director_general, verificaciones (GET/PUT/POST solicitar), informes A-J (10 PDFs incluyendo nuevos D mejorado, I y J), calendario gestor con tipo_calendario+editable=false, calendario portal músico, regresión inventario y eventos. Frontend: login director_general OK (jalonso@p.csmb.es / Director2026!), widget 'Próximos 7 días' renderiza en dashboard con eventos auto-generados (data-testid='widget-proximos-7' presente y muestra 'Ida — Pruebas 3 · 08:00 · Madrid' con color amarillo logística), tipos A/D/I/J disponibles en /informes, drawer 'Hilos pendientes' visible visualmente en todas las páginas testadas (botón flotante navy abajo-derecha). Sin errores de consola.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "HilosPendientesDrawer", "issue": "data-testid='hilos-drawer-toggle' NO se encuentra en /seguimiento, /economico ni /informes vía query selector, AUNQUE el botón 'Hilos pendientes' SÍ es visible visualmente en el screenshot (esquina inferior derecha de /informes). Probablemente el componente HilosPendientesAuto monta con un wrapper diferente o el testid está en un elemento hijo. Verificar que el data-testid esté aplicado al elemento clickable correcto en las 8 rutas requeridas. Páginas con testid OK: /configuracion/eventos, /plantillas-definitivas, /tareas, /logistica, /archivo (5/8). Pendientes: /seguimiento, /economico, /informes (3/8).", "selector": "[data-testid='hilos-drawer-toggle']", "priority": "MEDIUM"},
+      {"component": "Informes — Plano americano", "issue": "El task menciona 'Bloque 12 — Plano americano en /informes tipo A: SVG con disposición correcta (cuerda en arcos, vientos en filas, percusión y coro al fondo, arpas izquierda, teclados derecha)' pero la UI sólo expone 2 modos: Herradura y Filas. No existe data-testid='btn-plano-americano' ni texto 'Americano' en el toggle '3 · OPCIONES PLANO'. O bien el plano americano se entrega como SVG distinto dentro de uno de los modos existentes, o falta exponerlo como tercer modo en el toggle.", "selector": "[data-testid='btn-plano-americano']", "priority": "HIGH"},
+      {"component": "Floating buttons z-index", "issue": "En la esquina inferior derecha se solapan tres botones flotantes: 'Comentar con el equipo' (azul), 'Hilos pendientes' (azul), y 'Made with Emergent' (negro). El botón 'Comentar con el equipo' queda parcialmente cubierto por 'Hilos pendientes' (solo se ve 'Co...'). Considerar reorganizar verticalmente o agrupar.", "selector": "fixed bottom-4 right-4", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Verificación badge dropdown en /configuracion/eventos", "issue": "No se ha podido validar end-to-end el flujo UI del dropdown del badge de verificación porque la lista de eventos en /configuracion/eventos tarda en cargar y no se encontró un elemento clickable directo para abrir el formulario del evento (en una de las pruebas el body sólo mostraba el menú lateral). El backend está PROBADO: GET /verificaciones (puede_editar=true para DG/admin, false para gestor normal), PUT cambia estado y persiste, POST solicitar responde 200. Recomendar al main agent self-test del dropdown en navegador real abriendo manualmente un evento.", "affected_selectors": ["[data-testid^='verif-badge-']", "[data-testid^='verif-dropdown-']"]}
+    ],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "POST /api/auth/login director_general (jalonso@p.csmb.es) → 200 + access_token",
+    "GET /api/gestor/eventos/{id}/verificaciones → puede_editar=true para director_general",
+    "GET /api/gestor/eventos/{id}/verificaciones → puede_editar=true para admin",
+    "GET /api/gestor/eventos/{id}/verificaciones → puede_editar=false para gestor normal (palvarez@netmetrix.es)",
+    "PUT /api/gestor/eventos/{id}/verificaciones/datos_generales con DG → 200 + persistencia confirmada vía GET",
+    "PUT verificaciones por gestor normal → 403",
+    "POST /api/gestor/eventos/{id}/verificaciones/{seccion}/solicitar → 200/503/404 (no 500/422)",
+    "POST /api/gestor/informes/generar tipo D → PDF válido (%PDF, >1KB)",
+    "POST /api/gestor/informes/generar tipo I → PDF válido",
+    "POST /api/gestor/informes/generar tipo J → PDF válido",
+    "Regresión PDFs A,B,C,E,F,G,H → todos 200 + %PDF",
+    "GET /api/gestor/calendario-eventos → eventos con tipo_calendario ∈ {ensayo,funcion,logistica,montaje} y editable=false",
+    "GET /api/portal/calendario (músico) → 200",
+    "Frontend: Login DG redirige a / (dashboard)",
+    "Frontend: data-testid='widget-proximos-7' renderiza con eventos auto-generados (logística amarilla 'Ida — Pruebas 3')",
+    "Frontend: /informes muestra los 10 tipos (A-J) incluyendo I 'Hoja de trabajo · Equipo de montaje' y J 'Hoja de trabajo · Equipo de archivo'",
+    "Frontend: Drawer Hilos visible en /configuracion/eventos, /plantillas-definitivas, /tareas, /logistica, /archivo (5/8 páginas con data-testid OK)",
+    "Sin errores de consola del navegador en flujos testados"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_director_general.py",
+    "/app/test_reports/pytest/iter13.xml"
+  ],
+  "action_items": [
+    "[FRONTEND/HIGH] Plano americano (Bloque 12): añadir tercer modo 'btn-plano-americano' en el toggle '3 · OPCIONES PLANO' de /informes con data-testid='btn-plano-americano' y SVG con cuerda en arcos, vientos en filas, percusión/coro al fondo, arpas izda, teclados drcha. Hoy sólo existen herradura y filas.",
+    "[FRONTEND/MEDIUM] Verificar que data-testid='hilos-drawer-toggle' esté presente y selectable en /seguimiento, /economico, /informes. El botón visualmente sí se ve, pero el selector falla — probablemente está aplicado a un wrapper hijo o falta en el componente HilosPendientesAuto montado en esas rutas.",
+    "[FRONTEND/LOW] Reorganizar botones flotantes inferiores derecha (Comentar/Hilos/Emergent) para evitar solapamiento — el botón 'Comentar con el equipo' queda cortado mostrando solo 'Co'.",
+    "[QA/INFO] Self-test recomendado por main agent: abrir manualmente /configuracion/eventos como director_general, expandir un evento, hacer click en un badge de sección y verificar que (a) aparece dropdown con 3 opciones, (b) cambio de estado actualiza UI sin recargar, (c) verif-progreso 'X/8' se actualiza en tiempo real, (d) click fuera cierra el dropdown.",
+    "[QA/INFO] Verificar visualmente el pie de firma en los PDFs nuevos D, I, J (test pytest sólo confirma %PDF + tamaño > 1KB; no inspecciona el contenido visual del pie)."
+  ],
+  "critical_code_review_comments": [
+    "auth_utils.py is_super_admin: lógica correcta; whitelist de admin@convocatorias.com funciona como bypass de seguridad — documentar en comment que es intencional.",
+    "routes_verificaciones.py SECCIONES_VALIDAS es un set; iteración del orden no es estable (out = []). En frontend el orden de las 8 secciones puede variar entre cargas. Considerar usar list/tuple para orden determinista.",
+    "routes_verificaciones.py POST solicitar (línea 116): la variable 'ICONOS_SECCION_LABELS' se referencia DENTRO de la función pero está definida DESPUÉS (línea 155). Funciona porque se evalúa en runtime, pero es frágil — mover el dict a la cabecera del módulo o antes del endpoint.",
+    "Frontend Informes.js (iter12 reportó 864 líneas): añadir tipos I y J probablemente la ha extendido; conviene refactorizar a /pages/informes/bloques/ por mantenibilidad.",
+    "data-testid='hilos-drawer-toggle' inconsistente entre rutas: revisar si HilosPendientesAuto se monta condicionalmente o si el testid se aplica al wrapper en lugar del button clickable.",
+    "Sin uso de _id de Mongo (todo Postgres UUID) ✅."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter13_director_general.py (nuevo, 22 tests pytest, 22 PASS)"
+  ],
+  "success_rate": {
+    "backend": "100% (22/22)",
+    "frontend": "85% (login DG + widget + tipos A/D/I/J + drawer en 5/8 rutas verificados; plano americano FALTA, dropdown badge no validado E2E por timing del SPA)"
+  },
+  "test_credentials": {
+    "director_general": "jalonso@p.csmb.es / Director2026!",
+    "admin": "admin@convocatorias.com / Admin123!",
+    "gestor_normal": "palvarez@netmetrix.es / Opus2026!",
+    "musico": "jesusalonsodirector@gmail.com / Musico123!"
+  },
+  "seed_data_creation": "Ninguna. Los tests usan eventos existentes (8 en BD) y limpian su propio estado tras PUT verificación (vuelven a 'pendiente').",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-ejecutar: cd /app && python -m pytest backend/tests/test_iter13_director_general.py -v (esperado 22/22 PASS, ~30s). Si main agent añade el plano americano, validar [data-testid='btn-plano-americano'] en /informes tipo A. Si arregla los testids del drawer en /seguimiento, /economico, /informes, validar que el query selector retorna el botón. El dropdown del badge de verificación NO se validó E2E vía Playwright (la SPA tarda en cargar /configuracion/eventos y no se logró abrir el formulario del evento de forma fiable); recomendar self-test manual o reusar el flujo de iter12 que abrió el formulario correctamente.",
+  "rca_of_the_issue": "Sin bugs críticos. Backend 100% estable (22 tests cubren auth DG, verificaciones con permisos por rol, 10 PDFs A-J, calendarios gestor y portal). 2 misses frontend a confirmar: (1) plano americano del Bloque 12 no expuesto como modo independiente en el toggle de /informes — probable que falte UI; (2) data-testid='hilos-drawer-toggle' incompleto en 3/8 rutas (botón visible visualmente pero selector falla — posible wrapper sin testid)."
+}

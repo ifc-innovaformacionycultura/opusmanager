@@ -186,9 +186,9 @@ const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion, eventoId, a
   const [notas, setNotas] = useState('');
   const [solicitando, setSolicitando] = useState(false);
   const cfg = {
-    pendiente: { l: '🟡 Pendiente', c: 'bg-amber-100 text-amber-800 border-amber-300' },
-    verificado: { l: '✅ Verificado', c: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-    autorizado_sin_verificar: { l: '⚡ Autorizado sin verificar', c: 'bg-blue-100 text-blue-800 border-blue-300' },
+    pendiente: { l: '🟡 PENDIENTE', c: 'bg-amber-400 text-amber-950 border-amber-500' },
+    verificado: { l: '✅ VERIFICADO', c: 'bg-emerald-600 text-white border-emerald-700' },
+    autorizado_sin_verificar: { l: '⚡ AUTORIZADO', c: 'bg-blue-600 text-white border-blue-700' },
   }[estado || 'pendiente'];
   const apply = async (nuevo) => {
     await onChange(seccion, nuevo, notas);
@@ -207,14 +207,25 @@ const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion, eventoId, a
       setSolicitando(false);
     }
   };
+  // Cerrar al click fuera
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => {
+      if (!e.target.closest(`[data-verif-seccion="${seccion}"]`)) setOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open, seccion]);
+
   return (
-    <div className="relative inline-flex items-center gap-1" data-testid={`verif-badge-${seccion}`}>
+    <div className="relative inline-flex items-center gap-1" data-testid={`verif-badge-${seccion}`} data-verif-seccion={seccion}>
       <button
         type="button"
         disabled={!puedeEditar}
         onClick={(e) => { e.stopPropagation(); puedeEditar && setOpen(o => !o); }}
-        className={`text-xs px-2 py-0.5 rounded-full border ${cfg.c} ${puedeEditar ? 'cursor-pointer hover:shadow-sm' : 'cursor-default'}`}
-        title={puedeEditar ? 'Click para cambiar el estado' : 'Solo administradores y director general pueden modificar'}
+        className={`text-xs font-bold px-2.5 py-1 rounded-md border-2 ${cfg.c} ${puedeEditar ? 'cursor-pointer hover:scale-105 hover:shadow-md transition-transform' : 'cursor-default opacity-95'}`}
+        title={puedeEditar ? 'Click para cambiar el estado' : 'Solo administradores y director general pueden modificar este badge'}
+        aria-label={`Estado de verificación: ${cfg.l}`}
       >
         {cfg.l}
       </button>
@@ -223,25 +234,43 @@ const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion, eventoId, a
         <button type="button" onClick={solicitar} disabled={solicitando}
                 data-testid={`verif-solicitar-${seccion}`}
                 title="Notificar al director general por email"
-                className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#1A3A5C] hover:bg-[#163050] text-white disabled:opacity-50 transition">
+                className="text-[10px] px-1.5 py-1 rounded-md bg-[#1A3A5C] hover:bg-[#163050] text-white disabled:opacity-50 transition font-bold">
           {solicitando ? '…' : '📨'}
         </button>
       )}
       {open && (
-        <div className="absolute z-30 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 w-64" data-testid={`verif-dropdown-${seccion}`}>
+        <div className="absolute z-50 right-0 top-full mt-2 bg-white border-2 border-[#1A3A5C] rounded-lg shadow-2xl p-3 w-80"
+             data-testid={`verif-dropdown-${seccion}`}
+             onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-200">
+            <span className="text-lg">{ICONOS_SECCION[seccion] || '📋'}</span>
+            <span className="text-sm font-semibold text-slate-800">Cambiar estado de verificación</span>
+          </div>
+          <label className="text-[11px] font-bold uppercase text-slate-500 block mb-1">Notas (opcional)</label>
           <textarea value={notas} onChange={e => setNotas(e.target.value)}
-                    placeholder="Notas (opcional)…"
-                    className="w-full text-xs border border-slate-300 rounded px-2 py-1 mb-1" rows={2} />
-          <button onClick={() => apply('verificado')}
-                  data-testid={`verif-btn-verificado-${seccion}`}
-                  className="w-full text-left text-xs px-2 py-1 hover:bg-emerald-50 rounded">✅ Marcar como verificado</button>
-          <button onClick={() => apply('autorizado_sin_verificar')}
-                  data-testid={`verif-btn-autorizado-${seccion}`}
-                  className="w-full text-left text-xs px-2 py-1 hover:bg-blue-50 rounded">⚡ Autorizar sin verificar</button>
-          <button onClick={() => apply('pendiente')}
-                  data-testid={`verif-btn-pendiente-${seccion}`}
-                  className="w-full text-left text-xs px-2 py-1 hover:bg-amber-50 rounded">🟡 Volver a pendiente</button>
-          <button onClick={() => setOpen(false)} className="w-full text-left text-xs px-2 py-1 text-slate-400 hover:bg-slate-50 rounded mt-1 border-t">Cancelar</button>
+                    placeholder="Comentario sobre la verificación…"
+                    className="w-full text-xs border border-slate-300 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-2 focus:ring-[#1A3A5C]/30" rows={2} />
+          <div className="space-y-1">
+            <button onClick={() => apply('verificado')}
+                    data-testid={`verif-btn-verificado-${seccion}`}
+                    className="w-full text-left text-sm px-3 py-2 hover:bg-emerald-50 rounded border border-emerald-200 bg-emerald-50/30 font-semibold text-emerald-800">
+              ✅ Marcar como verificado
+            </button>
+            <button onClick={() => apply('autorizado_sin_verificar')}
+                    data-testid={`verif-btn-autorizado-${seccion}`}
+                    className="w-full text-left text-sm px-3 py-2 hover:bg-blue-50 rounded border border-blue-200 bg-blue-50/30 font-semibold text-blue-800">
+              ⚡ Autorizar sin verificar
+            </button>
+            <button onClick={() => apply('pendiente')}
+                    data-testid={`verif-btn-pendiente-${seccion}`}
+                    className="w-full text-left text-sm px-3 py-2 hover:bg-amber-50 rounded border border-amber-200 bg-amber-50/30 font-semibold text-amber-800">
+              🟡 Volver a pendiente
+            </button>
+          </div>
+          <button onClick={() => setOpen(false)}
+                  className="w-full text-xs px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded mt-2 border-t border-slate-200">
+            Cancelar
+          </button>
         </div>
       )}
     </div>
@@ -414,11 +443,29 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
   useEffect(() => { cargarVerifs(); /* eslint-disable-next-line */ }, [event?.id]);
   const estadoSeccion = (s) => verifs.find(v => v.seccion === s)?.estado || 'pendiente';
   const cambiarVerif = async (seccion, estado, notas) => {
+    // Update optimista del estado local — feedback inmediato
+    setVerifs(prev => {
+      const idx = prev.findIndex(v => v.seccion === seccion);
+      if (idx >= 0) {
+        const c = [...prev]; c[idx] = { ...c[idx], estado, notas };
+        return c;
+      }
+      return [...prev, { seccion, estado, notas }];
+    });
+    setVerifMeta(prev => {
+      const newVerifs = [...verifs];
+      const idx = newVerifs.findIndex(v => v.seccion === seccion);
+      if (idx >= 0) newVerifs[idx] = { ...newVerifs[idx], estado };
+      else newVerifs.push({ seccion, estado });
+      const nuevasVerificadas = newVerifs.filter(v => v.estado === 'verificado' || v.estado === 'autorizado_sin_verificar').length;
+      return { ...prev, verificadas: nuevasVerificadas, puede_publicar: nuevasVerificadas === prev.total };
+    });
     try {
       await api.put(`/api/gestor/eventos/${event.id}/verificaciones/${seccion}`, { estado, notas: notas || null });
-      cargarVerifs();
+      cargarVerifs(); // resync con backend
     } catch (e) {
       alert('No se pudo cambiar: ' + (e.response?.data?.detail || e.message));
+      cargarVerifs(); // revertir
     }
   };
   const renderBadge = (s) => (

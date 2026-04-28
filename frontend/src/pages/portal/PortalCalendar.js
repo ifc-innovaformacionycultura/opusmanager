@@ -95,6 +95,7 @@ const PortalCalendar = () => {
       case 'blue': return 'bg-blue-500';
       case 'green': return 'bg-green-500';
       case 'orange': return 'bg-orange-500';
+      case 'purple': return 'bg-purple-500';
       default: return 'bg-slate-500';
     }
   };
@@ -104,6 +105,7 @@ const PortalCalendar = () => {
       case 'blue': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'green': return 'bg-green-100 text-green-800 border-green-200';
       case 'orange': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'purple': return 'bg-purple-100 text-purple-800 border-purple-200';
       default: return 'bg-slate-100 text-slate-800 border-slate-200';
     }
   };
@@ -223,13 +225,23 @@ const PortalCalendar = () => {
               {(eventosPorFecha[diaSeleccionado] || []).map(ev => (
                 <div key={ev.id} className={`p-3 border rounded-lg ${colorBadge(ev.color)}`}>
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div className="font-semibold">{ev.titulo}</div>
                       {ev.hora && <div className="text-xs mt-1">🕒 {ev.hora.slice(0, 5)}</div>}
                       {ev.lugar && <div className="text-xs">📍 {ev.lugar}</div>}
+                      {ev.aviso && (
+                        <div className="mt-1.5 inline-block bg-amber-200 text-amber-900 text-[11px] font-bold px-2 py-0.5 rounded">
+                          {ev.aviso}
+                        </div>
+                      )}
+                      {(ev.tipo === 'transporte' || ev.tipo === 'alojamiento') && ev.confirmado && (
+                        <div className="mt-1.5 inline-block bg-emerald-200 text-emerald-900 text-[11px] font-bold px-2 py-0.5 rounded">
+                          ✅ Confirmado
+                        </div>
+                      )}
                     </div>
                     {ev.obligatorio && (
-                      <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] rounded font-bold">
+                      <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] rounded font-bold flex-shrink-0">
                         OBLIGATORIO
                       </span>
                     )}

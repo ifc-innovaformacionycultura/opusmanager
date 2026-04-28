@@ -371,7 +371,66 @@ async def get_calendario(current_user: dict = Depends(get_current_user)):
                             "evento_id": eid,
                             "evento_nombre": ev.get('nombre')
                         })
-        
+
+            # Bloque 10 — Desplazamientos y alojamientos del músico
+            try:
+                logs = supabase.table('evento_logistica').select('*') \
+                    .in_('evento_id', evento_ids).execute().data or []
+                for l in logs:
+                    # Determinar si el músico ha confirmado
+                    confirmaciones = l.get('confirmaciones') or []
+                    if isinstance(confirmaciones, str):
+                        import json as _json
+                        try: confirmaciones = _json.loads(confirmaciones)
+                        except Exception: confirmaciones = []
+                    confirmado = False
+                    if isinstance(confirmaciones, list):
+                        confirmado = any(c.get('usuario_id') == usuario_id and c.get('confirmado') for c in confirmaciones)
+                    elif isinstance(confirmaciones, dict):
+                        confirmado = bool(confirmaciones.get(str(usuario_id)))
+
+                    tipo = (l.get('tipo') or '').lower()
+                    if tipo in ('transporte_ida', 'transporte_vuelta'):
+                        color = 'orange'  # Desplazamiento
+                        cat = 'transporte'
+                        titulo = ('🚌 Ida' if tipo == 'transporte_ida' else '🚌 Vuelta') + f" — {eventos_map.get(l['evento_id'], {}).get('nombre', '—')}"
+                    elif tipo == 'alojamiento':
+                        color = 'purple'
+                        cat = 'alojamiento'
+                        titulo = f"🏨 Alojamiento — {eventos_map.get(l['evento_id'], {}).get('nombre', '—')}"
+                    else:
+                        continue
+
+                    # Recordatorio si pendiente y dentro del plazo
+                    aviso = None
+                    fecha_lim = (l.get('fecha_limite_confirmacion') or '')[:10]
+                    if not confirmado and fecha_lim:
+                        try:
+                            from datetime import datetime as _dt
+                            dl = _dt.strptime(fecha_lim, '%Y-%m-%d').date()
+                            if dl >= _dt.now().date():
+                                aviso = f"⏰ Confirmar antes del {fecha_lim}"
+                        except Exception:
+                            pass
+
+                    calendar_events.append({
+                        "id": f"logistica-{l['id']}",
+                        "tipo": cat,
+                        "titulo": titulo,
+                        "fecha": l.get('fecha'),
+                        "hora": l.get('hora_salida'),
+                        "lugar": l.get('lugar_salida') or l.get('lugar_llegada'),
+                        "obligatorio": False,
+                        "color": color,
+                        "confirmado": confirmado,
+                        "aviso": aviso,
+                        "fecha_limite_confirmacion": fecha_lim or None,
+                        "evento_id": l.get('evento_id'),
+                        "evento_nombre": eventos_map.get(l.get('evento_id'), {}).get('nombre')
+                    })
+            except Exception:
+                pass
+
         return {"eventos": calendar_events}
         
     except Exception as e:

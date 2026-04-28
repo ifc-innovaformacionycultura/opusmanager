@@ -528,6 +528,7 @@ def gen_C(evento_ids, opciones=None) -> bytes:
 
 
 def gen_D(evento_ids, opciones=None) -> bytes:
+    """Bloque 11A — Informe D mejorado: TODA la información del evento en el mismo orden que la página."""
     buf = BytesIO()
     doc, first, later = _build_doc(buf, "Configuración de Eventos")
     S = _styles()
@@ -535,19 +536,33 @@ def gen_D(evento_ids, opciones=None) -> bytes:
     for eid in evento_ids:
         ev = _evento(eid)
         if not ev: continue
-        elements.append(Paragraph(f"CONFIGURACIÓN — {ev.get('nombre','')}", S['h1']))
+        # 1. DATOS GENERALES
+        elements.append(Paragraph(f"CONFIGURACIÓN COMPLETA — {ev.get('nombre','')}", S['h1']))
+        elements.append(Paragraph("1 · Datos generales", S['h2']))
         elements.append(Paragraph(
-            f"<b>Fecha:</b> {(ev.get('fecha_inicio') or '—')[:10]} → {(ev.get('fecha_fin') or '—')[:10]}<br/>"
-            f"<b>Estado:</b> {ev.get('estado','—')}  ·  <b>Lugar:</b> {ev.get('lugar') or '—'}<br/>"
-            f"<b>Descripción:</b> {ev.get('descripcion') or '—'}", S['p']))
-        # Ensayos
-        ensayos = supabase.table('ensayos').select('*').eq('evento_id', eid).order('fecha').execute().data or []
-        elements.append(Paragraph("Ensayos / Funciones", S['h2']))
+            f"<b>Nombre:</b> {ev.get('nombre','—')} &nbsp; <b>Tipo:</b> {ev.get('tipo','—')}<br/>"
+            f"<b>Estado:</b> {ev.get('estado','—')} &nbsp; <b>Temporada:</b> {ev.get('temporada_id') or '—'}<br/>"
+            f"<b>Fecha inicio:</b> {(ev.get('fecha_inicio') or '—')[:10]} &nbsp; <b>Fecha fin:</b> {(ev.get('fecha_fin') or '—')[:10]}<br/>"
+            f"<b>Lugar:</b> {ev.get('lugar') or '—'}<br/>"
+            f"<b>Descripción:</b> {ev.get('descripcion') or '—'}<br/>"
+            f"<b>Notas internas:</b> {ev.get('notas_internas') or '—'}", S['p']))
+        elements.append(Spacer(1, 4*mm))
+
+        # 2. ENSAYOS Y FUNCIONES
+        elements.append(Paragraph("2 · Ensayos y funciones", S['h2']))
+        try:
+            ensayos = supabase.table('rehearsals').select('*').eq('event_id', eid).order('fecha').execute().data or []
+        except Exception:
+            ensayos = supabase.table('ensayos').select('*').eq('evento_id', eid).order('fecha').execute().data or []
         if ensayos:
-            data = [['Tipo', 'Fecha', 'Hora', 'Lugar']]
+            data = [['Tipo', 'Fecha', 'Hora ini.', 'Hora fin', 'Lugar']]
             for e in ensayos:
-                data.append([e.get('tipo') or '—', e.get('fecha') or '—', (e.get('hora_inicio') or '')[:5], e.get('lugar') or '—'])
-            t = Table(data, colWidths=[30*mm, 30*mm, 20*mm, 90*mm])
+                data.append([
+                    e.get('tipo') or '—', e.get('fecha') or '—',
+                    (e.get('hora_inicio') or '')[:5], (e.get('hora_fin') or '')[:5],
+                    e.get('lugar') or '—',
+                ])
+            t = Table(data, colWidths=[24*mm, 28*mm, 20*mm, 20*mm, 78*mm])
             t.setStyle(TableStyle([
                 ('FONT', (0,0), (-1,-1), 'Helvetica', 8),
                 ('BACKGROUND', (0,0), (-1,0), NAVY),
@@ -556,7 +571,158 @@ def gen_D(evento_ids, opciones=None) -> bytes:
             ]))
             elements.append(t)
         else:
-            elements.append(Paragraph("Sin ensayos.", S['p']))
+            elements.append(Paragraph("Sin ensayos configurados.", S['small']))
+        elements.append(Spacer(1, 4*mm))
+
+        # 3. TRANSPORTES MÚSICOS (logística)
+        elements.append(Paragraph("3 · Transportes y alojamientos · Músicos", S['h2']))
+        try:
+            logs = supabase.table('evento_logistica').select('*').eq('evento_id', eid).execute().data or []
+        except Exception:
+            logs = []
+        if logs:
+            data = [['Tipo', 'Fecha', 'Salida', 'Llegada', 'Puntos recogida']]
+            for l in logs:
+                data.append([
+                    l.get('tipo') or '—', l.get('fecha') or '—',
+                    f"{l.get('lugar_salida') or ''} {l.get('hora_salida') or ''}".strip() or '—',
+                    f"{l.get('lugar_llegada') or ''} {l.get('hora_llegada') or ''}".strip() or '—',
+                    str(l.get('puntos_recogida') or '—')[:60],
+                ])
+            t = Table(data, colWidths=[28*mm, 22*mm, 40*mm, 40*mm, 40*mm])
+            t.setStyle(TableStyle([
+                ('FONT', (0,0), (-1,-1), 'Helvetica', 8),
+                ('BACKGROUND', (0,0), (-1,0), NAVY),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('GRID', (0,0), (-1,-1), 0.25, colors.HexColor('#CBD5E1')),
+            ]))
+            elements.append(t)
+        else:
+            elements.append(Paragraph("Sin transportes/alojamientos.", S['small']))
+        elements.append(Spacer(1, 4*mm))
+
+        # 4. PROGRAMA MUSICAL
+        elements.append(Paragraph("4 · Programa musical", S['h2']))
+        try:
+            evobras = supabase.table('evento_obras').select('*, obra:obras(codigo,titulo,autor)').eq('evento_id', eid).execute().data or []
+        except Exception:
+            evobras = []
+        if evobras:
+            data = [['Cód.', 'Autor', 'Obra', 'Estado']]
+            for eo in evobras:
+                ob = eo.get('obra') or {}
+                data.append([
+                    ob.get('codigo') or '—', ob.get('autor') or '—',
+                    ob.get('titulo') or eo.get('titulo_provisional') or '—',
+                    eo.get('estado') or '—',
+                ])
+            t = Table(data, colWidths=[20*mm, 50*mm, 70*mm, 30*mm])
+            t.setStyle(TableStyle([
+                ('FONT', (0,0), (-1,-1), 'Helvetica', 8),
+                ('BACKGROUND', (0,0), (-1,0), NAVY),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('GRID', (0,0), (-1,-1), 0.25, colors.HexColor('#CBD5E1')),
+            ]))
+            elements.append(t)
+        else:
+            elements.append(Paragraph("Sin programa musical configurado.", S['small']))
+        elements.append(Spacer(1, 4*mm))
+
+        # 5. MONTAJE
+        elements.append(Paragraph("5 · Montaje y rider técnico", S['h2']))
+        try:
+            mont = supabase.table('evento_montaje').select('*, material:inventario_material(nombre,grupo)').eq('evento_id', eid).execute().data or []
+        except Exception:
+            mont = []
+        if mont:
+            data = [['Material', 'Grupo', 'Cant.', 'Origen', 'Sección', 'Conf.']]
+            for m in mont:
+                data.append([
+                    (m.get('material') or {}).get('nombre') or m.get('nombre_material') or '—',
+                    (m.get('material') or {}).get('grupo') or '—',
+                    str(m.get('cantidad_necesaria') or 0),
+                    m.get('origen') or '—',
+                    m.get('seccion_escenario') or '—',
+                    '✓' if m.get('confirmado') else '·',
+                ])
+            t = Table(data, colWidths=[60*mm, 25*mm, 15*mm, 22*mm, 30*mm, 12*mm])
+            t.setStyle(TableStyle([
+                ('FONT', (0,0), (-1,-1), 'Helvetica', 8),
+                ('BACKGROUND', (0,0), (-1,0), NAVY),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('GRID', (0,0), (-1,-1), 0.25, colors.HexColor('#CBD5E1')),
+            ]))
+            elements.append(t)
+        else:
+            elements.append(Paragraph("Sin montaje configurado.", S['small']))
+        elements.append(Spacer(1, 4*mm))
+
+        # 6. TRANSPORTE DE MATERIAL
+        elements.append(Paragraph("6 · Transporte de material", S['h2']))
+        try:
+            tr = supabase.table('transporte_material').select('*').eq('evento_id', eid).limit(1).execute().data or []
+        except Exception:
+            tr = []
+        if tr:
+            t0 = tr[0]
+            elements.append(Paragraph(
+                f"<b>Empresa:</b> {t0.get('empresa') or '—'} &nbsp; <b>Contacto:</b> {t0.get('contacto_empresa') or '—'} &nbsp; <b>Tlf:</b> {t0.get('telefono_empresa') or '—'}<br/>"
+                f"<b>Carga:</b> {t0.get('fecha_carga') or '—'} {(t0.get('hora_carga') or '')[:5]} en {t0.get('direccion_carga') or '—'}<br/>"
+                f"<b>Descarga:</b> {t0.get('fecha_descarga') or '—'} {(t0.get('hora_descarga') or '')[:5]} en {t0.get('direccion_descarga') or '—'}<br/>"
+                f"<b>Presupuesto:</b> {t0.get('presupuesto_euros') or '—'}€  &nbsp;  <b>Estado:</b> {t0.get('estado') or '—'}",
+                S['p']))
+        else:
+            elements.append(Paragraph("Sin transporte de material configurado.", S['small']))
+        elements.append(Spacer(1, 4*mm))
+
+        # 7. PRESUPUESTO RESUMIDO
+        elements.append(Paragraph("7 · Presupuesto resumido", S['h2']))
+        try:
+            musicos = _musicos_confirmados(eid)
+            total_cache = sum(float(m.get('cache_real') or m.get('cache_previsto') or 0) for m in musicos)
+        except Exception:
+            total_cache = 0
+            musicos = []
+        elements.append(Paragraph(
+            f"<b>Músicos confirmados:</b> {len(musicos)}<br/>"
+            f"<b>Cachés totales (real/previsto):</b> {total_cache:.2f}€<br/>"
+            f"<i>Datos de gastos adicionales en el módulo de Análisis Económico.</i>", S['p']))
+        elements.append(Spacer(1, 4*mm))
+
+        # 8. ESTADO DE VERIFICACIONES
+        elements.append(Paragraph("8 · Estado de verificaciones", S['h2']))
+        try:
+            verifs = supabase.table('evento_verificaciones').select('*').eq('evento_id', eid).execute().data or []
+        except Exception:
+            verifs = []
+        verif_map = {v['seccion']: v for v in verifs}
+        secciones_lab = [
+            ('datos_generales', 'Datos Generales'),
+            ('ensayos', 'Ensayos y Funciones'),
+            ('logistica_musicos', 'Transportes Músicos'),
+            ('logistica_material', 'Transporte Material'),
+            ('programa_musical', 'Programa Musical'),
+            ('presupuesto', 'Presupuesto'),
+            ('montaje', 'Montaje'),
+            ('partituras', 'Partituras'),
+        ]
+        data = [['Sección', 'Estado', 'Verificado por', 'Fecha']]
+        for k, lab in secciones_lab:
+            v = verif_map.get(k) or {}
+            data.append([
+                lab, v.get('estado') or 'pendiente',
+                v.get('verificado_por_nombre') or '—',
+                (v.get('verificado_at') or '—')[:10],
+            ])
+        t = Table(data, colWidths=[55*mm, 35*mm, 50*mm, 30*mm])
+        t.setStyle(TableStyle([
+            ('FONT', (0,0), (-1,-1), 'Helvetica', 8),
+            ('BACKGROUND', (0,0), (-1,0), GOLD),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('GRID', (0,0), (-1,-1), 0.25, colors.HexColor('#CBD5E1')),
+        ]))
+        elements.append(t)
+
         if eid != evento_ids[-1]: elements.append(PageBreak())
     elements += _pie_firma()
 
