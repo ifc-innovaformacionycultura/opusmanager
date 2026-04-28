@@ -26,6 +26,7 @@ from routes_inventario import router as inventario_router
 from routes_montaje import router as montaje_router
 from routes_informes import router as informes_router
 from routes_verificaciones import router as verificaciones_router
+from routes_dashboard import router as dashboard_router
 
 # ==================== App Configuration ====================
 
@@ -75,6 +76,7 @@ app.include_router(inventario_router)  # /api/gestor/inventario/*
 app.include_router(montaje_router)  # /api/gestor/montaje/*, /espacios, /transporte-material
 app.include_router(informes_router)  # /api/gestor/informes/*
 app.include_router(verificaciones_router)  # /api/gestor/eventos/{id}/verificaciones/*
+app.include_router(dashboard_router)  # /api/gestor/dashboard/resumen
 
 # ==================== Health Check ====================
 

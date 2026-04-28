@@ -652,8 +652,8 @@ const DashboardPage = () => {
         </div>
       </div>
 
-      {/* Widget Próximos 7 días (Bloque 9) */}
-      <Proximos7Dias />
+      {/* Panel de actividad pendiente con KPIs (Bloque 9 + KPIs en tiempo real) */}
+      <ActividadPendiente />
 
       {/* Recent Events */}
       <div className="bg-white rounded-lg border border-slate-200">
@@ -756,7 +756,7 @@ import GestorReclamaciones from "./pages/GestorReclamaciones";
 import ConfiguracionEmail from "./pages/ConfiguracionEmail";
 import FeedbackButton from "./components/FeedbackButton";
 import HilosPendientesDrawer from "./components/HilosPendientesDrawer";
-import Proximos7Dias from "./components/Proximos7Dias";
+import ActividadPendiente from "./components/ActividadPendiente";
 
 // Detección automática de página para Hilos pendientes (Bloque 4)
 const HILOS_PAGES = [

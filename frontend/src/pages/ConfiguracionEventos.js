@@ -427,6 +427,16 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
   // BLOQUE 2 — Verificaciones por sección
   const [verifs, setVerifs] = useState([]);  // [{seccion, estado, ...}]
   const [verifMeta, setVerifMeta] = useState({ verificadas: 0, total: 8, puede_publicar: false, puede_editar: false });
+  // Estado original del evento (para distinguir publicación nueva vs cambios en publicado)
+  // Snapshot al primer render del evento.
+  const estadoOriginalRef = React.useRef(event?.estado);
+  useEffect(() => {
+    if (event?.id && estadoOriginalRef.current === undefined) {
+      estadoOriginalRef.current = event.estado;
+    }
+  }, [event?.id, event?.estado]);
+  // Inyectamos en event para que el handler del botón Guardar lo encuentre
+  if (event && event._estadoOriginal === undefined) event._estadoOriginal = estadoOriginalRef.current;
   const cargarVerifs = async () => {
     if (!event?.id) return;
     try {
@@ -1011,14 +1021,17 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
         </div>
         <button
           onClick={() => {
-            // BLOQUE 2B — Bloqueo de publicación
-            const cambiandoAAbierto = (event.estado === 'abierto');
+            // Regla crítica de verificación:
+            // El bloqueo SOLO aplica cuando el evento pasa de 'borrador' a 'abierto' (publicación).
+            // Cambios en eventos ya publicados NO bloquean ni piden verificación.
+            const estadoOriginal = (event._estadoOriginal !== undefined ? event._estadoOriginal : event.estado);
+            const publicandoPorPrimeraVez = estadoOriginal === 'borrador' && event.estado === 'abierto';
             const pendientes = verifs.filter(v => v.estado === 'pendiente').map(v => v.seccion);
-            if (cambiandoAAbierto && pendientes.length > 0 && !verifMeta.puede_editar) {
+            if (publicandoPorPrimeraVez && pendientes.length > 0 && !verifMeta.puede_editar) {
               alert(`No se puede publicar el evento. Faltan secciones por verificar:\n\n• ${pendientes.join('\n• ')}\n\nContacta con un administrador o director general.`);
               return;
             }
-            if (cambiandoAAbierto && pendientes.length > 0 && verifMeta.puede_editar) {
+            if (publicandoPorPrimeraVez && pendientes.length > 0 && verifMeta.puede_editar) {
               if (!window.confirm(`⚠️ Aún hay ${pendientes.length} secciones pendientes de verificación:\n\n• ${pendientes.join('\n• ')}\n\n¿Quieres publicar el evento de todas formas? (Solo administradores)`)) {
                 return;
               }

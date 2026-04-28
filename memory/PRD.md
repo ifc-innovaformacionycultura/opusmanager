@@ -1039,3 +1039,50 @@ Recomendación: implementarlos en iteraciones separadas de 1-2 bloques cada una 
 - Frontend: 85% inicial → tras correcciones, plano americano + drawer en 8/8 páginas funcionan.
 - Issues HIGH/MEDIUM/LOW del informe TODOS resueltos.
 
+
+### ✅ Iteración Feb 2026 — Dashboard KPIs + Regla verificación + B6B/C precarga + Banner Resend
+
+**1. Dashboard mejorado** (`routes_dashboard.py` + `ActividadPendiente.js`):
+- Nuevo endpoint `GET /api/gestor/dashboard/resumen` devuelve:
+  - **KPIs** en tiempo real: `verificaciones_pendientes` (solo eventos en borrador), `comentarios_pendientes`, `tareas_proximas`, `eventos_proximos`.
+  - **Próximos 15 días**: ensayos+funciones+montajes confirmados+desplazamientos músicos+desplazamientos material, ordenados por fecha ASC con icono y color por tipo.
+  - **Pendientes del equipo**: comentarios donde el usuario está mencionado o es autor (estado != resuelto) + tareas asignadas con deadline ≤ 15 días.
+  - **Pendientes de verificación**: solo eventos en estado `borrador` (los `abierto` no requieren reverificación).
+- Frontend: panel con 4 KPIs clickables (cada uno navega al filtro), sección comentarios+tareas, sección verificación pendiente (banner ámbar), sección próximos 15 días con borde-l-4 coloreado.
+- Inyectado en Dashboard reemplazando el widget previo `Proximos7Dias`.
+
+**2. Regla crítica de verificación** (`routes_gestor.py` + `ConfiguracionEventos.js`):
+- Backend: cuando un evento pasa de `abierto` → `borrador`, el endpoint PUT borra todas las filas de `evento_verificaciones` para ese evento (reset a "pendiente" implícito).
+- Frontend: la lógica de bloqueo de publicación ahora usa `_estadoOriginal` (snapshot al cargar). Solo bloquea si pasa de `borrador` → `abierto`. Cambios en eventos ya publicados se guardan sin pedir verificación.
+
+**3. Bloque 6B/C — Precarga avanzada montaje** (`routes_montaje.py`):
+- `POST /api/gestor/montaje/{evento_id}/generar?ensayo_id=...` ahora consulta `ensayo_instrumentos` para filtrar por convocados/desconvocados al ensayo concreto.
+- Helper `instrumento_activo(nombre)`: filtra los músicos por el set de instrumentos efectivamente convocados a ESE ensayo.
+- Items generados incluyen `ensayo_id` para asociación correcta a la sesión.
+- B6C (obra_partes para percusión) ya existía.
+
+**4. Banner Resend** (`ConfiguracionEmail.js`):
+- Banner ámbar prominente con icono ⚠️, texto explicativo y CTA a `resend.com/domains` en `/admin/emails/configuracion`.
+- Indica claramente que sin dominio verificado los emails solo van al propio email del owner.
+- data-testid: `banner-resend-dominio`.
+
+### Estado de bloques
+- ✅ B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11A/B/C/D, B12 — completos
+- ✅ KPIs en dashboard
+- ✅ Regla de verificación con reset al volver a borrador
+- ✅ Banner verificación dominio Resend
+
+### Endpoints añadidos en esta sesión total
+- `GET /api/gestor/dashboard/resumen` (nuevo)
+- `GET /api/gestor/eventos/{id}/verificaciones`
+- `PUT /api/gestor/eventos/{id}/verificaciones/{seccion}`
+- `POST /api/gestor/eventos/{id}/verificaciones/{seccion}/solicitar`
+- `POST /api/gestor/informes/enviar-email`
+- `GET /api/gestor/informes/destinatarios`
+- `GET /api/gestor/informes/preview/{tipo}/{evento_id}` (existía)
+- `GET /api/gestor/archivo/obras/{id}/conflictos-evento/{evento_id}` (B5)
+- `GET /api/gestor/archivo/obras/{id}/estado-material` (B5)
+- `GET /api/gestor/inventario/{id}/conflictos-fechas` (B7)
+- `GET /api/gestor/calendario-eventos` (B9)
+- `POST /api/gestor/montaje/{evento_id}/generar?ensayo_id=...` (B6 mejorado)
+

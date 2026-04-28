@@ -257,7 +257,18 @@ async def update_evento(
             **raw,
             "updated_at": datetime.now().isoformat()
         }
-        
+
+        # Regla crítica de verificación (Bloque 2 — refinado):
+        # Si el evento pasa de 'abierto' a 'borrador', resetear verificaciones a 'pendiente'
+        # para que el director vuelva a revisarlas antes de re-publicar.
+        if 'estado' in raw and raw['estado'] == 'borrador':
+            try:
+                prev = supabase.table('eventos').select('estado').eq('id', evento_id).limit(1).execute().data or []
+                if prev and prev[0].get('estado') == 'abierto':
+                    supabase.table('evento_verificaciones').delete().eq('evento_id', evento_id).execute()
+            except Exception:
+                pass
+
         response = supabase.table('eventos') \
             .update(update_data) \
             .eq('id', evento_id) \

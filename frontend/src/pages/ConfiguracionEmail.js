@@ -69,6 +69,27 @@ const ConfiguracionEmail = () => {
         <p className="font-ibm text-slate-600 mt-1">Estado de Resend y envío de pruebas.</p>
       </header>
 
+      {/* Banner — dominio no verificado en Resend */}
+      <div className="bg-amber-50 border-l-4 border-amber-500 rounded-md p-4" data-testid="banner-resend-dominio">
+        <div className="flex items-start gap-3">
+          <div className="text-2xl flex-shrink-0">⚠️</div>
+          <div className="flex-1">
+            <h3 className="font-bold text-amber-900 text-sm">Dominio no verificado en Resend</h3>
+            <p className="text-sm text-amber-800 mt-1">
+              Mientras el dominio del remitente no esté verificado en Resend, los emails (notificaciones, informes, solicitudes de verificación)
+              <b> solo se podrán enviar a tu propio email</b>. Para enviar a todo tu equipo y destinatarios reales, verifica el dominio en{' '}
+              <a href="https://resend.com/domains" target="_blank" rel="noopener noreferrer"
+                 className="underline font-semibold hover:text-amber-900">
+                resend.com/domains ↗
+              </a>.
+            </p>
+            <p className="text-xs text-amber-700 mt-2">
+              Una vez verificado, configura el campo <code className="bg-amber-100 px-1 rounded">SENDER_EMAIL</code> con un email de tu dominio (ej. <code className="bg-amber-100 px-1 rounded">no-reply@tudominio.com</code>).
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Indicador de estado */}
       <section className="bg-white rounded-lg border border-slate-200 p-5" data-testid="resend-status">
         <div className="flex items-start justify-between gap-4">

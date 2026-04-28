@@ -119,9 +119,39 @@ def _buscar_material(grupo: str, nombre_aprox: str) -> Optional[dict]:
 
 
 @router.post("/montaje/{evento_id}/generar")
-async def generar_montaje(evento_id: str, current_user: dict = Depends(get_current_gestor)):
+async def generar_montaje(evento_id: str, ensayo_id: Optional[str] = None,
+                          current_user: dict = Depends(get_current_gestor)):
     """Genera el montaje automático en función de los músicos confirmados
-    del evento + repertorio programado."""
+    del evento + repertorio programado.
+    Si se pasa ensayo_id, filtra por instrumentos efectivamente convocados a ESE ensayo
+    (lee ensayo_instrumentos / instrumentos_desconvocados).
+    """
+    # 0. Si hay ensayo_id, identificar instrumentos convocados/desconvocados
+    instrumentos_convocados = None  # None = todos; set = solo estos
+    instrumentos_desconvocados = set()
+    if ensayo_id:
+        try:
+            ei = supabase.table('ensayo_instrumentos').select('*').eq('ensayo_id', ensayo_id).execute().data or []
+            for r in ei:
+                inst = (r.get('instrumento') or '').lower().strip()
+                if not inst: continue
+                if r.get('convocado') is False or (r.get('estado') or '').lower() in ('desconvocado', 'no_convocado'):
+                    instrumentos_desconvocados.add(inst)
+                else:
+                    if instrumentos_convocados is None:
+                        instrumentos_convocados = set()
+                    instrumentos_convocados.add(inst)
+        except Exception:
+            pass
+
+    def instrumento_activo(nombre):
+        nl = (nombre or '').lower().strip()
+        if not nl: return True
+        if nl in instrumentos_desconvocados: return False
+        if instrumentos_convocados is not None:
+            return any(c in nl or nl in c for c in instrumentos_convocados)
+        return True
+
     # 1. Asignaciones confirmadas + usuario.instrumento
     asigs = supabase.table('asignaciones').select('usuario_id,estado') \
         .eq('evento_id', evento_id).eq('estado', 'confirmado').execute().data or []
@@ -131,9 +161,13 @@ async def generar_montaje(evento_id: str, current_user: dict = Depends(get_curre
     if user_ids:
         users = supabase.table('usuarios').select('id,instrumento').in_('id', user_ids).execute().data or []
         for u in users:
-            sec = _instrumento_seccion(u.get('instrumento') or '')
+            inst_n = u.get('instrumento') or ''
+            # Bloque 6B — filtro por ensayo
+            if not instrumento_activo(inst_n):
+                continue
+            sec = _instrumento_seccion(inst_n)
             sec_count[sec] = sec_count.get(sec, 0) + 1
-            if 'contrabaj' in (u.get('instrumento') or '').lower():
+            if 'contrabaj' in inst_n.lower():
                 n_contrabajos += 1
 
     # 2. Calcular sillas + atriles
@@ -172,6 +206,7 @@ async def generar_montaje(evento_id: str, current_user: dict = Depends(get_curre
         m = _buscar_material(grupo, nombre)
         items.append({
             "evento_id": evento_id,
+            "ensayo_id": ensayo_id,
             "material_id": m['id'] if m else None,
             "nombre_material": nombre if not m else None,
             "cantidad_necesaria": qty,
