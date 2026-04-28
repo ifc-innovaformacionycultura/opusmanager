@@ -10,6 +10,8 @@ const KPI_CFG = [
   { k: 'tareas_proximas',            label: 'tareas próximas (15 días)', icon: '✅', color: 'emerald',link: '/tareas' },
   { k: 'eventos_proximos',           label: 'eventos próximos (15 días)', icon: '📅', color: 'sky',   link: '/configuracion/eventos' },
   { k: 'musicos_sin_activar',        label: 'músicos pendientes de activación', icon: '📨', color: 'violet', link: '/admin/musicos?invitacion=pendiente' },
+  { k: 'recordatorios_enviados_hoy', label: 'recordatorios push enviados hoy', icon: '🔔', color: 'teal',   link: '/admin/recordatorios' },
+  { k: 'errores_recientes',          label: 'errores de envío recientes',     icon: '⚠️', color: 'rose',   link: '/admin/recordatorios', alertWhenPositive: true },
 ];
 
 const COLOR_CFG = {
@@ -18,6 +20,8 @@ const COLOR_CFG = {
   emerald: { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-300', dot: 'bg-emerald-500' },
   sky:     { bg: 'bg-sky-50',     text: 'text-sky-800',     border: 'border-sky-300',     dot: 'bg-sky-500' },
   violet:  { bg: 'bg-violet-50',  text: 'text-violet-800',  border: 'border-violet-300',  dot: 'bg-violet-500' },
+  teal:    { bg: 'bg-teal-50',    text: 'text-teal-800',    border: 'border-teal-300',    dot: 'bg-teal-500' },
+  rose:    { bg: 'bg-rose-50',    text: 'text-rose-800',    border: 'border-rose-300',    dot: 'bg-rose-500' },
 };
 
 export default function ActividadPendiente() {
@@ -48,14 +52,18 @@ export default function ActividadPendiente() {
         {KPI_CFG.map(k => {
           const cfg = COLOR_CFG[k.color];
           const v = data.kpis?.[k.k] || 0;
+          const alerted = k.alertWhenPositive && v > 0;
           return (
             <button key={k.k}
                     onClick={() => navigate(k.link)}
                     data-testid={`kpi-${k.k}`}
-                    className={`${cfg.bg} ${cfg.text} border ${cfg.border} rounded-xl p-3 text-left hover:shadow-md hover:-translate-y-0.5 transition-all`}>
+                    className={`${cfg.bg} ${cfg.text} border ${cfg.border} rounded-xl p-3 text-left hover:shadow-md hover:-translate-y-0.5 transition-all relative ${alerted ? 'ring-2 ring-rose-400 animate-pulse' : ''}`}>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-2xl">{k.icon}</span>
                 <span className={`text-3xl font-extrabold leading-none`}>{v}</span>
+                {alerted && (
+                  <span className="absolute top-1.5 right-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold" data-testid={`kpi-alert-${k.k}`}>!</span>
+                )}
               </div>
               <div className="text-[11px] uppercase tracking-wide font-semibold opacity-80">{k.label}</div>
             </button>

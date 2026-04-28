@@ -203,12 +203,33 @@ async def dashboard_resumen(current_user: dict = Depends(get_current_gestor)):
     except Exception:
         pass
 
+    # Recordatorios push enviados hoy + errores recientes
+    recordatorios_enviados_hoy = 0
+    errores_recientes = 0
+    try:
+        from datetime import date as _date
+        today_iso = _date.today().isoformat()
+        rh = supabase.table('recordatorios_enviados').select('id', count='exact') \
+            .gte('enviado_at', f"{today_iso}T00:00:00+00:00") \
+            .lte('enviado_at', f"{today_iso}T23:59:59+00:00") \
+            .execute()
+        recordatorios_enviados_hoy = rh.count or 0
+    except Exception:
+        pass
+    try:
+        from routes_recordatorios import get_recent_errors
+        errores_recientes = len(get_recent_errors())
+    except Exception:
+        pass
+
     kpis = {
         'verificaciones_pendientes': sum(p['pendientes'] for p in pendientes_verif),
         'comentarios_pendientes': len([p for p in pendientes_equipo if p['tipo'] == 'comentario']),
         'tareas_proximas': len([p for p in pendientes_equipo if p['tipo'] == 'tarea']),
         'eventos_proximos': len(proximos),
         'musicos_sin_activar': musicos_sin_activar,
+        'recordatorios_enviados_hoy': recordatorios_enviados_hoy,
+        'errores_recientes': errores_recientes,
     }
 
     return {

@@ -31,6 +31,16 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Feb 28, 2026 (madrugada — final) — Mini-widget KPIs Dashboard
+
+- Backend `routes_dashboard.py`: KPIs ampliados con `recordatorios_enviados_hoy` (count de `recordatorios_enviados` para fecha actual) y `errores_recientes` (longitud del buffer en memoria de `routes_recordatorios.get_recent_errors()`).
+- Frontend `ActividadPendiente.js`: 2 nuevos tiles KPI:
+  - 🔔 **Recordatorios push enviados hoy** (color `teal`, link a `/admin/recordatorios`).
+  - ⚠️ **Errores de envío recientes** (color `rose`, link a `/admin/recordatorios`). Cuando es > 0 se aplica `ring-rose-400 animate-pulse` + badge `!` rojo en esquina superior derecha.
+
+### Feb 28, 2026 (madrugada — sesión nocturna) — Página /admin/recordatorios + 2º cron + recordatorios de tareas
+*(ver entrada anterior)*
+
 ### Feb 28, 2026 (madrugada — sesión nocturna) — Página /admin/recordatorios + 2º cron + recordatorios de tareas
 
 **Cron @ 12:00 Madrid (última llamada)**:

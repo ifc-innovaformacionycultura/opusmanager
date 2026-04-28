@@ -1,0 +1,47 @@
+{
+  "summary": "Iter 15 regression E2E (5 sesiones masivas). Backend: 20/20 pytest PASS cubriendo CRM contactos (resumen + create + list + invalid tipo + /seguimiento incluye crm y estado_invitacion), Invitaciones (token inválido 404, invitar genera token + url_activacion /activar/{uuid} + GET activar válido devuelve email), Push (vapid-public sin auth, suscribir UPSERT, test endpoint), Notif preferencias (GET + PUT parcial gestor con 6 keys defaults), Recordatorios (status running=true 2 jobs + dias 3/2/1, run-now con 3 jobs results y total_enviados int, run-last-call tipo='ultima_llamada', historial enriquecido con usuario_nombre, suscriptores, errores, 403 para gestor regular en run-now y historial), Dashboard KPIs incluye recordatorios_enviados_hoy (int) y errores_recientes (int). Frontend E2E: Dashboard renderiza 7 tiles incluyendo kpi-recordatorios_enviados_hoy=2 y kpi-errores_recientes=2 con badge ! pulse. /admin/mi-perfil muestra 6 toggles (convocatorias, tareas, comentarios, recordatorios, reclamaciones, 🛡️verificaciones) + botón 'Enviarme un push de prueba' (DG). /activar/{token-invalido} renderiza correctamente 'Enlace no válido' sin login. /admin/recordatorios renderiza 4 secciones (Estado del cron, Histórico, Suscriptores activos, Errores recientes) y botón 'Ejecutar ahora', PERO el bloque Estado del cron muestra Estado=🔴Detenido y días=— mientras backend devuelve running=true correctamente (chip 'Cargando...' visible junto al título), sugiriendo issue de integración GET status en frontend.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "Nota — admin@convocatorias.com tiene rol='gestor' en JWT (no 'admin')", "issue": "El test_credentials.md y la nota del problem statement decían 'admin de hecho' pero el JWT user_metadata.rol='gestor', por lo que /api/admin/recordatorios/* responde 403. Comportamiento backend correcto. Para tests admin se usa jalonso@p.csmb.es (director_general)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "RecordatoriosAdmin.js — Estado del cron", "issue": "Bloque 'Estado del cron' renderiza Estado=🔴Detenido y días=— (placeholders) aunque el backend GET /api/admin/recordatorios/status devuelve running=true, dias_antes_disponibilidad=3, logistica=2, tareas=1. El chip 'Cargando...' permanece visible junto al título tras 7s. Posible: (a) loading state nunca se cierra, (b) field mapping incorrecto, (c) auth token no se está enviando en la llamada inicial. Verificar que useEffect llama GET /status con headers válidos y procesa la respuesta.", "selector": "h1:'Recordatorios push' + 'Estado del cron'", "priority": "HIGH"},
+      {"component": "Console error", "issue": "React warning 'Encountered two children with the same key' aparece 2 veces tras navegar entre páginas. No bloqueante pero indica un map() sin key única en alguna lista (posiblemente en ActividadPendiente o RecordatoriosAdmin).", "selector": "console", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "/admin/recordatorios — carga inicial de status", "issue": "GET /api/admin/recordatorios/status verificado con curl devuelve running=true + 2 jobs + días, pero la UI muestra Detenido y placeholders. La integración cron→UI está rota.", "affected_selectors": ["text='Estado del cron'", "text='🔴 Detenido'"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_regression.py",
+    "/app/test_reports/pytest/iter15.xml"
+  ],
+  "action_items": [
+    "[FRONTEND/HIGH] Arreglar /admin/recordatorios: el bloque 'Estado del cron' no consume correctamente la respuesta de GET /api/admin/recordatorios/status. Backend confirma running=true + 3 días configurados. Verificar fetch con auth header y mapping de campos.",
+    "[FRONTEND/LOW] Eliminar warning 'two children with same key' detectado en consola — añadir keys únicas a algún map().",
+    "[INFO] El usuario admin@convocatorias.com tiene rol='gestor' (no 'admin') en JWT, por lo que NO puede acceder a /api/admin/recordatorios/*. Los tests usan jalonso@p.csmb.es (director_general) para endpoints admin. Verificado y correcto."
+  ],
+  "critical_code_review_comments": [
+    "routes_invitaciones.py:200 — `from supabase import create_client` dentro del handler activar; mejor hoist al top para evitar import por petición.",
+    "routes_recordatorios.py:51-52 — buffer en memoria _PUSH_ERRORS no es thread-safe; en producción multi-worker con APScheduler, los errores no se comparten entre workers. Para diagnóstico OK; documentar.",
+    "routes_recordatorios.py — _es_admin se define en el medio del archivo y se duplica con la lógica inline en run_now (líneas 362-364). Extraer a helper común.",
+    "routes_push.py:200 — webpush sync dentro de loop puede bloquear; considerar asyncio.to_thread para >50 suscripciones.",
+    "routes_notif_preferencias.py:64 — _get_prefs_db hace 1 query por cada llamada a should_send_push, multiplicando queries en cada notify_push. Cachear con TTL de 60s reduciría carga.",
+    "RecordatoriosAdmin.js — bug de integración HIGH: status no llega a UI."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter15_regression.py (nuevo, 20 tests, 20 PASS)"],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "85% (Dashboard KPIs, MiPerfil notif, /activar invalid funcionan; /admin/recordatorios sólo renderiza placeholders en Estado del cron)"},
+  "test_credentials": {
+    "director_general (admin endpoints OK)": "jalonso@p.csmb.es / Director2026!",
+    "admin@convocatorias.com (rol=gestor, recibe 403 en /admin/recordatorios)": "Admin123!"
+  },
+  "seed_data_creation": "Creó 1 contacto CRM TEST_iter15 + 1 push_suscripcion TEST_iter15 + 1 invitación nueva (token regenerado) para palvarez@netmetrix.es u otro músico (no se completó POST /activar para no cambiar password real).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-ejecutar: cd /app && python -m pytest backend/tests/test_iter15_regression.py -v (20/20 PASS, ~20s). Si main agent arregla el bug de RecordatoriosAdmin.js, validar abriendo /admin/recordatorios con DG y verificar que Estado=🟢Activo, días=3/2/1, jobs lista 2 entradas. Backend status endpoint funciona correctamente (verificado con curl). Para CRM y suscripciones limpia los TEST_iter15 al final si necesario.",
+  "rca_of_the_issue": "Bug HIGH frontend: /admin/recordatorios — Estado del cron muestra placeholders (— y 🔴Detenido) aunque backend devuelve datos correctos. Reproducción: login como jalonso@p.csmb.es → /admin/recordatorios → esperar 7s → observar bloque 'Estado del cron'. Mitigación: revisar useEffect que llama GET /api/admin/recordatorios/status en RecordatoriosAdmin.js — probable que la respuesta no se está parseando correctamente o el auth header no se incluye en la primera llamada (las otras secciones SÍ cargan: Histórico/Suscriptores/Errores muestran '(0)' que es la respuesta vacía real). Esto sugiere que el problema está SOLO en el componente que pinta Estado, no en el fetch global."
+}
