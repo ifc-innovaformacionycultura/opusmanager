@@ -44,22 +44,26 @@ export default function RecordatoriosAdmin() {
   const [filterTipo, setFilterTipo] = useState('');
 
   const cargar = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [s, h, su, er] = await Promise.all([
-        api.get('/api/admin/recordatorios/status'),
-        api.get(`/api/admin/recordatorios/historial${filterTipo ? `?tipo=${filterTipo}` : ''}`),
-        api.get('/api/admin/recordatorios/suscriptores'),
-        api.get('/api/admin/recordatorios/errores'),
-      ]);
-      setStatus(s.data);
-      setHistorial(h.data?.historial || []);
-      setSuscriptores(su.data?.suscriptores || []);
-      setErrores(er.data?.errores || []);
-    } catch (e) {
-      setFeedback({ kind: 'error', msg: e?.response?.data?.detail || e.message });
-    } finally { setLoading(false); }
-  }, [api, filterTipo]);
+    setLoading(true);
+    setFeedback(null);
+    const [s, h, su, er] = await Promise.allSettled([
+      api.get('/api/admin/recordatorios/status'),
+      api.get(`/api/admin/recordatorios/historial${filterTipo ? `?tipo=${filterTipo}` : ''}`),
+      api.get('/api/admin/recordatorios/suscriptores'),
+      api.get('/api/admin/recordatorios/errores'),
+    ]);
+    if (s.status === 'fulfilled') setStatus(s.value.data);
+    if (h.status === 'fulfilled') setHistorial(h.value.data?.historial || []);
+    if (su.status === 'fulfilled') setSuscriptores(su.value.data?.suscriptores || []);
+    if (er.status === 'fulfilled') setErrores(er.value.data?.errores || []);
+    const failed = [s, h, su, er].filter(r => r.status === 'rejected');
+    if (failed.length > 0) {
+      const first = failed[0].reason;
+      setFeedback({ kind: 'error', msg: first?.response?.data?.detail || first?.message || 'Error al cargar datos' });
+    }
+    setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterTipo]);
 
   useEffect(() => { cargar(); }, [cargar]);
 

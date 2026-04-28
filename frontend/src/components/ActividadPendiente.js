@@ -77,7 +77,7 @@ export default function ActividadPendiente() {
           <h3 className="font-semibold text-slate-900 mb-2 flex items-center gap-1.5">💬 Pendientes del equipo</h3>
           <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
             {data.pendientes_equipo.map(p => (
-              <div key={p.id} data-testid={`pend-${p.id}`}
+              <div key={`${p.tipo || 't'}-${p.id}`} data-testid={`pend-${p.id}`}
                    className="flex items-center gap-2 px-2.5 py-1.5 rounded border border-slate-100 bg-slate-50 hover:bg-slate-100 cursor-pointer"
                    onClick={() => p.tipo === 'tarea' ? navigate('/tareas') : navigate(p.pagina || '/configuracion/eventos')}>
                 <span className="text-base">{p.tipo === 'tarea' ? '✅' : '💬'}</span>

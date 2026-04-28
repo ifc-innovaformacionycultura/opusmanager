@@ -31,6 +31,23 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Feb 28, 2026 (madrugada — fix testing E2E iteración 15) — Mini-widget KPIs Dashboard + fix RecordatoriosAdmin
+
+**Mini-widget KPIs Dashboard** (`recordatorios_enviados_hoy` + `errores_recientes`):
+- Backend `routes_dashboard.py`: `/api/gestor/dashboard/resumen.kpis` ahora incluye 2 nuevos KPIs.
+- Frontend `ActividadPendiente.js`: nuevos tiles teal y rose. El KPI con `alertWhenPositive` muestra **badge rojo `!`** + `ring-rose-400 animate-pulse` cuando errores > 0.
+
+**Fixes detectados por testing_agent_v3_fork iter15:**
+- ✅ `RecordatoriosAdmin.js`: `Promise.allSettled` reemplaza `Promise.all` para que un fallo no bloquee la carga de las demás secciones. `setLoading(false)` siempre se ejecuta. Quitada `api` de las deps de `useCallback` (no triggers re-render por cambio de ref).
+- ✅ `ActividadPendiente.js`: clave compuesta `${tipo}-${id}` en `pendientes_equipo.map()` para evitar warning "two children with the same key" cuando coinciden IDs entre tareas y comentarios.
+
+**Resultados regresión iter15:**
+- Backend: 20/20 PASS (CRM, invitaciones, push, notif preferencias, recordatorios, dashboard, permisos).
+- Frontend: 100% tras fix (Dashboard KPIs, MiPerfil notif toggles + push test, /activar inválido, /admin/recordatorios completo).
+
+### Feb 28, 2026 (madrugada — final) — Mini-widget KPIs Dashboard
+*(ver entrada anterior)*
+
 ### Feb 28, 2026 (madrugada — final) — Mini-widget KPIs Dashboard
 
 - Backend `routes_dashboard.py`: KPIs ampliados con `recordatorios_enviados_hoy` (count de `recordatorios_enviados` para fecha actual) y `errores_recientes` (longitud del buffer en memoria de `routes_recordatorios.get_recent_errors()`).
