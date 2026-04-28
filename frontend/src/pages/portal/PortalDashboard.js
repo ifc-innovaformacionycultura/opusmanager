@@ -10,11 +10,12 @@ import MiHistorial from './MiHistorial';
 import MiDisponibilidadPanel from './MiDisponibilidadPanel';
 import LogisticaMusicoPanel from './LogisticaMusicoPanel';
 import FeedbackButton from '../../components/FeedbackButton';
+import PushPermissionPrompt from '../../components/PushPermissionPrompt';
 import { computeProfileCompleteness } from '../../lib/profileCompleteness';
 
 const PortalDashboard = () => {
   const navigate = useNavigate();
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, session } = useAuth();
 
   // Estado local para controlar si se requiere cambio de password
   const [requiereCambio, setRequiereCambio] = useState(profile?.requiere_cambio_password === true);
@@ -569,6 +570,7 @@ const PortalDashboard = () => {
       {/* Feedback flotante para músicos — con padding inferior en móvil
           para no solaparse con la bottom-nav. */}
       <FeedbackButton mode="portal" />
+      <PushPermissionPrompt clientOrToken={session?.access_token} />
 
       {/* Navegación inferior fija — solo móvil (<768px).
           Sustituye a los tabs superiores ocultos en pantallas pequeñas. */}

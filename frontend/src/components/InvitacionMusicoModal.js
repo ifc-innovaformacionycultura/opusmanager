@@ -1,8 +1,11 @@
 // Modal: Enviar invitación al músico (Bloque 2).
-// 3 opciones: enviar email (Resend), copiar enlace, mostrar QR.
+// 4 opciones: enviar email (Resend), copiar enlace, mostrar QR, WhatsApp.
 import React, { useState } from 'react';
 
 const QR_API = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=';
+
+// Normaliza un teléfono a formato sólo dígitos para wa.me (acepta +34, 600 11 22 33, etc.)
+const normalizarTelefono = (tel) => (tel || '').replace(/[^\d]/g, '');
 
 export default function InvitacionMusicoModal({ isOpen, onClose, musico, api, onInvited }) {
   const [loading, setLoading] = useState(false);
@@ -10,6 +13,7 @@ export default function InvitacionMusicoModal({ isOpen, onClose, musico, api, on
   const [result, setResult] = useState(null);
   const [emailSent, setEmailSent] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [waPhone, setWaPhone] = useState('');
 
   if (!isOpen || !musico) return null;
 
@@ -37,8 +41,20 @@ export default function InvitacionMusicoModal({ isOpen, onClose, musico, api, on
   };
 
   const handleClose = () => {
-    setResult(null); setError(null); setEmailSent(false); setCopied(false);
+    setResult(null); setError(null); setEmailSent(false); setCopied(false); setWaPhone('');
     onClose();
+  };
+
+  // WhatsApp: usa el teléfono guardado del músico o el introducido manualmente.
+  const phoneFromMusico = normalizarTelefono(musico.telefono);
+  const phoneFromInput = normalizarTelefono(waPhone);
+  const waPhoneFinal = phoneFromMusico || phoneFromInput;
+
+  const buildWhatsAppHref = () => {
+    if (!waPhoneFinal || !url) return null;
+    const nombre = musico.nombre || 'músico';
+    const text = `Hola ${nombre}, te invitamos al portal de músicos de IFC. Para activar tu cuenta y configurar tu contraseña, abre este enlace: ${url}`;
+    return `https://wa.me/${waPhoneFinal}?text=${encodeURIComponent(text)}`;
   };
 
   return (
@@ -102,6 +118,44 @@ export default function InvitacionMusicoModal({ isOpen, onClose, musico, api, on
                 <img src={QR_API + encodeURIComponent(url)} alt="QR de activación" className="w-44 h-44" data-testid="invitacion-qr" />
               </div>
               <p className="text-[11px] text-slate-500 mt-1 text-center">Escanea el código para abrir la página de activación.</p>
+            </div>
+
+            {/* WhatsApp */}
+            <div className="border-t border-slate-100 pt-3">
+              <p className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">Enviar por WhatsApp</p>
+              {phoneFromMusico ? (
+                <p className="text-xs text-slate-600 mb-2">
+                  Teléfono del músico: <strong>{musico.telefono}</strong>
+                </p>
+              ) : (
+                <div className="mb-2">
+                  <p className="text-xs text-amber-700 mb-1">El músico no tiene teléfono registrado. Introdúcelo manualmente:</p>
+                  <input
+                    type="tel"
+                    value={waPhone}
+                    onChange={(e) => setWaPhone(e.target.value)}
+                    placeholder="+34 600 11 22 33"
+                    data-testid="invitacion-wa-phone"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Incluye el prefijo internacional. Solo se usará para abrir WhatsApp.</p>
+                </div>
+              )}
+              <a
+                href={buildWhatsAppHref() || undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-disabled={!buildWhatsAppHref()}
+                onClick={(e) => { if (!buildWhatsAppHref()) e.preventDefault(); }}
+                data-testid="btn-whatsapp"
+                className={`block w-full text-center px-3 py-2 rounded-md text-sm font-medium ${
+                  buildWhatsAppHref()
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                📱 Enviar por WhatsApp
+              </a>
             </div>
 
             <div className="flex justify-end pt-2">

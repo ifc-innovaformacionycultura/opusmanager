@@ -29,6 +29,7 @@ from routes_verificaciones import router as verificaciones_router
 from routes_dashboard import router as dashboard_router
 from routes_crm_contactos import router as crm_contactos_router
 from routes_invitaciones import router_gestor as invitaciones_gestor_router, router_portal as invitaciones_portal_router
+from routes_push import router as push_router
 
 # ==================== App Configuration ====================
 
@@ -82,6 +83,7 @@ app.include_router(dashboard_router)  # /api/gestor/dashboard/resumen
 app.include_router(crm_contactos_router)  # /api/gestor/contactos/*
 app.include_router(invitaciones_gestor_router)  # /api/gestor/musicos/{id}/invitar
 app.include_router(invitaciones_portal_router)  # /api/portal/activar/*
+app.include_router(push_router)  # /api/push/*
 
 # ==================== Health Check ====================
 

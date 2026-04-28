@@ -118,6 +118,18 @@ def _crear_incidencia_y_notificar(payload: dict, current_user: dict) -> dict:
                 "mensaje": f"{nombre_full}: {(payload.get('descripcion') or '')[:90]}",
                 "link": f"/admin/incidencias?id={incidencia.get('id')}",
             }).execute()
+            # Push (Bloque PWA)
+            try:
+                from routes_push import notify_push
+                notify_push(
+                    admin['id'],
+                    f"🚨 Nueva {payload.get('tipo','incidencia')}",
+                    f"{nombre_full}: {(payload.get('descripcion') or '')[:90]}",
+                    f"/admin/incidencias?id={incidencia.get('id')}",
+                    tipo='incidencia',
+                )
+            except Exception:
+                pass
     except Exception:
         pass  # Si falla la notificación, no rompemos el flujo
 

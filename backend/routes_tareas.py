@@ -68,6 +68,18 @@ async def create_tarea(data: TareaCreate, current_user: dict = Depends(get_curre
                     "entidad_id": tarea['id'],
                     "leida": False,
                 }).execute()
+                # Push (Bloque PWA)
+                try:
+                    from routes_push import notify_push
+                    notify_push(
+                        tarea['responsable_id'],
+                        f"📋 Nueva tarea: {tarea.get('titulo')}",
+                        f"Deadline: {tarea.get('fecha_limite') or 'sin fecha'}",
+                        '/admin/tareas',
+                        tipo='tarea',
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
         return {"tarea": tarea}

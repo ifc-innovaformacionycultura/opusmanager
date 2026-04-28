@@ -554,6 +554,14 @@ async def seguimiento_publicar(
         despublicados = 0
         creados = 0
         now = datetime.now().isoformat()
+        # Push (Bloque PWA): obtener nombre del evento sólo una vez
+        evento_nombre = None
+        if data.publicar:
+            try:
+                ev_res = supabase.table('eventos').select('nombre').eq('id', data.evento_id).limit(1).execute().data or []
+                evento_nombre = ev_res[0].get('nombre') if ev_res else None
+            except Exception:
+                pass
 
         for uid in data.usuario_ids:
             existing = existing_by_user.get(uid)
@@ -574,6 +582,18 @@ async def seguimiento_publicar(
                         "fecha_publicacion": now,
                     }).execute()
                     creados += 1
+                # Push al músico
+                try:
+                    from routes_push import notify_push
+                    notify_push(
+                        uid,
+                        f"🎼 Nueva convocatoria: {evento_nombre or 'Nuevo evento'}",
+                        "Confirma tu disponibilidad en el portal.",
+                        '/portal',
+                        tipo='convocatoria',
+                    )
+                except Exception:
+                    pass
             else:
                 if existing:
                     supabase.table('asignaciones').update({
@@ -2572,6 +2592,24 @@ async def update_reclamacion(
         if data.get('estado') in ('resuelta', 'rechazada'):
             data['fecha_resolucion'] = datetime.utcnow().isoformat()
         res = supabase.table('reclamaciones').update(data).eq('id', reclamacion_id).execute()
+        recl_actualizada = res.data[0] if res.data else None
+
+        # Push (Bloque PWA): notificar al músico si hay respuesta nueva o cambio de estado
+        try:
+            if recl_actualizada and (data.get('respuesta_gestor') or data.get('estado')):
+                from routes_push import notify_push
+                musico_id = recl_actualizada.get('usuario_id')
+                if musico_id:
+                    estado = data.get('estado') or recl_actualizada.get('estado')
+                    notify_push(
+                        musico_id,
+                        f"📬 Respuesta a tu reclamación ({estado or 'actualizada'})",
+                        (data.get('respuesta_gestor') or '')[:140] or 'Tu reclamación ha sido actualizada.',
+                        '/portal',
+                        tipo='reclamacion',
+                    )
+        except Exception:
+            pass
         
         # Registro de actividad
         try:
@@ -2586,7 +2624,7 @@ async def update_reclamacion(
         except Exception:
             pass
         
-        return {"message": "Reclamación actualizada", "reclamacion": res.data[0] if res.data else None}
+        return {"message": "Reclamación actualizada", "reclamacion": recl_actualizada}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 

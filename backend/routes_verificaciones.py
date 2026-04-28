@@ -132,7 +132,16 @@ async def solicitar_verificacion(evento_id: str, seccion: str,
 </td></tr></table></td></tr></table></body></html>"""
     _resend.api_key = api_key
     enviados = []
-    for to in emails:
+    # Push (Bloque PWA): notificar también a cada admin/director general
+    try:
+        from routes_push import notify_push
+    except Exception:
+        notify_push = None
+
+    for adm in admins:
+        if not adm.get('email'):
+            continue
+        to = adm['email']
         try:
             r = _resend.Emails.send({"from": sender, "to": [to], "subject": asunto, "html": html})
             enviados.append(to)
@@ -145,6 +154,25 @@ async def solicitar_verificacion(evento_id: str, seccion: str,
                 }).execute()
             except Exception:
                 pass
+        except Exception:
+            pass
+        # Push push lookup por id desde admins
+    # Resolver IDs de admins para push
+    if notify_push:
+        try:
+            ids = supabase.table('usuarios').select('id') \
+                .in_('rol', ['admin', 'director_general']).execute().data or []
+            for row in ids:
+                try:
+                    notify_push(
+                        row['id'],
+                        f"🛡️ Verificación solicitada: {label_seccion}",
+                        f"{solicitante} pide revisar «{ev.get('nombre','evento')}»",
+                        f"/configuracion/eventos?ev={evento_id}",
+                        tipo='verificacion',
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
     return {'ok': True, 'enviados': enviados, 'total_admins': len(emails)}

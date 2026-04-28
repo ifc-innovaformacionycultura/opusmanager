@@ -1,6 +1,7 @@
 // Simple Auth Context for Gestores (Backend JWT)
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { ensurePushSubscription, unsubscribePush } from '../lib/push';
 
 const AuthContext = createContext(null);
 
@@ -44,6 +45,8 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await api.get('/api/auth/me');
       setUser(response.data);
+      // Re-suscribir push silenciosamente (no-op si no hay permiso)
+      ensurePushSubscription(api).catch(() => {});
     } catch (error) {
       console.error('Auth check failed:', error);
       localStorage.removeItem('token');
@@ -60,7 +63,10 @@ export const AuthProvider = ({ children }) => {
       
       localStorage.setItem('token', access_token);
       setUser(userData);
-      
+
+      // Tras login: si el usuario ya concedió permiso, suscribir su navegador a push.
+      ensurePushSubscription(api).catch(() => {});
+
       return { success: true };
     } catch (error) {
       console.error('Login failed:', error);
@@ -72,6 +78,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
+    // Limpiar suscripción push primero
+    try { await unsubscribePush(api); } catch {}
     localStorage.removeItem('token');
     setUser(null);
   };

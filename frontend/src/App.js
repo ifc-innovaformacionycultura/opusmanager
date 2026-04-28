@@ -420,6 +420,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
 const Layout = ({ children }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const location = useLocation();
+  const { api } = useGestorAuth();
 
   // Detectar página y sección actual basándose en la ruta
   const getCurrentPageInfo = () => {
@@ -487,6 +488,7 @@ const Layout = ({ children }) => {
         {/* Botón flotante de comentarios al equipo (separado, encima del de feedback) */}
         <ComentariosEquipoButton />
         <HilosPendientesAuto />
+        <PushPermissionPrompt clientOrToken={api} />
       </main>
     </div>
   );
@@ -772,6 +774,7 @@ const HilosPendientesAuto = () => {
 };
 import ComentariosEquipoButton from "./components/ComentariosEquipoButton";
 import NotificacionesBell from "./components/NotificacionesBell";
+import PushPermissionPrompt from "./components/PushPermissionPrompt";
 
 function App() {
   return (

@@ -70,6 +70,12 @@ def _notificar_mencionados(
                 .in_('rol', ['gestor', 'archivero']).execute().data or []
             destinatarios = [u['id'] for u in res]
 
+        # Push helper (best-effort)
+        try:
+            from routes_push import notify_push
+        except Exception:
+            notify_push = None
+
         for gid in destinatarios:
             try:
                 supabase.table('notificaciones_gestor').insert({
@@ -83,6 +89,12 @@ def _notificar_mencionados(
                 }).execute()
             except Exception:
                 pass
+            # Push (Bloque PWA)
+            if notify_push:
+                try:
+                    notify_push(gid, titulo, descripcion, pagina or '/', tipo='comentario')
+                except Exception:
+                    pass
     except Exception:
         pass
 

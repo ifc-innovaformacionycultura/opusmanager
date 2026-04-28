@@ -31,6 +31,44 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Feb 28, 2026 (tarde) — WhatsApp + Web Push PWA
+
+**Botón WhatsApp en Modal de Invitación:**
+- Cuarta opción `📱 Enviar por WhatsApp` en `InvitacionMusicoModal.js` (junto a Email / Copiar enlace / QR).
+- Genera `https://wa.me/{telefono}?text={mensaje+url}` con mensaje pre-redactado.
+- Si el músico no tiene `telefono` registrado, muestra input manual (`+34 600 11 22 33`); el botón se deshabilita hasta que el campo esté relleno.
+- Sin dependencias nuevas (anchor `<a target="_blank">`).
+
+**Web Push PWA (VAPID):**
+- Tabla `push_suscripciones` (usuario_id, endpoint, p256dh, auth, user_agent, UNIQUE(usuario_id, endpoint)).
+- Backend: dependencias `pywebpush==2.3.0`, `py-vapid==1.9.4`, `http-ece==1.2.1`. VAPID keys generadas y guardadas en `backend/.env`:
+  - `VAPID_PUBLIC_KEY`
+  - `VAPID_PRIVATE_KEY`
+  - `VAPID_CONTACT_EMAIL`
+- **⚠️ Variables a añadir también en Railway** (mismos nombres exactos arriba).
+- Nuevo router `routes_push.py` con endpoints:
+  - `GET /api/push/vapid-public` (público, devuelve clave pública).
+  - `POST /api/push/suscribir` (autenticado, idempotente con UPSERT por endpoint).
+  - `POST /api/push/desuscribir` (autenticado).
+  - `POST /api/push/test` (autenticado, push de prueba al propio usuario).
+- Helper público `notify_push(usuario_id, titulo, body, url, tipo)` que envía a TODAS las suscripciones del usuario y purga automáticamente las 404/410 caducadas.
+- Service Worker `sw.js v2` con handlers `push` (muestra notificación con título, body, icono, badge y `data.url`) y `notificationclick` (foco a pestaña existente o abre nueva).
+- Frontend lib `/app/frontend/src/lib/push.js`:
+  - `isPushSupported()`, `ensurePushSubscription()`, `requestPushPermission()`, `unsubscribePush()`.
+  - Acepta tanto axios-instance como Bearer token string (compatibilidad con AuthContext gestor + SupabaseAuthContext músico).
+- Componente `/app/frontend/src/components/PushPermissionPrompt.js`: banner discreto bottom-right con CTA "Activar / Más tarde / ×" (snooze 7 días en localStorage). Mostrado en Layout (gestor) y PortalDashboard (músico).
+- Auto-suscribir tras login si permiso ya `granted` (no-op si no). Auto-desuscribir en logout (gestor + músico).
+- **Disparadores conectados:**
+  - 🎼 **Músico — nueva convocatoria publicada**: `routes_gestor.py /seguimiento/publicar` cuando `publicar=True`.
+  - 📬 **Músico — respuesta a su reclamación**: `routes_gestor.py PUT /reclamaciones/{id}` cuando hay `respuesta_gestor` o cambio de estado.
+  - 💬 **Gestores — comentario donde están mencionados**: `routes_comentarios_equipo._notificar_mencionados`.
+  - 📋 **Gestor — tarea asignada o reasignada**: `routes_tareas.py POST /tareas` y `PUT /tareas/{id}`.
+  - 🛡️ **Admin/Director — solicitud de verificación**: `routes_verificaciones.py POST /eventos/{ev}/verificaciones/{seccion}/solicitar`.
+  - 🚨 **Admin — nueva incidencia/feedback**: `routes_incidencias._crear_incidencia_y_notificar`.
+
+### Feb 28, 2026 (mañana) — Bloques 1+2 nuevos: CRM de contactos + Sistema de invitación
+*(ver entrada anterior)*
+
 ### Feb 28, 2026 — Bloques 1+2 nuevos: CRM de contactos + Sistema de invitación
 
 **Bloque 1 — CRM de contactos por (músico × evento) en Seguimiento de Plantillas:**

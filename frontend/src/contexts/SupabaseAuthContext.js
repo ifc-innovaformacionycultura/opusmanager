@@ -1,6 +1,7 @@
 // Supabase Auth Context - Reemplaza el AuthContext legacy
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { ensurePushSubscription, unsubscribePush } from '../lib/push';
 
 const SupabaseAuthContext = createContext(null);
 
@@ -266,10 +267,13 @@ export const SupabaseAuthProvider = ({ children }) => {
 
       if (authData?.session) {
         console.log('✅ Login exitoso para:', email);
-        
+
         // Cargar perfil de forma bloqueante para garantizar que isAuthenticated sea true
         await loadUserProfile(authData.user.id);
-        
+
+        // Push: suscribir si ya hay permiso (no-op silencioso si no)
+        try { ensurePushSubscription(authData.session.access_token); } catch {}
+
         return { success: true, user: authData.user };
       }
 
@@ -294,6 +298,12 @@ export const SupabaseAuthProvider = ({ children }) => {
 
   const signOut = async () => {
     try {
+      // Limpiar suscripción push antes de cerrar
+      try {
+        const tok = session?.access_token;
+        if (tok) await unsubscribePush(tok);
+      } catch {}
+
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
 
