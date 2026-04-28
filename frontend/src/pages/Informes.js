@@ -1,959 +1,864 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useAuth as useGestorAuth } from "../contexts/AuthContext";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+// /informes — Módulo de Informes (8 tipos PDF A-H).
+// Layout: Panel izquierdo (1/3) configuración + Panel derecho (2/3) vista previa.
+// Backend: POST /api/gestor/informes/generar (PDF) + GET /api/gestor/informes/preview/{tipo}/{evento_id}.
+import React, { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+// ============================================================
+// CATÁLOGO DE TIPOS DE INFORME
+// ============================================================
+const TIPOS = [
+  { k: 'A', l: 'Plantilla definitiva + plano + montaje', icon: '🎻', desc: 'Lista de músicos confirmados por sección, plano del escenario y montaje técnico.' },
+  { k: 'B', l: 'Económico por evento', icon: '💰', desc: 'Resumen económico: cachés previstos y reales por músico.' },
+  { k: 'C', l: 'Estadístico de asistencia', icon: '📊', desc: 'Convocados / confirmados / % asistencia por evento.' },
+  { k: 'D', l: 'Configuración de eventos', icon: '⚙️', desc: 'Datos generales, fechas, ensayos y funciones.' },
+  { k: 'E', l: 'Hoja servicio · Transporte material', icon: '🚚', desc: 'Datos del transportista, paradas y material a transportar.' },
+  { k: 'F', l: 'Hoja servicio · Transporte músicos', icon: '🚌', desc: 'Logística por punto de recogida con confirmaciones.' },
+  { k: 'G', l: 'Carta de convocatoria por músico', icon: '✉️', desc: 'Carta personalizada por cada músico confirmado.' },
+  { k: 'H', l: 'Informe completo (A+B+C+D)', icon: '📚', desc: 'Combina los 4 informes principales en un único PDF.' },
+];
 
-// Instrument sections for orchestra layout
-const ORCHESTRA_SECTIONS = {
-  primeros_violines: { name: 'Primeros Violines', position: { x: 15, y: 75 }, color: '#ef4444' },
-  segundos_violines: { name: 'Segundos Violines', position: { x: 25, y: 55 }, color: '#f97316' },
-  violas: { name: 'Violas', position: { x: 50, y: 70 }, color: '#eab308' },
-  violonchelos: { name: 'Violonchelos', position: { x: 70, y: 75 }, color: '#22c55e' },
-  contrabajos: { name: 'Contrabajos', position: { x: 88, y: 65 }, color: '#14b8a6' },
-  flautas: { name: 'Flautas', position: { x: 35, y: 40 }, color: '#06b6d4' },
-  oboes: { name: 'Oboes', position: { x: 55, y: 45 }, color: '#0ea5e9' },
-  clarinetes: { name: 'Clarinetes', position: { x: 30, y: 30 }, color: '#3b82f6' },
-  fagotes: { name: 'Fagotes', position: { x: 50, y: 35 }, color: '#6366f1' },
-  trompas: { name: 'Trompas', position: { x: 20, y: 20 }, color: '#8b5cf6' },
-  trompetas: { name: 'Trompetas', position: { x: 45, y: 15 }, color: '#a855f7' },
-  trombones: { name: 'Trombones', position: { x: 65, y: 20 }, color: '#d946ef' },
-  tubas: { name: 'Tubas', position: { x: 80, y: 25 }, color: '#ec4899' },
-  percusion: { name: 'Percusión', position: { x: 50, y: 5 }, color: '#f43f5e' },
-  arpas: { name: 'Arpas', position: { x: 5, y: 50 }, color: '#fb7185' },
-  teclados: { name: 'Teclados', position: { x: 8, y: 35 }, color: '#fda4af' }
-};
+// ============================================================
+// SECCIONES INSTRUMENTALES (para agrupar y plano SVG)
+// ============================================================
+const SECCIONES = [
+  { k: '1. Violines I',     col: '#dc2626', plano: 'cuerda' },
+  { k: '2. Violines II',    col: '#ea580c', plano: 'cuerda' },
+  { k: '3. Violas',         col: '#ca8a04', plano: 'cuerda' },
+  { k: '4. Violonchelos',   col: '#16a34a', plano: 'cuerda' },
+  { k: '5. Contrabajos',    col: '#0d9488', plano: 'cuerda' },
+  { k: '6. Viento Madera',  col: '#0284c7', plano: 'viento' },
+  { k: '7. Viento Metal',   col: '#7c3aed', plano: 'viento' },
+  { k: '8. Percusión',      col: '#be185d', plano: 'percusion' },
+  { k: '9. Teclados',       col: '#9333ea', plano: 'teclados' },
+  { k: '10. Coro',          col: '#0891b2', plano: 'coro' },
+];
 
-// Report Header Component
-const ReportHeader = ({ title, eventName, date }) => (
-  <div className="border-b-2 border-slate-800 pb-4 mb-6">
-    <div className="flex items-center justify-between">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">PANEL DE GESTIÓN DE CONVOCATORIAS</h1>
-        <p className="text-sm text-slate-600 mt-1">Sistema de gestión musical profesional</p>
-      </div>
-      <div className="text-right">
-        <p className="text-sm text-slate-500">Fecha de generación:</p>
-        <p className="font-mono text-sm">{date || new Date().toLocaleString('es-ES')}</p>
-      </div>
-    </div>
-    <div className="mt-4 bg-slate-100 p-3 rounded">
-      <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
-      {eventName && <p className="text-sm text-slate-600">Evento: {eventName}</p>}
-    </div>
-  </div>
-);
+const colorSeccion = (sec) => SECCIONES.find(s => s.k === sec)?.col || '#64748b';
 
-// Report Footer Component
-const ReportFooter = () => (
-  <div className="mt-8 pt-6 border-t-2 border-slate-300">
-    <div className="grid grid-cols-3 gap-8">
-      <div className="text-center">
-        <div className="border-t border-slate-400 pt-2 mt-8">
-          <p className="text-xs text-slate-500">Dirección Artística</p>
-        </div>
-      </div>
-      <div className="text-center">
-        <div className="border-t border-slate-400 pt-2 mt-8">
-          <p className="text-xs text-slate-500">Producción</p>
-        </div>
-      </div>
-      <div className="text-center">
-        <div className="border-t border-slate-400 pt-2 mt-8">
-          <p className="text-xs text-slate-500">Gerencia</p>
-        </div>
-      </div>
-    </div>
-    <p className="text-xs text-slate-400 text-center mt-6">
-      Documento generado automáticamente. Válido sin firma para uso interno.
-    </p>
-  </div>
-);
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
+export default function Informes() {
+  const { api } = useAuth();
+  const [tipoActivo, setTipoActivo] = useState('A');
+  const [eventos, setEventos] = useState([]);
+  const [eventosSel, setEventosSel] = useState([]);
+  const [cargandoEventos, setCargandoEventos] = useState(true);
+  const [generando, setGenerando] = useState(false);
+  const [error, setError] = useState(null);
+  const [planoMode, setPlanoMode] = useState('herradura'); // herradura | filas
+  // Datos para vista previa
+  const [previewData, setPreviewData] = useState(null);
+  const [cargandoPreview, setCargandoPreview] = useState(false);
 
-// Orchestra Stage Layout Component
-const OrchestraLayout = ({ contacts, contactsData }) => {
-  // Group contacts by instrument section
-  const groupedContacts = useMemo(() => {
-    const groups = {};
-    contacts.forEach(contact => {
-      const instrument = contact.especialidad?.toLowerCase() || '';
-      let section = 'otros';
-      
-      if (instrument.includes('violín') || instrument.includes('violin')) {
-        const data = contactsData[contact.id] || {};
-        section = data.atril_numero <= 8 ? 'primeros_violines' : 'segundos_violines';
-      } else if (instrument.includes('viola')) section = 'violas';
-      else if (instrument.includes('violonchelo') || instrument.includes('cello')) section = 'violonchelos';
-      else if (instrument.includes('contrabajo')) section = 'contrabajos';
-      else if (instrument.includes('flauta')) section = 'flautas';
-      else if (instrument.includes('oboe')) section = 'oboes';
-      else if (instrument.includes('clarinete')) section = 'clarinetes';
-      else if (instrument.includes('fagot')) section = 'fagotes';
-      else if (instrument.includes('trompa')) section = 'trompas';
-      else if (instrument.includes('trompeta')) section = 'trompetas';
-      else if (instrument.includes('trombón') || instrument.includes('trombon')) section = 'trombones';
-      else if (instrument.includes('tuba')) section = 'tubas';
-      else if (instrument.includes('percusión') || instrument.includes('timbal')) section = 'percusion';
-      else if (instrument.includes('arpa')) section = 'arpas';
-      else if (instrument.includes('piano') || instrument.includes('órgano') || instrument.includes('clave')) section = 'teclados';
-      
-      if (!groups[section]) groups[section] = [];
-      groups[section].push(contact);
-    });
-    return groups;
-  }, [contacts, contactsData]);
+  // 1) Cargar lista de eventos
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get('/api/gestor/eventos');
+        const evs = r.data?.eventos || r.data || [];
+        const evsOrden = [...evs].sort((a, b) => (a.fecha_inicio || '').localeCompare(b.fecha_inicio || ''));
+        setEventos(evsOrden);
+        if (evsOrden.length && !eventosSel.length) setEventosSel([evsOrden[0].id]);
+      } catch (e) {
+        setError('No se pudieron cargar los eventos.');
+      } finally {
+        setCargandoEventos(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api]);
+
+  // 2) Cargar preview cuando cambian tipo o evento principal
+  const evPrincipal = eventosSel[0];
+  useEffect(() => {
+    if (!evPrincipal) { setPreviewData(null); return; }
+    let cancel = false;
+    (async () => {
+      setCargandoPreview(true);
+      try {
+        // El backend solo enriquece A/E/F; para B/C/D/G/H usamos el preview de A (musicos+montaje)
+        // y enriquecemos con endpoints existentes en frontend.
+        const tipoBackend = ['A', 'E', 'F'].includes(tipoActivo) ? tipoActivo : 'A';
+        const r = await api.get(`/api/gestor/informes/preview/${tipoBackend}/${evPrincipal}`);
+        if (!cancel) setPreviewData(r.data || {});
+      } catch (e) {
+        if (!cancel) setPreviewData({ error: 'No se pudo cargar la vista previa.' });
+      } finally {
+        if (!cancel) setCargandoPreview(false);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [api, tipoActivo, evPrincipal]);
+
+  const toggleEvento = (id) => {
+    setEventosSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const generarPDF = async () => {
+    if (!eventosSel.length) { setError('Selecciona al menos un evento.'); return; }
+    setGenerando(true); setError(null);
+    try {
+      const res = await api.post('/api/gestor/informes/generar',
+        { tipo: tipoActivo, evento_ids: eventosSel, opciones: { plano_mode: planoMode } },
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `informe_${tipoActivo}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError('Error al generar el PDF: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setGenerando(false);
+    }
+  };
 
   return (
-    <div className="bg-gradient-to-b from-amber-50 to-orange-50 rounded-lg p-6 relative" style={{ minHeight: '500px' }}>
-      {/* Stage Arc */}
-      <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-32 h-16 bg-slate-200 rounded-t-full flex items-center justify-center">
-        <span className="text-xs font-semibold text-slate-600">DIRECTOR</span>
+    <div className="h-screen flex flex-col bg-slate-50" data-testid="page-informes">
+      {/* Cabecera */}
+      <div className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+        <div>
+          <h1 className="font-cabinet text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <span className="text-3xl">📑</span> Informes
+          </h1>
+          <p className="text-sm text-slate-500">Genera 8 tipos de informes PDF profesionales en colores corporativos.</p>
+        </div>
+        <button onClick={generarPDF} disabled={generando || !eventosSel.length}
+                data-testid="btn-generar-informe"
+                className="bg-[#1A3A5C] hover:bg-[#163050] disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition">
+          {generando ? (
+            <><span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />Generando…</>
+          ) : (
+            <><span>⬇️</span> Exportar PDF · Tipo {tipoActivo}</>
+          )}
+        </button>
       </div>
-      
-      {/* Orchestra Sections */}
-      {Object.entries(ORCHESTRA_SECTIONS).map(([key, section]) => {
-        const sectionContacts = groupedContacts[key] || [];
-        if (sectionContacts.length === 0) return null;
-        
-        return (
-          <div
-            key={key}
-            className="absolute transform -translate-x-1/2 -translate-y-1/2"
-            style={{ left: `${section.position.x}%`, top: `${section.position.y}%` }}
-          >
-            <div 
-              className="rounded-lg p-2 shadow-md border-2 min-w-[100px]"
-              style={{ backgroundColor: section.color + '20', borderColor: section.color }}
-            >
-              <p className="text-xs font-bold text-center mb-1" style={{ color: section.color }}>
-                {section.name}
-              </p>
-              <div className="space-y-0.5">
-                {sectionContacts.slice(0, 6).map((contact, idx) => {
-                  const data = contactsData[contact.id] || {};
-                  return (
-                    <div key={contact.id} className="text-[10px] bg-white/80 rounded px-1 py-0.5 flex justify-between">
-                      <span className="truncate max-w-[60px]">{contact.apellidos}</span>
-                      {data.atril_numero && (
-                        <span className="font-mono text-slate-500">{data.atril_numero}{data.atril_letra}</span>
-                      )}
+
+      {/* Layout 2 paneles */}
+      <div className="flex-1 flex min-h-0">
+        {/* Panel izquierdo (1/3) */}
+        <aside className="w-[33%] min-w-[320px] max-w-[480px] border-r border-slate-200 bg-white overflow-y-auto" data-testid="panel-config">
+          <div className="p-4 space-y-5">
+            {/* Tipo de informe */}
+            <section>
+              <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">1 · Tipo de informe</h2>
+              <div className="space-y-1.5">
+                {TIPOS.map(t => (
+                  <button key={t.k}
+                          onClick={() => setTipoActivo(t.k)}
+                          data-testid={`tipo-${t.k}`}
+                          className={`w-full text-left px-3 py-2 rounded-lg border transition ${tipoActivo === t.k ? 'bg-[#1A3A5C]/5 border-[#1A3A5C] ring-1 ring-[#1A3A5C]/30' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded font-bold text-sm ${tipoActivo === t.k ? 'bg-[#1A3A5C] text-white' : 'bg-slate-100 text-slate-700'}`}>
+                        {t.k}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-slate-900 flex items-center gap-1.5"><span>{t.icon}</span><span className="truncate">{t.l}</span></div>
+                      </div>
                     </div>
-                  );
-                })}
-                {sectionContacts.length > 6 && (
-                  <p className="text-[9px] text-center text-slate-500">+{sectionContacts.length - 6} más</p>
-                )}
+                    {tipoActivo === t.k && <p className="text-xs text-slate-600 mt-1.5 ml-9">{t.desc}</p>}
+                  </button>
+                ))}
               </div>
-            </div>
+            </section>
+
+            {/* Eventos */}
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">2 · Eventos ({eventosSel.length})</h2>
+                <div className="flex gap-1">
+                  <button onClick={() => setEventosSel(eventos.map(e => e.id))}
+                          data-testid="btn-todos-eventos"
+                          className="text-xs text-[#1A3A5C] hover:underline">Todos</button>
+                  <span className="text-slate-300">·</span>
+                  <button onClick={() => setEventosSel([])}
+                          className="text-xs text-slate-500 hover:underline">Ninguno</button>
+                </div>
+              </div>
+              {cargandoEventos ? (
+                <div className="text-sm text-slate-400 py-6 text-center">Cargando eventos…</div>
+              ) : eventos.length === 0 ? (
+                <div className="text-sm text-slate-400 py-6 text-center">Sin eventos.</div>
+              ) : (
+                <div className="border border-slate-200 rounded-lg max-h-[320px] overflow-y-auto divide-y divide-slate-100" data-testid="lista-eventos">
+                  {eventos.map(ev => {
+                    const sel = eventosSel.includes(ev.id);
+                    const principal = sel && eventosSel[0] === ev.id;
+                    return (
+                      <label key={ev.id}
+                             className={`flex items-start gap-2 px-2.5 py-2 cursor-pointer hover:bg-slate-50 ${sel ? 'bg-[#1A3A5C]/5' : ''}`}>
+                        <input type="checkbox" checked={sel}
+                               onChange={() => toggleEvento(ev.id)}
+                               data-testid={`evento-${ev.id}`}
+                               className="mt-0.5 accent-[#1A3A5C]" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-slate-900 truncate">
+                            {ev.nombre || '(Sin nombre)'}
+                            {principal && <span className="ml-1.5 text-[10px] bg-[#C9920A] text-white px-1 py-0.5 rounded uppercase">vista previa</span>}
+                          </div>
+                          <div className="text-xs text-slate-500 flex gap-2">
+                            <span>{(ev.fecha_inicio || '').slice(0, 10) || '—'}</span>
+                            <span>·</span>
+                            <span className="capitalize">{ev.estado || '—'}</span>
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Opciones específicas por tipo */}
+            {tipoActivo === 'A' && (
+              <section>
+                <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">3 · Opciones plano</h2>
+                <div className="flex gap-1.5">
+                  <button onClick={() => setPlanoMode('herradura')}
+                          data-testid="btn-plano-herradura"
+                          className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${planoMode === 'herradura' ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+                    🎭 Herradura
+                  </button>
+                  <button onClick={() => setPlanoMode('filas')}
+                          data-testid="btn-plano-filas"
+                          className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${planoMode === 'filas' ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+                    🪑 Filas
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mt-1.5">La disposición elegida se reflejará en la vista previa y en el PDF.</p>
+              </section>
+            )}
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2" data-testid="informes-error">
+                {error}
+              </div>
+            )}
           </div>
+        </aside>
+
+        {/* Panel derecho (2/3) — Vista previa */}
+        <main className="flex-1 overflow-y-auto" data-testid="panel-preview">
+          <div className="p-6 max-w-5xl mx-auto">
+            {!evPrincipal ? (
+              <EmptyState />
+            ) : cargandoPreview ? (
+              <LoadingPreview />
+            ) : previewData?.error ? (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">{previewData.error}</div>
+            ) : (
+              <PreviewDoc tipo={tipoActivo} data={previewData} planoMode={planoMode} eventoIds={eventosSel} />
+            )}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// VISTA PREVIA — Documento HTML/CSS estilo PDF (A4)
+// ============================================================
+function PreviewDoc({ tipo, data, planoMode, eventoIds }) {
+  const ev = data?.evento || {};
+  const tInfo = TIPOS.find(t => t.k === tipo);
+  return (
+    <div className="bg-white shadow-lg border border-slate-200 mx-auto" style={{ minHeight: '297mm', maxWidth: '210mm', padding: '20mm 18mm' }} data-testid="preview-doc">
+      {/* Cabecera corporativa */}
+      <header className="border-b-[3px] border-[#C9920A] pb-3 mb-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-slate-500">IFC · Innovación, Formación y Cultura</div>
+            <h2 className="text-xl font-bold text-[#1A3A5C] mt-0.5">{tInfo?.l}</h2>
+          </div>
+          <div className="text-right text-[10px] text-slate-500">
+            <div>Generado: {new Date().toLocaleDateString('es-ES')}</div>
+            <div>Tipo: {tipo} · Eventos: {eventoIds.length}</div>
+          </div>
+        </div>
+      </header>
+
+      {/* Datos generales del evento */}
+      <section className="mb-5">
+        <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Evento</div>
+        <h3 className="text-lg font-bold text-slate-900">{ev.nombre || '—'}</h3>
+        <div className="grid grid-cols-3 gap-3 mt-2 text-xs text-slate-600">
+          <div><span className="font-semibold text-slate-700">Fecha:</span> {(ev.fecha_inicio || '').slice(0, 10) || '—'}</div>
+          <div><span className="font-semibold text-slate-700">Lugar:</span> {ev.lugar || '—'}</div>
+          <div><span className="font-semibold text-slate-700">Estado:</span> <span className="capitalize">{ev.estado || '—'}</span></div>
+        </div>
+      </section>
+
+      {/* Bloques específicos por tipo */}
+      {tipo === 'A' && <BloqueA data={data} planoMode={planoMode} />}
+      {tipo === 'B' && <BloqueB data={data} />}
+      {tipo === 'C' && <BloqueC data={data} eventoIds={eventoIds} />}
+      {tipo === 'D' && <BloqueD data={data} />}
+      {tipo === 'E' && <BloqueE data={data} />}
+      {tipo === 'F' && <BloqueF data={data} />}
+      {tipo === 'G' && <BloqueG data={data} />}
+      {tipo === 'H' && <BloqueH data={data} planoMode={planoMode} />}
+
+      {/* Pie corporativo */}
+      <footer className="mt-8 pt-3 border-t border-slate-200 text-[9px] text-slate-400 flex justify-between">
+        <span>OPUS MANAGER · {tInfo?.l}</span>
+        <span>Página 1 / N</span>
+      </footer>
+    </div>
+  );
+}
+
+// ============================================================
+// BLOQUE A — Plantilla + plano + montaje
+// ============================================================
+function BloqueA({ data, planoMode }) {
+  const musicos = data?.musicos || [];
+  const montaje = data?.montaje || [];
+  const porSeccion = useMemo(() => {
+    const map = {};
+    musicos.forEach(m => {
+      const k = m._seccion || 'Z. Otros';
+      if (!map[k]) map[k] = [];
+      map[k].push(m);
+    });
+    return map;
+  }, [musicos]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const seccionesOrdenadas = Object.keys(porSeccion).sort((a, b) => {
+    const oa = SECCIONES.findIndex(s => s.k === a);
+    const ob = SECCIONES.findIndex(s => s.k === b);
+    return (oa < 0 ? 99 : oa) - (ob < 0 ? 99 : ob);
+  });
+
+  return (
+    <>
+      <SectionTitle num="1" titulo={`Lista de músicos confirmados (${musicos.length})`} />
+      {musicos.length === 0 ? (
+        <EmptyMsg>Sin músicos confirmados.</EmptyMsg>
+      ) : (
+        <div className="space-y-3">
+          {seccionesOrdenadas.map(sec => (
+            <div key={sec}>
+              <div className="text-xs font-bold mb-0.5 px-2 py-0.5 rounded inline-block text-white"
+                   style={{ background: colorSeccion(sec) }}>{sec} ({porSeccion[sec].length})</div>
+              <table className="w-full text-[10px] border border-slate-300 mt-1">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700">
+                    <th className="text-left px-1.5 py-1 border-b border-slate-300 w-7">#</th>
+                    <th className="text-left px-1.5 py-1 border-b border-slate-300 w-10">Atril</th>
+                    <th className="text-left px-1.5 py-1 border-b border-slate-300">Apellidos, Nombre</th>
+                    <th className="text-left px-1.5 py-1 border-b border-slate-300">Instrumento</th>
+                    <th className="text-left px-1.5 py-1 border-b border-slate-300 w-24">Nivel</th>
+                    <th className="text-left px-1.5 py-1 border-b border-slate-300 w-20">Tel.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {porSeccion[sec].map((m, i) => (
+                    <tr key={m.id} className={i % 2 ? 'bg-slate-50' : 'bg-white'}>
+                      <td className="px-1.5 py-1 border-b border-slate-200">{i + 1}</td>
+                      <td className="px-1.5 py-1 border-b border-slate-200">{m.numero_atril ?? '—'}{m.letra_atril ? '·' + m.letra_atril : ''}</td>
+                      <td className="px-1.5 py-1 border-b border-slate-200 font-medium">{m.apellidos || ''}, {m.nombre || ''}</td>
+                      <td className="px-1.5 py-1 border-b border-slate-200">{m.instrumento || '—'}</td>
+                      <td className="px-1.5 py-1 border-b border-slate-200">{(m.nivel_estudios || '—').slice(0, 14)}</td>
+                      <td className="px-1.5 py-1 border-b border-slate-200">{m.telefono || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Plano */}
+      <div className="mt-6">
+        <SectionTitle num="2" titulo={`Plano del escenario · disposición ${planoMode === 'herradura' ? 'herradura' : 'filas'}`} />
+        <div className="border-2 border-slate-300 rounded-lg p-3 bg-gradient-to-b from-slate-50 to-slate-100">
+          <PlanoOrquesta porSeccion={porSeccion} mode={planoMode} />
+          <LeyendaPlano porSeccion={porSeccion} />
+        </div>
+      </div>
+
+      {/* Montaje */}
+      <div className="mt-6">
+        <SectionTitle num="3" titulo={`Lista de montaje (${montaje.length})`} />
+        {montaje.length === 0 ? (
+          <EmptyMsg>Sin montaje configurado.</EmptyMsg>
+        ) : (
+          <table className="w-full text-[10px] border border-slate-300">
+            <thead>
+              <tr className="bg-[#1A3A5C] text-white">
+                <th className="text-left px-1.5 py-1">Material</th>
+                <th className="text-left px-1.5 py-1 w-20">Grupo</th>
+                <th className="text-left px-1.5 py-1 w-12">Cant.</th>
+                <th className="text-left px-1.5 py-1 w-20">Origen</th>
+                <th className="text-left px-1.5 py-1">Sección</th>
+                <th className="text-left px-1.5 py-1 w-10">✓</th>
+              </tr>
+            </thead>
+            <tbody>
+              {montaje.map((m, i) => (
+                <tr key={m.id || i} className={i % 2 ? 'bg-slate-50' : 'bg-white'}>
+                  <td className="px-1.5 py-1 border-b border-slate-200 font-medium">{m.material?.nombre || m.nombre_material || '—'}</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200 uppercase text-[9px]">{m.material?.grupo || '—'}</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200">{m.cantidad_necesaria || 0}</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200 capitalize">{m.origen || 'propio'}</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200">{m.seccion_escenario || '—'}</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200">{m.confirmado ? '✓' : '·'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ============================================================
+// PLANO SVG — Herradura o Filas
+// ============================================================
+function PlanoOrquesta({ porSeccion, mode }) {
+  const W = 700, H = 360;
+  // Posiciones por sección (proporciones)
+  const slotsHerradura = {
+    '1. Violines I':   { cx: 0.22, cy: 0.62, r: 0.10, sweep: -65, angle: 25 },
+    '2. Violines II':  { cx: 0.36, cy: 0.40, r: 0.13, sweep: -90, angle: 35 },
+    '3. Violas':       { cx: 0.64, cy: 0.40, r: 0.13, sweep:  90, angle: 35 },
+    '4. Violonchelos': { cx: 0.78, cy: 0.62, r: 0.10, sweep:  65, angle: 25 },
+    '5. Contrabajos':  { cx: 0.86, cy: 0.78, r: 0.04, sweep:  90, angle: 0 },
+    '6. Viento Madera':{ cx: 0.42, cy: 0.28, r: 0.07, sweep:  0,  angle: 0 },
+    '7. Viento Metal': { cx: 0.62, cy: 0.20, r: 0.07, sweep:  0,  angle: 0 },
+    '8. Percusión':    { cx: 0.50, cy: 0.10, r: 0.08, sweep:  0,  angle: 0 },
+    '9. Teclados':     { cx: 0.12, cy: 0.30, r: 0.04, sweep:  0,  angle: 0 },
+    '10. Coro':        { cx: 0.50, cy: 0.04, r: 0.20, sweep:  0,  angle: 0 },
+  };
+  const filasOrden = ['8. Percusión', '7. Viento Metal', '6. Viento Madera', '9. Teclados',
+                       '2. Violines II', '3. Violas', '1. Violines I', '4. Violonchelos', '5. Contrabajos', '10. Coro'];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" data-testid={`plano-${mode}`}>
+      {/* Fondo escenario */}
+      <defs>
+        <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fef3c7" />
+          <stop offset="1" stopColor="#fde68a" />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width={W} height={H} fill="url(#floor)" rx="12" />
+      {/* Director */}
+      <g>
+        <circle cx={W * 0.5} cy={H * 0.92} r="14" fill="#1A3A5C" />
+        <text x={W * 0.5} y={H * 0.92 + 4} textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">DIR</text>
+      </g>
+      <text x={W * 0.5} y={H * 0.985} textAnchor="middle" fill="#94a3b8" fontSize="9">PÚBLICO</text>
+
+      {mode === 'herradura' ? (
+        // Disposición en herradura
+        Object.keys(porSeccion).map((sec) => {
+          const slot = slotsHerradura[sec];
+          if (!slot) return null;
+          const cnt = porSeccion[sec].length;
+          return <GrupoArc key={sec} W={W} H={H} slot={slot} count={cnt} sec={sec} />;
+        })
+      ) : (
+        // Disposición en filas
+        <FilasOrquesta W={W} H={H} porSeccion={porSeccion} orden={filasOrden} />
+      )}
+    </svg>
+  );
+}
+
+// Renderizado de un grupo en arco (herradura)
+function GrupoArc({ W, H, slot, count, sec }) {
+  const cx = slot.cx * W, cy = slot.cy * H;
+  const r = slot.r * W;
+  const color = colorSeccion(sec);
+  // Distribuir puntos en arco
+  const pts = [];
+  const n = Math.min(count, 16);
+  const sweep = (slot.sweep * Math.PI) / 180;
+  const span = (slot.angle * Math.PI) / 180;
+  for (let i = 0; i < n; i++) {
+    const a = sweep + (n > 1 ? span * (i / (n - 1) - 0.5) : 0);
+    pts.push({ x: cx + r * Math.cos(a + Math.PI / 2), y: cy + r * Math.sin(a + Math.PI / 2) });
+  }
+  // Si más de 16, hacer 2 filas
+  const extra = [];
+  if (count > 16) {
+    const r2 = r * 0.72;
+    for (let i = 0; i < count - 16 && i < 16; i++) {
+      const a = sweep + (span * (i / (Math.min(count - 16, 16) - 1 || 1) - 0.5));
+      extra.push({ x: cx + r2 * Math.cos(a + Math.PI / 2), y: cy + r2 * Math.sin(a + Math.PI / 2) });
+    }
+  }
+  return (
+    <g>
+      {pts.map((p, i) => <circle key={'p' + i} cx={p.x} cy={p.y} r="6" fill={color} stroke="white" strokeWidth="1.5" />)}
+      {extra.map((p, i) => <circle key={'e' + i} cx={p.x} cy={p.y} r="6" fill={color} stroke="white" strokeWidth="1.5" />)}
+      <text x={cx} y={cy} textAnchor="middle" fill="#1e293b" fontSize="9" fontWeight="bold">{sec.split('. ')[1]}</text>
+      <text x={cx} y={cy + 11} textAnchor="middle" fill="#475569" fontSize="8">({count})</text>
+    </g>
+  );
+}
+
+// Disposición en filas
+function FilasOrquesta({ W, H, porSeccion, orden }) {
+  const filaH = (H * 0.78) / Math.max(1, orden.filter(s => porSeccion[s]).length);
+  const padTop = H * 0.05;
+  const filas = orden.filter(s => porSeccion[s] && porSeccion[s].length);
+  return (
+    <>
+      {filas.map((sec, idx) => {
+        const cnt = porSeccion[sec].length;
+        const y = padTop + idx * filaH + filaH / 2;
+        const color = colorSeccion(sec);
+        const pts = [];
+        const usableW = W * 0.78;
+        const startX = W * 0.13;
+        for (let i = 0; i < cnt; i++) {
+          const x = startX + (cnt > 1 ? usableW * (i / (cnt - 1)) : usableW / 2);
+          pts.push({ x, y });
+        }
+        return (
+          <g key={sec}>
+            <text x={W * 0.10} y={y + 3} textAnchor="end" fill="#1e293b" fontSize="9" fontWeight="bold">{sec.split('. ')[1]}</text>
+            {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="6" fill={color} stroke="white" strokeWidth="1.5" />)}
+            <text x={W * 0.93} y={y + 3} fill="#475569" fontSize="9">{cnt}</text>
+          </g>
         );
       })}
-      
-      {/* Legend */}
-      <div className="absolute bottom-2 right-2 bg-white/90 p-2 rounded text-xs">
-        <p className="font-semibold mb-1">Total: {contacts.length} músicos</p>
-      </div>
+    </>
+  );
+}
+
+function LeyendaPlano({ porSeccion }) {
+  const secs = Object.keys(porSeccion).sort((a, b) => {
+    const oa = SECCIONES.findIndex(s => s.k === a);
+    const ob = SECCIONES.findIndex(s => s.k === b);
+    return (oa < 0 ? 99 : oa) - (ob < 0 ? 99 : ob);
+  });
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[9px] text-slate-700">
+      {secs.map(s => (
+        <div key={s} className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: colorSeccion(s) }} />
+          <span className="font-medium">{s}</span>
+          <span className="text-slate-500">({porSeccion[s].length})</span>
+        </div>
+      ))}
     </div>
   );
-};
+}
 
-// Filters Panel Component
-const FiltersPanel = ({ 
-  events, selectedEvent, onEventChange,
-  sections, selectedSections, onSectionsChange,
-  onGenerateAll, onExport, onEmail
-}) => {
-  const instrumentSections = [
-    'Cuerda', 'Viento Madera', 'Viento Metal', 'Percusión', 'Teclados', 'Coralistas', 'Otros'
-  ];
-
+// ============================================================
+// BLOQUE B — Económico
+// ============================================================
+function BloqueB({ data }) {
+  const musicos = data?.musicos || [];
+  let totalPrev = 0, totalReal = 0;
+  musicos.forEach(m => {
+    totalPrev += parseFloat(m.cache_previsto) || 0;
+    totalReal += parseFloat(m.cache_real) || 0;
+  });
   return (
-    <div className="w-80 bg-white border-l border-slate-200 p-4 overflow-y-auto">
-      <h3 className="font-semibold text-slate-900 mb-4">Filtros y Opciones</h3>
-      
-      {/* Event Filter */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-slate-700 mb-2">Evento</label>
-        <select
-          value={selectedEvent}
-          onChange={(e) => onEventChange(e.target.value)}
-          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-          data-testid="report-event-filter"
-        >
-          <option value="all">Todos los eventos</option>
-          {events.map(event => (
-            <option key={event.id} value={event.id}>{event.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Section Filters */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-slate-700 mb-2">Secciones</label>
-        <div className="space-y-2 max-h-40 overflow-y-auto">
-          {instrumentSections.map(section => (
-            <label key={section} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={selectedSections.includes(section)}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    onSectionsChange([...selectedSections, section]);
-                  } else {
-                    onSectionsChange(selectedSections.filter(s => s !== section));
-                  }
-                }}
-                className="w-4 h-4 rounded border-slate-300"
-              />
-              {section}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Date Range */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-slate-700 mb-2">Rango de fechas</label>
-        <div className="space-y-2">
-          <input type="date" className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
-          <input type="date" className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
-        </div>
-      </div>
-
-      <hr className="my-4" />
-
-      {/* Export Options */}
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium text-slate-700">Exportar</h4>
-        <button
-          onClick={() => onExport('pdf')}
-          className="w-full px-3 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700 flex items-center justify-center gap-2"
-          data-testid="export-pdf-btn"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-          </svg>
-          Exportar PDF
-        </button>
-        <button
-          onClick={() => onExport('excel')}
-          className="w-full px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 flex items-center justify-center gap-2"
-          data-testid="export-excel-btn"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          Exportar Excel
-        </button>
-        <button
-          onClick={() => onExport('xml')}
-          className="w-full px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 flex items-center justify-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
-          </svg>
-          Exportar XML
-        </button>
-      </div>
-
-      <hr className="my-4" />
-
-      {/* Email */}
-      <button
-        onClick={onEmail}
-        className="w-full px-3 py-2 border border-slate-300 text-slate-700 rounded-md text-sm hover:bg-slate-50 flex items-center justify-center gap-2"
-        data-testid="send-email-btn"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-        </svg>
-        Enviar por correo
-      </button>
-
-      <hr className="my-4" />
-
-      {/* Generate All */}
-      <button
-        onClick={onGenerateAll}
-        className="w-full px-3 py-2 bg-slate-900 text-white rounded-md text-sm hover:bg-slate-800 flex items-center justify-center gap-2"
-        data-testid="generate-all-btn"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-        </svg>
-        Generar todos los informes
-      </button>
-    </div>
+    <>
+      <SectionTitle num="1" titulo="Resumen económico por músico" />
+      {musicos.length === 0 ? (
+        <EmptyMsg>Sin músicos confirmados.</EmptyMsg>
+      ) : (
+        <table className="w-full text-[10px] border border-slate-300">
+          <thead>
+            <tr className="bg-[#1A3A5C] text-white">
+              <th className="text-left px-1.5 py-1">Apellidos, Nombre</th>
+              <th className="text-left px-1.5 py-1">Instrumento</th>
+              <th className="text-left px-1.5 py-1 w-20">Nivel</th>
+              <th className="text-right px-1.5 py-1 w-20">Caché Prev.</th>
+              <th className="text-right px-1.5 py-1 w-20">Caché Real</th>
+              <th className="text-right px-1.5 py-1 w-20">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {musicos.map((m, i) => {
+              const cp = parseFloat(m.cache_previsto) || 0;
+              const cr = parseFloat(m.cache_real) || 0;
+              return (
+                <tr key={m.id} className={i % 2 ? 'bg-slate-50' : 'bg-white'}>
+                  <td className="px-1.5 py-1 border-b border-slate-200 font-medium">{m.apellidos}, {m.nombre}</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200">{m.instrumento || '—'}</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200">{(m.nivel_estudios || '—').slice(0, 12)}</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200 text-right">{cp.toFixed(2)}€</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200 text-right">{cr.toFixed(2)}€</td>
+                  <td className="px-1.5 py-1 border-b border-slate-200 text-right font-semibold">{(cr || cp).toFixed(2)}€</td>
+                </tr>
+              );
+            })}
+            <tr className="bg-[#C9920A] text-white font-bold">
+              <td colSpan="3" className="px-1.5 py-1.5">TOTAL ({musicos.length} músicos)</td>
+              <td className="px-1.5 py-1.5 text-right">{totalPrev.toFixed(2)}€</td>
+              <td className="px-1.5 py-1.5 text-right">{totalReal.toFixed(2)}€</td>
+              <td className="px-1.5 py-1.5 text-right">{(totalReal || totalPrev).toFixed(2)}€</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </>
   );
-};
+}
 
-// Report A - Plantilla Definitiva
-const ReportPlantillaDefinitiva = ({ event, contacts, contactsData, viewMode }) => {
-  if (viewMode === 'orchestra') {
-    return (
-      <div className="print-page">
-        <ReportHeader title="Informe de Plantilla Definitiva - Plano de Orquesta" eventName={event?.name} />
-        <OrchestraLayout contacts={contacts} contactsData={contactsData} />
-        <ReportFooter />
-      </div>
-    );
-  }
-
+// ============================================================
+// BLOQUE C — Estadístico de asistencia
+// ============================================================
+function BloqueC({ data, eventoIds }) {
+  const total = (data?.musicos || []).length;
+  const conf = total; // _musicos_confirmados ya filtra
   return (
-    <div className="print-page">
-      <ReportHeader title="Informe de Plantilla Definitiva" eventName={event?.name} />
-      
-      <table className="w-full text-sm border-collapse">
+    <>
+      <SectionTitle num="1" titulo="Estadístico de asistencia" />
+      <div className="grid grid-cols-3 gap-3">
+        <KPI label="Eventos seleccionados" value={eventoIds.length} color="#1A3A5C" />
+        <KPI label="Confirmados (evento principal)" value={conf} color="#16a34a" />
+        <KPI label="% asistencia (estimada)" value={total ? '100%' : '—'} color="#C9920A" />
+      </div>
+      <p className="text-[10px] text-slate-500 mt-3 italic">El PDF generado calcula el detalle por cada evento seleccionado.</p>
+    </>
+  );
+}
+
+// ============================================================
+// BLOQUE D — Configuración del evento
+// ============================================================
+function BloqueD({ data }) {
+  const ev = data?.evento || {};
+  return (
+    <>
+      <SectionTitle num="1" titulo="Datos generales" />
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <Campo label="Nombre" valor={ev.nombre} />
+        <Campo label="Estado" valor={ev.estado} />
+        <Campo label="Fecha inicio" valor={(ev.fecha_inicio || '').slice(0, 10)} />
+        <Campo label="Fecha fin" valor={(ev.fecha_fin || '').slice(0, 10)} />
+        <Campo label="Lugar" valor={ev.lugar} />
+        <Campo label="Hora" valor={ev.hora_inicio} />
+      </div>
+      {ev.descripcion && (
+        <div className="mt-3">
+          <div className="text-[10px] uppercase font-bold text-slate-500">Descripción</div>
+          <p className="text-xs text-slate-700 mt-0.5">{ev.descripcion}</p>
+        </div>
+      )}
+      <p className="text-[10px] text-slate-500 mt-3 italic">El PDF incluye la lista completa de ensayos y funciones de cada evento.</p>
+    </>
+  );
+}
+
+// ============================================================
+// BLOQUE E — Hoja servicio transporte material
+// ============================================================
+function BloqueE({ data }) {
+  const tr = data?.transporte || {};
+  const montaje = data?.montaje || [];
+  return (
+    <>
+      <SectionTitle num="1" titulo="Datos del transportista" />
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <Campo label="Empresa" valor={tr.empresa} />
+        <Campo label="Contacto" valor={tr.contacto_empresa} />
+        <Campo label="Teléfono" valor={tr.telefono_empresa} />
+        <Campo label="Estado" valor={tr.estado?.toUpperCase()} />
+        <Campo label="Presupuesto" valor={tr.presupuesto_euros ? `${tr.presupuesto_euros}€` : null} />
+      </div>
+      <SectionTitle num="2" titulo="Servicio" />
+      <table className="w-full text-[10px] border border-slate-300">
         <thead>
-          <tr className="bg-slate-100">
-            <th className="border border-slate-300 px-3 py-2 text-left">Apellidos</th>
-            <th className="border border-slate-300 px-3 py-2 text-left">Nombre</th>
-            <th className="border border-slate-300 px-3 py-2 text-left">Sección</th>
-            <th className="border border-slate-300 px-3 py-2 text-left">Instrumento</th>
-            <th className="border border-slate-300 px-3 py-2 text-center">Categoría</th>
-            <th className="border border-slate-300 px-3 py-2 text-center">Atril</th>
-            <th className="border border-slate-300 px-3 py-2 text-left">Email</th>
-            <th className="border border-slate-300 px-3 py-2 text-left">Teléfono</th>
+          <tr className="bg-[#1A3A5C] text-white">
+            <th className="text-left px-1.5 py-1 w-20">Tipo</th>
+            <th className="text-left px-1.5 py-1 w-24">Fecha</th>
+            <th className="text-left px-1.5 py-1 w-16">Hora</th>
+            <th className="text-left px-1.5 py-1">Dirección</th>
           </tr>
         </thead>
         <tbody>
-          {contacts.map(contact => {
-            const data = contactsData[contact.id] || {};
-            return (
-              <tr key={contact.id} className="hover:bg-slate-50">
-                <td className="border border-slate-300 px-3 py-2">{contact.apellidos}</td>
-                <td className="border border-slate-300 px-3 py-2">{contact.nombre}</td>
-                <td className="border border-slate-300 px-3 py-2">{contact.especialidad?.split(' ')[0] || '-'}</td>
-                <td className="border border-slate-300 px-3 py-2">{contact.especialidad}</td>
-                <td className="border border-slate-300 px-3 py-2 text-center">{contact.categoria}</td>
-                <td className="border border-slate-300 px-3 py-2 text-center font-mono">
-                  {data.atril_numero || '-'}{data.atril_letra || ''}
-                </td>
-                <td className="border border-slate-300 px-3 py-2 text-xs">{contact.email}</td>
-                <td className="border border-slate-300 px-3 py-2">{contact.telefono}</td>
+          <FilaServicio l="Recogida" f={tr.fecha_carga} h={tr.hora_carga} d={tr.direccion_carga} />
+          {[1, 2, 3].map(n => tr[`parada_${n}_direccion`] && (
+            <FilaServicio key={n} l={`Parada ${n}`} h={tr[`parada_${n}_hora`]} d={tr[`parada_${n}_direccion`]} />
+          ))}
+          <FilaServicio l="Entrega" f={tr.fecha_descarga} h={tr.hora_descarga} d={tr.direccion_descarga} />
+          {tr.fecha_devolucion && <FilaServicio l="Devolución" f={tr.fecha_devolucion} h={tr.hora_devolucion} d={tr.direccion_carga} />}
+        </tbody>
+      </table>
+      <SectionTitle num="3" titulo={`Material a transportar (${montaje.length})`} />
+      {montaje.length === 0 ? (
+        <EmptyMsg>Sin material configurado.</EmptyMsg>
+      ) : (
+        <table className="w-full text-[10px] border border-slate-300">
+          <thead>
+            <tr className="bg-[#1A3A5C] text-white">
+              <th className="text-left px-1.5 py-1 w-12">Cant</th>
+              <th className="text-left px-1.5 py-1">Material</th>
+              <th className="text-left px-1.5 py-1 w-24">Grupo</th>
+              <th className="text-left px-1.5 py-1">Sección</th>
+            </tr>
+          </thead>
+          <tbody>
+            {montaje.map((m, i) => (
+              <tr key={i} className={i % 2 ? 'bg-slate-50' : 'bg-white'}>
+                <td className="px-1.5 py-1 border-b border-slate-200">{m.cantidad_necesaria}</td>
+                <td className="px-1.5 py-1 border-b border-slate-200 font-medium">{m.material?.nombre || m.nombre_material}</td>
+                <td className="px-1.5 py-1 border-b border-slate-200 uppercase text-[9px]">{m.material?.grupo || '—'}</td>
+                <td className="px-1.5 py-1 border-b border-slate-200">{m.seccion_escenario || '—'}</td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      
-      <div className="mt-4 text-sm text-slate-600">
-        <p><strong>Total contactos:</strong> {contacts.length}</p>
-      </div>
-      
-      <ReportFooter />
-    </div>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
   );
-};
+}
 
-// Report B - Informe Económico
-const ReportEconomico = ({ event, contacts, contactsData, eventResponses }) => {
-  const calculateTotals = () => {
-    let totalPrevisto = 0;
-    let totalReal = 0;
-    let totalExtras = 0;
-    const sectionTotals = {};
-
-    contacts.forEach(contact => {
-      const data = contactsData[contact.id] || {};
-      const responses = eventResponses.find(r => r.contact_id === contact.id)?.responses || {};
-      
-      const totalDates = Object.keys(responses).length || 1;
-      const previstoYes = Object.values(responses).filter(v => v === 'si').length;
-      const previstoPct = previstoYes / totalDates;
-      
-      const realValues = Object.values(data.asistencia_real || {});
-      const realPct = realValues.length > 0 
-        ? realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length / 100
-        : 0;
-
-      const cacheBase = 100;
-      const cachePrevisto = cacheBase * previstoPct;
-      const cacheReal = cacheBase * realPct;
-      const extras = (parseFloat(data.cache_extra) || 0) + 
-                     (parseFloat(data.extra_produccion) || 0) + 
-                     (parseFloat(data.extra_transporte) || 0) + 
-                     (parseFloat(data.otros_gastos) || 0);
-
-      totalPrevisto += cachePrevisto;
-      totalReal += cacheReal;
-      totalExtras += extras;
-
-      const section = contact.especialidad?.split(' ')[0] || 'Otros';
-      if (!sectionTotals[section]) sectionTotals[section] = { previsto: 0, real: 0, extras: 0 };
-      sectionTotals[section].previsto += cachePrevisto;
-      sectionTotals[section].real += cacheReal;
-      sectionTotals[section].extras += extras;
-    });
-
-    return { totalPrevisto, totalReal, totalExtras, sectionTotals };
-  };
-
-  const totals = calculateTotals();
-
+function FilaServicio({ l, f, h, d }) {
   return (
-    <div className="print-page">
-      <ReportHeader title="Informe Económico por Evento" eventName={event?.name} />
-      
-      {/* Summary */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-slate-100 p-4 rounded">
-          <p className="text-sm text-slate-600">Caché Previsto</p>
-          <p className="text-xl font-bold font-mono">{Math.round(totals.totalPrevisto)}€</p>
-        </div>
-        <div className="bg-blue-100 p-4 rounded">
-          <p className="text-sm text-blue-600">Caché Real</p>
-          <p className="text-xl font-bold font-mono text-blue-800">{Math.round(totals.totalReal)}€</p>
-        </div>
-        <div className="bg-yellow-100 p-4 rounded">
-          <p className="text-sm text-yellow-600">Extras</p>
-          <p className="text-xl font-bold font-mono text-yellow-800">{Math.round(totals.totalExtras)}€</p>
-        </div>
-        <div className="bg-green-100 p-4 rounded">
-          <p className="text-sm text-green-600">Total General</p>
-          <p className="text-xl font-bold font-mono text-green-800">{Math.round(totals.totalReal + totals.totalExtras)}€</p>
-        </div>
-      </div>
-
-      {/* Section breakdown */}
-      <h3 className="font-semibold mb-2">Desglose por Sección</h3>
-      <table className="w-full text-sm border-collapse mb-6">
-        <thead>
-          <tr className="bg-slate-100">
-            <th className="border border-slate-300 px-3 py-2 text-left">Sección</th>
-            <th className="border border-slate-300 px-3 py-2 text-right">Previsto</th>
-            <th className="border border-slate-300 px-3 py-2 text-right">Real</th>
-            <th className="border border-slate-300 px-3 py-2 text-right">Extras</th>
-            <th className="border border-slate-300 px-3 py-2 text-right bg-green-50">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(totals.sectionTotals).map(([section, vals]) => (
-            <tr key={section}>
-              <td className="border border-slate-300 px-3 py-2">{section}</td>
-              <td className="border border-slate-300 px-3 py-2 text-right font-mono">{Math.round(vals.previsto)}€</td>
-              <td className="border border-slate-300 px-3 py-2 text-right font-mono">{Math.round(vals.real)}€</td>
-              <td className="border border-slate-300 px-3 py-2 text-right font-mono">{Math.round(vals.extras)}€</td>
-              <td className="border border-slate-300 px-3 py-2 text-right font-mono font-bold bg-green-50">{Math.round(vals.real + vals.extras)}€</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="bg-slate-200 font-bold">
-            <td className="border border-slate-300 px-3 py-2">TOTAL</td>
-            <td className="border border-slate-300 px-3 py-2 text-right font-mono">{Math.round(totals.totalPrevisto)}€</td>
-            <td className="border border-slate-300 px-3 py-2 text-right font-mono">{Math.round(totals.totalReal)}€</td>
-            <td className="border border-slate-300 px-3 py-2 text-right font-mono">{Math.round(totals.totalExtras)}€</td>
-            <td className="border border-slate-300 px-3 py-2 text-right font-mono bg-green-100">{Math.round(totals.totalReal + totals.totalExtras)}€</td>
-          </tr>
-        </tfoot>
-      </table>
-
-      {/* Deviation */}
-      <div className="p-4 bg-slate-50 rounded">
-        <h4 className="font-semibold mb-2">Desviación Presupuestaria</h4>
-        <p className="text-sm">
-          Diferencia: <span className={`font-bold ${totals.totalReal > totals.totalPrevisto ? 'text-red-600' : 'text-green-600'}`}>
-            {totals.totalReal > totals.totalPrevisto ? '+' : ''}{Math.round(totals.totalReal - totals.totalPrevisto)}€
-          </span>
-          <span className="text-slate-500 ml-2">
-            ({totals.totalPrevisto > 0 ? Math.round(((totals.totalReal - totals.totalPrevisto) / totals.totalPrevisto) * 100) : 0}%)
-          </span>
-        </p>
-      </div>
-
-      <ReportFooter />
-    </div>
+    <tr>
+      <td className="px-1.5 py-1 border-b border-slate-200 font-semibold">{l}</td>
+      <td className="px-1.5 py-1 border-b border-slate-200">{f || '—'}</td>
+      <td className="px-1.5 py-1 border-b border-slate-200">{h ? h.slice(0, 5) : '—'}</td>
+      <td className="px-1.5 py-1 border-b border-slate-200">{d || '—'}</td>
+    </tr>
   );
-};
+}
 
-// Report C - Estadístico Asistencia
-const ReportAsistencia = ({ event, contacts, contactsData, eventResponses }) => {
-  const getColor = (pct) => {
-    if (pct <= 30) return 'bg-red-100 text-red-700';
-    if (pct <= 60) return 'bg-orange-100 text-orange-700';
-    if (pct <= 80) return 'bg-yellow-100 text-yellow-700';
-    return 'bg-green-100 text-green-700';
-  };
-
-  const attendanceData = contacts.map(contact => {
-    const responses = eventResponses.find(r => r.contact_id === contact.id)?.responses || {};
-    const data = contactsData[contact.id] || {};
-    
-    const totalDates = Object.keys(responses).length || 1;
-    const previstoYes = Object.values(responses).filter(v => v === 'si').length;
-    const previstoPct = Math.round((previstoYes / totalDates) * 100);
-    
-    const realValues = Object.values(data.asistencia_real || {});
-    const realPct = realValues.length > 0 
-      ? Math.round(realValues.reduce((a, b) => a + (parseFloat(b) || 0), 0) / realValues.length)
-      : 0;
-
-    return {
-      ...contact,
-      previstoPct,
-      realPct,
-      hasComments: !!data.atril_comentarios
-    };
-  });
-
-  // Section averages
-  const sectionAverages = {};
-  attendanceData.forEach(c => {
-    const section = c.especialidad?.split(' ')[0] || 'Otros';
-    if (!sectionAverages[section]) sectionAverages[section] = { previsto: [], real: [] };
-    sectionAverages[section].previsto.push(c.previstoPct);
-    sectionAverages[section].real.push(c.realPct);
-  });
-
-  const chartData = Object.entries(sectionAverages).map(([section, vals]) => ({
-    name: section,
-    Previsto: Math.round(vals.previsto.reduce((a, b) => a + b, 0) / vals.previsto.length),
-    Real: Math.round(vals.real.reduce((a, b) => a + b, 0) / vals.real.length)
-  }));
-
+// ============================================================
+// BLOQUE F — Transporte músicos
+// ============================================================
+function BloqueF({ data }) {
+  const logs = data?.logistica || [];
   return (
-    <div className="print-page">
-      <ReportHeader title="Informe Estadístico de Asistencia" eventName={event?.name} />
-      
-      {/* Chart */}
-      <div className="mb-6 h-64">
-        <h3 className="font-semibold mb-2">Asistencia por Sección (%)</h3>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-            <YAxis domain={[0, 100]} />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="Previsto" fill="#94a3b8" />
-            <Bar dataKey="Real" fill="#3b82f6" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Table */}
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="bg-slate-100">
-            <th className="border border-slate-300 px-3 py-2 text-left">Apellidos</th>
-            <th className="border border-slate-300 px-3 py-2 text-left">Nombre</th>
-            <th className="border border-slate-300 px-3 py-2 text-left">Instrumento</th>
-            <th className="border border-slate-300 px-3 py-2 text-center">% Previsto</th>
-            <th className="border border-slate-300 px-3 py-2 text-center">% Real</th>
-            <th className="border border-slate-300 px-3 py-2 text-center">Obs.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {attendanceData.map(contact => (
-            <tr key={contact.id}>
-              <td className="border border-slate-300 px-3 py-2">{contact.apellidos}</td>
-              <td className="border border-slate-300 px-3 py-2">{contact.nombre}</td>
-              <td className="border border-slate-300 px-3 py-2">{contact.especialidad}</td>
-              <td className="border border-slate-300 px-3 py-2 text-center">
-                <span className={`px-2 py-1 rounded ${getColor(contact.previstoPct)}`}>{contact.previstoPct}%</span>
-              </td>
-              <td className="border border-slate-300 px-3 py-2 text-center">
-                <span className={`px-2 py-1 rounded ${getColor(contact.realPct)}`}>{contact.realPct}%</span>
-              </td>
-              <td className="border border-slate-300 px-3 py-2 text-center">
-                {contact.hasComments && <span className="text-amber-600">*</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <ReportFooter />
-    </div>
-  );
-};
-
-// Report D - Configuración de Eventos
-const ReportConfiguracion = ({ event }) => {
-  if (!event) return null;
-
-  return (
-    <div className="print-page">
-      <ReportHeader title="Informe de Configuración del Evento" eventName={event.name} />
-      
-      <div className="space-y-6">
-        {/* Basic Info */}
-        <div className="bg-slate-50 p-4 rounded">
-          <h3 className="font-semibold mb-3">Datos del Evento</h3>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span className="text-slate-600">Nombre:</span> <strong>{event.name}</strong></div>
-            <div><span className="text-slate-600">Fecha:</span> <strong>{event.date}</strong></div>
-            <div><span className="text-slate-600">Hora:</span> <strong>{event.time}</strong></div>
-          </div>
-        </div>
-
-        {/* Rehearsals */}
-        {event.rehearsals?.length > 0 && (
-          <div className="bg-blue-50 p-4 rounded">
-            <h3 className="font-semibold mb-3">Ensayos Programados</h3>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-blue-100">
-                  <th className="px-3 py-2 text-left">Ensayo</th>
-                  <th className="px-3 py-2 text-left">Fecha</th>
-                  <th className="px-3 py-2 text-left">Hora inicio</th>
-                  <th className="px-3 py-2 text-left">Hora fin</th>
-                </tr>
-              </thead>
-              <tbody>
-                {event.rehearsals.map((r, idx) => (
-                  <tr key={idx}>
-                    <td className="px-3 py-2">Ensayo {idx + 1}</td>
-                    <td className="px-3 py-2">{r.date}</td>
-                    <td className="px-3 py-2">{r.start}</td>
-                    <td className="px-3 py-2">{r.end}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Instrumentation */}
-        {event.instrumentation && (
-          <div className="bg-green-50 p-4 rounded">
-            <h3 className="font-semibold mb-3">Plantilla Requerida</h3>
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              {Object.entries(event.instrumentation).map(([section, instruments]) => (
-                <div key={section} className="bg-white p-2 rounded">
-                  <p className="font-medium capitalize mb-1">{section.replace('_', ' ')}</p>
-                  {typeof instruments === 'object' && Object.entries(instruments).map(([inst, count]) => (
-                    <p key={inst} className="text-xs text-slate-600">
-                      {inst.replace('_', ' ')}: <span className="font-mono">{count}</span>
-                    </p>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Program */}
-        {event.program?.length > 0 && (
-          <div className="bg-purple-50 p-4 rounded">
-            <h3 className="font-semibold mb-3">Programa Musical</h3>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-purple-100">
-                  <th className="px-3 py-2 text-left">Duración</th>
-                  <th className="px-3 py-2 text-left">Autor</th>
-                  <th className="px-3 py-2 text-left">Obra</th>
-                </tr>
-              </thead>
-              <tbody>
-                {event.program.map((p, idx) => (
-                  <tr key={idx}>
-                    <td className="px-3 py-2">{p.duration}</td>
-                    <td className="px-3 py-2">{p.author}</td>
-                    <td className="px-3 py-2">{p.obra}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <ReportFooter />
-    </div>
-  );
-};
-
-// Main Component
-const Informes = () => {
-  const [events, setEvents] = useState([]);
-  const [contacts, setContacts] = useState([]);
-  const [eventResponses, setEventResponses] = useState({});
-  const [contactsData, setContactsData] = useState({});
-  const [selectedEvent, setSelectedEvent] = useState('all');
-  const [selectedSections, setSelectedSections] = useState([]);
-  const [activeReport, setActiveReport] = useState(null);
-  const [viewMode, setViewMode] = useState('list');
-  const [loading, setLoading] = useState(true);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const previewRef = useRef(null);
-  const { api } = useGestorAuth();
-
-  const reports = [
-    { id: 'plantilla', name: 'A. Informe de Plantilla Definitiva', description: 'Lista de contactos confirmados y plano de orquesta' },
-    { id: 'economico', name: 'B. Informe Económico por Evento', description: 'Cachés, extras y totales económicos' },
-    { id: 'asistencia', name: 'C. Informe Estadístico de Asistencia', description: 'Porcentajes de asistencia y gráficos' },
-    { id: 'configuracion', name: 'D. Informe de Configuración de Eventos', description: 'Datos completos de configuración' },
-    { id: 'combinado', name: 'E. Informe Combinado "Todo en Uno"', description: 'Reporte ejecutivo completo' }
-  ];
-
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const loadData = async () => {
-    try {
-      const [eventsRes, contactsRes] = await Promise.all([
-        api.get('/api/gestor/eventos').catch(() => ({ data: { eventos: [] } })),
-        api.get('/api/gestor/musicos').catch(() => ({ data: { musicos: [] } }))
-      ]);
-
-      const eventsList = eventsRes.data?.eventos || [];
-      const contactsList = contactsRes.data?.musicos || [];
-
-      setEvents(eventsList);
-      setContacts(contactsList);
-
-      const responsesMap = {};
-      for (const event of eventsList) {
-        try {
-          const asigRes = await api.get(`/api/gestor/asignaciones/evento/${event.id}`);
-          responsesMap[event.id] = (asigRes.data?.asignaciones || []).map(a => ({
-            contact_id: a.usuario_id,
-            responses: { [event.id]: a.estado === 'confirmado' ? 'si' : (a.estado === 'rechazado' ? 'no' : '') },
-            observaciones: a.comentarios || '',
-            importe: a.importe,
-            estado_pago: a.estado_pago
-          }));
-        } catch { responsesMap[event.id] = []; }
-      }
-      setEventResponses(responsesMap);
-    } catch (err) {
-      console.error("Error loading data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const currentEvent = selectedEvent !== 'all' ? events.find(e => e.id === selectedEvent) : events[0];
-  const currentResponses = currentEvent ? (eventResponses[currentEvent.id] || []) : [];
-
-  const handleExport = (format) => {
-    if (format === 'pdf') {
-      window.print();
-    } else if (format === 'excel') {
-      // Generate CSV
-      const headers = ['Apellidos', 'Nombre', 'Instrumento', 'Email', 'Teléfono'];
-      const rows = contacts.map(c => [c.apellidos, c.nombre, c.especialidad, c.email, c.telefono]);
-      const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `informe_${activeReport}_${new Date().toISOString().split('T')[0]}.csv`;
-      link.click();
-    } else if (format === 'xml') {
-      let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<Informe>\n';
-      contacts.forEach(c => {
-        xml += `  <Contacto>\n    <Nombre>${c.nombre} ${c.apellidos}</Nombre>\n    <IBAN>${c.iban || ''}</IBAN>\n  </Contacto>\n`;
-      });
-      xml += '</Informe>';
-      const blob = new Blob([xml], { type: 'application/xml' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `informe_${activeReport}.xml`;
-      link.click();
-    }
-    alert(`Informe exportado en formato ${format.toUpperCase()}`);
-  };
-
-  const handleEmail = () => {
-    alert('Función de envío por correo (simulada). En producción se integraría con Gmail API.');
-  };
-
-  const handleGenerateAll = () => {
-    alert('Generando todos los informes para todos los eventos de la temporada...');
-  };
-
-  const renderPreview = () => {
-    if (!activeReport || !previewOpen) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto" ref={previewRef}>
-          <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
-            <h3 className="font-semibold">Vista previa del informe</h3>
-            <div className="flex items-center gap-2">
-              {activeReport === 'plantilla' && (
-                <select
-                  value={viewMode}
-                  onChange={(e) => setViewMode(e.target.value)}
-                  className="px-2 py-1 border border-slate-200 rounded text-sm"
-                >
-                  <option value="list">Formato Lista</option>
-                  <option value="orchestra">Plano de Orquesta</option>
-                </select>
-              )}
-              <button
-                onClick={() => handleExport('pdf')}
-                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-              >
-                Imprimir/PDF
-              </button>
-              <button
-                onClick={() => setPreviewOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-          <div className="p-6">
-            {activeReport === 'plantilla' && (
-              <ReportPlantillaDefinitiva event={currentEvent} contacts={contacts} contactsData={contactsData} viewMode={viewMode} />
-            )}
-            {activeReport === 'economico' && (
-              <ReportEconomico event={currentEvent} contacts={contacts} contactsData={contactsData} eventResponses={currentResponses} />
-            )}
-            {activeReport === 'asistencia' && (
-              <ReportAsistencia event={currentEvent} contacts={contacts} contactsData={contactsData} eventResponses={currentResponses} />
-            )}
-            {activeReport === 'configuracion' && (
-              <ReportConfiguracion event={currentEvent} />
-            )}
-            {activeReport === 'combinado' && (
-              <div className="space-y-8">
-                <ReportPlantillaDefinitiva event={currentEvent} contacts={contacts} contactsData={contactsData} viewMode="list" />
-                <div className="border-t-4 border-slate-300 pt-8">
-                  <ReportPlantillaDefinitiva event={currentEvent} contacts={contacts} contactsData={contactsData} viewMode="orchestra" />
-                </div>
-                <div className="border-t-4 border-slate-300 pt-8">
-                  <ReportEconomico event={currentEvent} contacts={contacts} contactsData={contactsData} eventResponses={currentResponses} />
-                </div>
-                <div className="border-t-4 border-slate-300 pt-8">
-                  <ReportAsistencia event={currentEvent} contacts={contacts} contactsData={contactsData} eventResponses={currentResponses} />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="p-6 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-800"></div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full" data-testid="informes-page">
-      {/* Main Content */}
-      <div className="flex-1 p-6 overflow-y-auto">
-        <header className="mb-6">
-          <h1 className="font-cabinet text-3xl font-bold text-slate-900">Generación de Informes</h1>
-          <p className="font-ibm text-slate-600 mt-1">Visualiza, exporta e imprime informes corporativos</p>
-        </header>
-
-        {/* Reports List */}
+    <>
+      <SectionTitle num="1" titulo="Logística del evento" />
+      {logs.length === 0 ? (
+        <EmptyMsg>Sin logística configurada.</EmptyMsg>
+      ) : (
         <div className="space-y-3">
-          {reports.map(report => (
-            <div
-              key={report.id}
-              className={`border rounded-lg overflow-hidden transition-all ${activeReport === report.id ? 'border-slate-400 shadow-md' : 'border-slate-200'}`}
-            >
-              <button
-                onClick={() => setActiveReport(activeReport === report.id ? null : report.id)}
-                className="w-full px-4 py-3 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors text-left"
-                data-testid={`report-${report.id}`}
-              >
-                <div>
-                  <h3 className="font-semibold text-slate-900">{report.name}</h3>
-                  <p className="text-sm text-slate-500">{report.description}</p>
-                </div>
-                <svg
-                  className={`w-5 h-5 text-slate-400 transition-transform ${activeReport === report.id ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M19 9l-7 7-7-7"/>
-                </svg>
-              </button>
-              
-              {activeReport === report.id && (
-                <div className="px-4 py-3 bg-slate-50 border-t border-slate-200">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setPreviewOpen(true)}
-                      className="px-4 py-2 bg-slate-900 text-white rounded-md text-sm hover:bg-slate-800 flex items-center gap-2"
-                      data-testid={`preview-${report.id}`}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                      </svg>
-                      Previsualizar
-                    </button>
-                    <button
-                      onClick={() => handleExport('pdf')}
-                      className="px-4 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700 flex items-center gap-2"
-                    >
-                      PDF
-                    </button>
-                    <button
-                      onClick={() => handleExport('excel')}
-                      className="px-4 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 flex items-center gap-2"
-                    >
-                      Excel
-                    </button>
-                    <button
-                      onClick={() => window.print()}
-                      className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm hover:bg-slate-100 flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
-                      </svg>
-                      Imprimir
-                    </button>
-                    <button
-                      onClick={handleEmail}
-                      className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm hover:bg-slate-100 flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                      </svg>
-                      Enviar
-                    </button>
-                  </div>
-                </div>
-              )}
+          {logs.map(l => (
+            <div key={l.id} className="border border-slate-300 rounded p-2">
+              <div className="text-xs font-bold text-[#1A3A5C] uppercase mb-1">
+                {l.tipo === 'transporte_ida' && '🚌 IDA'}
+                {l.tipo === 'transporte_vuelta' && '🚌 VUELTA'}
+                {l.tipo === 'alojamiento' && '🏨 ALOJAMIENTO'}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <Campo label="Fecha" valor={l.fecha} />
+                <Campo label="Hora salida" valor={l.hora_salida} />
+                <Campo label="Lugar salida" valor={l.lugar_salida} />
+                <Campo label="Hora llegada" valor={l.hora_llegada} />
+                <Campo label="Lugar llegada" valor={l.lugar_llegada} />
+                <Campo label="Lím. confirmación" valor={l.fecha_limite_confirmacion} />
+              </div>
             </div>
           ))}
         </div>
+      )}
+      <p className="text-[10px] text-slate-500 mt-3 italic">El PDF incluye la lista de músicos confirmados agrupados por punto de recogida.</p>
+    </>
+  );
+}
+
+// ============================================================
+// BLOQUE G — Carta de convocatoria
+// ============================================================
+function BloqueG({ data }) {
+  const ev = data?.evento || {};
+  const m = (data?.musicos || [])[0];
+  return (
+    <>
+      <SectionTitle num="1" titulo="Carta de convocatoria (vista de muestra)" />
+      {!m ? (
+        <EmptyMsg>Sin músicos confirmados para mostrar muestra.</EmptyMsg>
+      ) : (
+        <div className="text-xs leading-relaxed space-y-2">
+          <p>Estimado/a <b>{m.nombre} {m.apellidos}</b>:</p>
+          <p>Le convocamos al evento <b>«{ev.nombre}»</b> en calidad de <b>{m.instrumento}</b>.</p>
+          <p>Fecha del evento: <b>{(ev.fecha_inicio || '').slice(0, 10)}</b>.<br />
+             Lugar principal: {ev.lugar || '—'}.</p>
+          <div className="mt-3 italic text-slate-500">El PDF generado incluye una carta personalizada por cada músico confirmado ({(data?.musicos || []).length} en total) con la lista completa de ensayos.</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ============================================================
+// BLOQUE H — Combinado
+// ============================================================
+function BloqueH({ data, planoMode }) {
+  return (
+    <>
+      <div className="bg-amber-50 border border-amber-200 rounded p-2 mb-3 text-[10px] text-amber-800">
+        <b>📚 Informe combinado:</b> incluye los apartados A (plantilla + plano + montaje), B (económico), C (asistencia) y D (configuración).
       </div>
+      <BloqueA data={data} planoMode={planoMode} />
+    </>
+  );
+}
 
-      {/* Right Panel - Filters */}
-      <FiltersPanel
-        events={events}
-        selectedEvent={selectedEvent}
-        onEventChange={setSelectedEvent}
-        sections={[]}
-        selectedSections={selectedSections}
-        onSectionsChange={setSelectedSections}
-        onGenerateAll={handleGenerateAll}
-        onExport={handleExport}
-        onEmail={handleEmail}
-      />
+// ============================================================
+// COMPONENTES AUXILIARES
+// ============================================================
+function SectionTitle({ num, titulo }) {
+  return (
+    <h4 className="text-sm font-bold text-[#1A3A5C] mt-4 mb-2 flex items-center gap-2">
+      <span className="bg-[#1A3A5C] text-white w-5 h-5 rounded flex items-center justify-center text-xs">{num}</span>
+      {titulo}
+    </h4>
+  );
+}
 
-      {/* Preview Modal */}
-      {renderPreview()}
-
-      {/* Print Styles */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .print-page, .print-page * { visibility: visible; }
-          .print-page { position: absolute; left: 0; top: 0; width: 100%; }
-        }
-      `}</style>
+function Campo({ label, valor }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase font-bold text-slate-500">{label}</div>
+      <div className="text-xs text-slate-800">{valor || '—'}</div>
     </div>
   );
-};
+}
 
-export default Informes;
+function KPI({ label, value, color }) {
+  return (
+    <div className="border border-slate-200 rounded-lg p-3 text-center bg-white">
+      <div className="text-2xl font-bold" style={{ color }}>{value}</div>
+      <div className="text-[10px] uppercase tracking-wide text-slate-500 mt-1">{label}</div>
+    </div>
+  );
+}
+
+function EmptyMsg({ children }) {
+  return <div className="bg-slate-50 border border-dashed border-slate-300 rounded text-xs text-slate-500 py-3 text-center">{children}</div>;
+}
+
+function EmptyState() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center max-w-md">
+        <div className="text-5xl mb-3">📑</div>
+        <h2 className="text-lg font-bold text-slate-700 mb-2">Selecciona al menos un evento</h2>
+        <p className="text-sm text-slate-500">La vista previa se generará automáticamente para el primer evento marcado.</p>
+      </div>
+    </div>
+  );
+}
+
+function LoadingPreview() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="flex items-center gap-2 text-slate-500 text-sm">
+        <span className="animate-spin h-4 w-4 border-2 border-slate-400 border-t-transparent rounded-full" />
+        Cargando vista previa…
+      </div>
+    </div>
+  );
+}
