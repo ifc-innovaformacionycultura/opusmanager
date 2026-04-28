@@ -485,6 +485,7 @@ const Layout = ({ children }) => {
         <FeedbackButton />
         {/* Botón flotante de comentarios al equipo (separado, encima del de feedback) */}
         <ComentariosEquipoButton />
+        <HilosPendientesAuto />
       </main>
     </div>
   );
@@ -751,6 +752,19 @@ import GestorEmailLog from "./pages/GestorEmailLog";
 import GestorReclamaciones from "./pages/GestorReclamaciones";
 import ConfiguracionEmail from "./pages/ConfiguracionEmail";
 import FeedbackButton from "./components/FeedbackButton";
+import HilosPendientesDrawer from "./components/HilosPendientesDrawer";
+
+// Detección automática de página para Hilos pendientes (Bloque 4)
+const HILOS_PAGES = [
+  '/configuracion/eventos', '/seguimiento', '/plantillas-definitivas',
+  '/archivo', '/economico', '/tareas', '/logistica', '/informes',
+];
+const HilosPendientesAuto = () => {
+  const location = useLocation();
+  const match = HILOS_PAGES.find(p => location.pathname.startsWith(p));
+  if (!match) return null;
+  return <HilosPendientesDrawer key={match} pagina={match} />;
+};
 import ComentariosEquipoButton from "./components/ComentariosEquipoButton";
 import NotificacionesBell from "./components/NotificacionesBell";
 

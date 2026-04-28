@@ -222,3 +222,29 @@ async def subir_foto(material_id: str, archivo: UploadFile = File(...), current_
     public_url = admin.storage.from_(INV_BUCKET).get_public_url(path)
     supabase.table('inventario_material').update({"foto_url": public_url, "updated_at": datetime.now(timezone.utc).isoformat()}).eq('id', material_id).execute()
     return {"url": public_url}
+
+
+# ============================================================
+# Bloque 7 — Conflictos de fechas en inventario
+# ============================================================
+@router.get("/{material_id}/conflictos-fechas")
+async def conflictos_fechas_material(material_id: str, desde: str, hasta: str,
+                                       current_user: dict = Depends(get_current_gestor)):
+    """Devuelve préstamos del material que solapan con el rango [desde, hasta] (YYYY-MM-DD)."""
+    desde_s = (desde or '')[:10]
+    hasta_s = (hasta or desde_s)[:10]
+    if not desde_s:
+        return {"conflictos": []}
+    rows = supabase.table('inventario_prestamos').select('*') \
+        .eq('material_id', material_id) \
+        .neq('estado', 'devuelto').execute().data or []
+    conflictos = []
+    for p in rows:
+        ps = (p.get('fecha_salida') or '')[:10]
+        pe = (p.get('fecha_devolucion_real') or p.get('fecha_prevista_devolucion') or '')[:10]
+        if not ps:
+            continue
+        if ps <= hasta_s and (not pe or pe >= desde_s):
+            conflictos.append(p)
+    return {"conflictos": conflictos, "rango": {"desde": desde_s, "hasta": hasta_s}}
+

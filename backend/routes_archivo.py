@@ -873,3 +873,95 @@ async def agregar_obra_evento(evento_id: str, data: EventoObraIn, current_user: 
         except Exception:
             pass
     return {"evento_obra": eo}
+
+
+
+# ============================================================
+# Bloque 5 — Conflictos de préstamo de obra con fechas de evento
+# ============================================================
+@router.get("/obras/{obra_id}/conflictos-evento/{evento_id}")
+async def conflictos_obra_evento(obra_id: str, evento_id: str,
+                                  current_user: dict = Depends(get_current_gestor)):
+    """Devuelve préstamos activos de la obra que solapan con las fechas de ensayos/funciones del evento."""
+    # Fechas del evento (inicio y fin)
+    evt = supabase.table('eventos').select('fecha_inicio,fecha_fin,nombre') \
+        .eq('id', evento_id).limit(1).execute().data or []
+    if not evt:
+        return {"conflictos": [], "evento": None}
+    ev = evt[0]
+    f_ini = (ev.get('fecha_inicio') or '')[:10]
+    f_fin = (ev.get('fecha_fin') or f_ini)[:10] or f_ini
+    # Ensayos
+    try:
+        ens = supabase.table('rehearsals').select('fecha').eq('event_id', evento_id).execute().data or []
+        for e in ens:
+            d = (e.get('fecha') or '')[:10]
+            if d:
+                if not f_ini or d < f_ini: f_ini = d
+                if not f_fin or d > f_fin: f_fin = d
+    except Exception:
+        pass
+    # Préstamos activos de esa obra (tabla obra_prestamos)
+    try:
+        prest = supabase.table('obra_prestamos').select('*').eq('obra_id', obra_id) \
+            .neq('estado', 'devuelto').execute().data or []
+    except Exception:
+        prest = []
+    conflictos = []
+    for p in prest:
+        ps = (p.get('fecha_salida') or '')[:10]
+        pe = (p.get('fecha_devolucion_real') or p.get('fecha_prevista_devolucion') or '')[:10]
+        if not ps:
+            continue
+        # Solape: ps <= f_fin AND (pe == '' OR pe >= f_ini)
+        if ps <= f_fin and (not pe or pe >= f_ini):
+            conflictos.append(p)
+    return {"conflictos": conflictos, "fechas_evento": {"desde": f_ini, "hasta": f_fin}}
+
+
+# ============================================================
+# Estado de material de una obra (utilidad para B5)
+# ============================================================
+@router.get("/obras/{obra_id}/estado-material")
+async def estado_material_obra(obra_id: str, evento_id: Optional[str] = None,
+                                current_user: dict = Depends(get_current_gestor)):
+    """Calcula el estado de material de una obra: completo / incompleto / necesita_revision.
+    Si se pasa evento_id, indica si las copias_fisicas son suficientes para los atriles del evento.
+    """
+    partes = supabase.table('obra_partes').select('*').eq('obra_id', obra_id).execute().data or []
+    if not partes:
+        return {"estado": "sin_partes", "copias_total": 0, "partes_count": 0,
+                "copias_suficientes": None, "deficit_por_seccion": []}
+    # Estados individuales: revisar campo `estado` de cada parte
+    estados = [p.get('estado') for p in partes if p.get('estado')]
+    necesita_revision = any(e == 'necesita_revision' for e in estados)
+    incompleto = any(e == 'no' for e in estados) or any((p.get('copias_fisicas') or 0) == 0 for p in partes)
+    if necesita_revision:
+        estado_global = 'necesita_revision'
+    elif incompleto:
+        estado_global = 'incompleto'
+    else:
+        estado_global = 'completo'
+    copias_total = sum(int(p.get('copias_fisicas') or 0) for p in partes)
+    deficit = []
+    if evento_id:
+        # Atriles necesarios por sección — contar instrumentation del evento
+        try:
+            ev = supabase.table('eventos').select('instrumentation').eq('id', evento_id).limit(1).execute().data or []
+            inst = (ev[0].get('instrumentation') if ev else {}) or {}
+            for sec, cantidad_str in inst.items():
+                # 'cuerda' o '6' etc — extraer entero
+                try:
+                    cantidad = int(str(cantidad_str).strip())
+                except Exception:
+                    continue
+                copias_sec = sum(int(p.get('copias_fisicas') or 0) for p in partes
+                                 if (p.get('seccion') or '').lower() == sec.lower())
+                if copias_sec < cantidad:
+                    deficit.append({"seccion": sec, "copias": copias_sec, "necesarias": cantidad,
+                                    "deficit": cantidad - copias_sec})
+        except Exception:
+            pass
+    return {"estado": estado_global, "copias_total": copias_total, "partes_count": len(partes),
+            "copias_suficientes": len(deficit) == 0 if evento_id else None,
+            "deficit_por_seccion": deficit}

@@ -16,6 +16,8 @@ const TIPOS = [
   { k: 'F', l: 'Hoja servicio · Transporte músicos', icon: '🚌', desc: 'Logística por punto de recogida con confirmaciones.' },
   { k: 'G', l: 'Carta de convocatoria por músico', icon: '✉️', desc: 'Carta personalizada por cada músico confirmado.' },
   { k: 'H', l: 'Informe completo (A+B+C+D)', icon: '📚', desc: 'Combina los 4 informes principales en un único PDF.' },
+  { k: 'I', l: 'Hoja de trabajo · Equipo de montaje', icon: '🛠️', desc: 'Documento técnico para el equipo de montaje: sesiones, material, plano y firmas.' },
+  { k: 'J', l: 'Hoja de trabajo · Equipo de archivo', icon: '📜', desc: 'Documento para archiveros: programa, estado del material y préstamos activos.' },
 ];
 
 // ============================================================
@@ -475,29 +477,128 @@ function BloqueA({ data, planoMode }) {
 }
 
 // ============================================================
-// PLANO SVG — Herradura o Filas
+// PLANO SVG — Disposición Americana (Bloque 12)
+// Numeración de atriles: el 1 es el más cercano al director.
+// Cuerda: violines I izq, violines II detrás, violas centro-der, chelos der, contrabajos exterior der
+// Vientos: madera fila intermedia, metal fila posterior, percusión fondo
 // ============================================================
+const SECCION_PLANO = {
+  '1. Violines I':   { color: '#D6E8F7', borde: '#2563eb', label: 'Vl. I' },
+  '2. Violines II':  { color: '#A8C9F0', borde: '#1d4ed8', label: 'Vl. II' },
+  '3. Violas':       { color: '#D4EDDA', borde: '#16a34a', label: 'Vla.' },
+  '4. Violonchelos': { color: '#A8D5B5', borde: '#15803d', label: 'Vc.' },
+  '5. Contrabajos':  { color: '#6AAF8A', borde: '#166534', label: 'Cb.' },
+  'arpa':            { color: '#EDE0F7', borde: '#7c3aed', label: 'Arpa' },
+  '6. Viento Madera':{ color: '#FEF5DC', borde: '#ca8a04', label: 'Mad.' },
+  '7. Viento Metal': { color: '#FDE8D0', borde: '#ea580c', label: 'Met.' },
+  '8. Percusión':    { color: '#F5C6A0', borde: '#c2410c', label: 'Perc.' },
+  '9. Teclados':     { color: '#EDE0F7', borde: '#9333ea', label: 'Tec.' },
+  '10. Coro':        { color: '#E0F2FE', borde: '#0284c7', label: 'Coro' },
+};
+
 function PlanoOrquesta({ porSeccion, mode }) {
-  const W = 700, H = 360;
-  // Posiciones por sección (proporciones)
-  const slotsHerradura = {
-    '1. Violines I':   { cx: 0.22, cy: 0.62, r: 0.10, sweep: -65, angle: 25 },
-    '2. Violines II':  { cx: 0.36, cy: 0.40, r: 0.13, sweep: -90, angle: 35 },
-    '3. Violas':       { cx: 0.64, cy: 0.40, r: 0.13, sweep:  90, angle: 35 },
-    '4. Violonchelos': { cx: 0.78, cy: 0.62, r: 0.10, sweep:  65, angle: 25 },
-    '5. Contrabajos':  { cx: 0.86, cy: 0.78, r: 0.04, sweep:  90, angle: 0 },
-    '6. Viento Madera':{ cx: 0.42, cy: 0.28, r: 0.07, sweep:  0,  angle: 0 },
-    '7. Viento Metal': { cx: 0.62, cy: 0.20, r: 0.07, sweep:  0,  angle: 0 },
-    '8. Percusión':    { cx: 0.50, cy: 0.10, r: 0.08, sweep:  0,  angle: 0 },
-    '9. Teclados':     { cx: 0.12, cy: 0.30, r: 0.04, sweep:  0,  angle: 0 },
-    '10. Coro':        { cx: 0.50, cy: 0.04, r: 0.20, sweep:  0,  angle: 0 },
+  const W = 900, H = 560;
+  if (mode === 'filas') return <PlanoFilas W={W} H={H} porSeccion={porSeccion} />;
+  return <PlanoHerradura W={W} H={H} porSeccion={porSeccion} />;
+}
+
+// Atril rectangular: número grande arriba, nombre debajo
+function Atril({ x, y, w, h, num, nombre, sec, transform }) {
+  const cfg = SECCION_PLANO[sec] || { color: '#e2e8f0', borde: '#64748b' };
+  const apellido = (nombre || '').split(',')[0].trim().slice(0, 12) || '—';
+  return (
+    <g transform={transform || ''}>
+      <rect x={x} y={y} width={w} height={h} rx="4" fill={cfg.color} stroke={cfg.borde} strokeWidth="1" />
+      <text x={x + w / 2} y={y + h * 0.42} textAnchor="middle" fill="#1e293b" fontSize={Math.max(8, h * 0.32)} fontWeight="bold">{num}</text>
+      <text x={x + w / 2} y={y + h * 0.78} textAnchor="middle" fill="#334155" fontSize={Math.max(6, h * 0.20)}>{apellido}</text>
+    </g>
+  );
+}
+
+// Disposición americana en herradura
+function PlanoHerradura({ W, H, porSeccion }) {
+  const cx = W / 2, dirY = H * 0.92;
+  // === CUERDA EN ARCO ===
+  // Función auxiliar: posicionar atriles en arco semicircular alrededor del director
+  const arcoCuerda = (sec, count, anguloInicio, anguloFin, radioBase, radioStep, atrilesPorFila = 8, dir = 1) => {
+    // dir: 1 = numeración crece de inicio→fin; -1 = inverso
+    const elems = [];
+    const w = 56, h = 38;
+    let i = 1;
+    for (let fila = 0; fila < Math.ceil(count / atrilesPorFila); fila++) {
+      const r = radioBase + fila * radioStep;
+      const enFila = Math.min(atrilesPorFila, count - fila * atrilesPorFila);
+      for (let j = 0; j < enFila; j++) {
+        // El más cercano al director es i=1
+        const t = enFila > 1 ? (j / (enFila - 1)) : 0.5;
+        const ang = anguloInicio + (anguloFin - anguloInicio) * t;
+        const ax = cx + r * Math.cos(ang);
+        const ay = dirY - r * Math.sin(ang);
+        const num = dir === 1 ? i : (count - i + 1);
+        const nombre = (porSeccion[sec] && porSeccion[sec][num - 1]) || {};
+        elems.push(
+          <Atril key={`${sec}-${i}`} x={ax - w / 2} y={ay - h / 2} w={w} h={h}
+                 num={num} nombre={`${nombre.apellidos || ''}, ${nombre.nombre || ''}`} sec={sec} />
+        );
+        i++;
+      }
+    }
+    return elems;
   };
-  const filasOrden = ['8. Percusión', '7. Viento Metal', '6. Viento Madera', '9. Teclados',
-                       '2. Violines II', '3. Violas', '1. Violines I', '4. Violonchelos', '5. Contrabajos', '10. Coro'];
+
+  // Violines I — izquierda, atril 1 cerca director, crece hacia la izquierda
+  const v1 = arcoCuerda('1. Violines I',
+    (porSeccion['1. Violines I'] || []).length,
+    Math.PI * 0.55, Math.PI * 0.92, 200, 50, 6);
+  // Violines II — detrás Violines I (más a la izquierda y atrás)
+  const v2 = arcoCuerda('2. Violines II',
+    (porSeccion['2. Violines II'] || []).length,
+    Math.PI * 0.62, Math.PI * 0.95, 290, 50, 6);
+  // Violas — derecha del director
+  const va = arcoCuerda('3. Violas',
+    (porSeccion['3. Violas'] || []).length,
+    Math.PI * 0.45, Math.PI * 0.08, 200, 50, 6);
+  // Violonchelos — derecha exterior
+  const vc = arcoCuerda('4. Violonchelos',
+    (porSeccion['4. Violonchelos'] || []).length,
+    Math.PI * 0.38, Math.PI * 0.05, 290, 50, 6);
+  // Contrabajos — extremo derecho fondo
+  const cb = arcoCuerda('5. Contrabajos',
+    (porSeccion['5. Contrabajos'] || []).length,
+    Math.PI * 0.10, Math.PI * 0.00, 360, 0, 8, -1);
+
+  // Arpas — extremo izquierdo
+  const arpas = (porSeccion['9. Teclados'] || []).filter(m => /arpa/i.test(m.instrumento || ''));
+  const arpasG = arpas.map((m, i) => (
+    <Atril key={`arpa-${i}`} x={W * 0.04} y={H * 0.30 + i * 45} w={56} h={38}
+           num={i + 1} nombre={`${m.apellidos || ''}, ${m.nombre || ''}`} sec="arpa" />
+  ));
+
+  // === VIENTOS Y PERCUSIÓN — Filas horizontales arriba ===
+  const filaY = (porSeccion, sec, y, xStart, xEnd) => {
+    const arr = porSeccion[sec] || [];
+    const w = 46, h = 32;
+    return arr.slice(0, 16).map((m, i) => {
+      const t = arr.length > 1 ? (i / Math.min(arr.length - 1, 15)) : 0.5;
+      const x = xStart + (xEnd - xStart) * t;
+      return (
+        <Atril key={`${sec}-${i}`} x={x - w / 2} y={y - h / 2} w={w} h={h}
+               num={i + 1} nombre={`${m.apellidos || ''}, ${m.nombre || ''}`} sec={sec} />
+      );
+    });
+  };
+  const madera = filaY(porSeccion, '6. Viento Madera', H * 0.30, W * 0.22, W * 0.78);
+  const metal  = filaY(porSeccion, '7. Viento Metal',  H * 0.18, W * 0.22, W * 0.78);
+  const perc   = filaY(porSeccion, '8. Percusión',     H * 0.07, W * 0.18, W * 0.82);
+  const coro   = filaY(porSeccion, '10. Coro',         H * 0.03, W * 0.10, W * 0.90);
+  const teclados = (porSeccion['9. Teclados'] || []).filter(m => !/arpa/i.test(m.instrumento || ''));
+  const tecG = teclados.map((m, i) => (
+    <Atril key={`tec-${i}`} x={W * 0.86} y={H * 0.30 + i * 45} w={56} h={38}
+           num={i + 1} nombre={`${m.apellidos || ''}, ${m.nombre || ''}`} sec="9. Teclados" />
+  ));
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" data-testid={`plano-${mode}`}>
-      {/* Fondo escenario */}
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" data-testid="plano-herradura">
       <defs>
         <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#fef3c7" />
@@ -505,89 +606,62 @@ function PlanoOrquesta({ porSeccion, mode }) {
         </linearGradient>
       </defs>
       <rect x="0" y="0" width={W} height={H} fill="url(#floor)" rx="12" />
+      {/* Etiquetas de zona */}
+      <text x={cx} y="14" textAnchor="middle" fill="#94a3b8" fontSize="10" fontWeight="bold">PERCUSIÓN · CORO</text>
+      <text x="20" y={H * 0.50} fill="#94a3b8" fontSize="10" fontWeight="bold">ARPAS</text>
+      <text x={W - 20} y={H * 0.50} textAnchor="end" fill="#94a3b8" fontSize="10" fontWeight="bold">TECLADOS</text>
       {/* Director */}
       <g>
-        <circle cx={W * 0.5} cy={H * 0.92} r="14" fill="#1A3A5C" />
-        <text x={W * 0.5} y={H * 0.92 + 4} textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">DIR</text>
+        <circle cx={cx} cy={dirY} r="20" fill="#1A3A5C" />
+        <text x={cx} y={dirY + 4} textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">DIR</text>
       </g>
-      <text x={W * 0.5} y={H * 0.985} textAnchor="middle" fill="#94a3b8" fontSize="9">PÚBLICO</text>
+      <line x1={W * 0.15} y1={dirY + 28} x2={W * 0.85} y2={dirY + 28} stroke="#cbd5e1" strokeWidth="2" strokeDasharray="4,4" />
+      <text x={cx} y={H - 4} textAnchor="middle" fill="#64748b" fontSize="11" fontWeight="bold">PÚBLICO</text>
 
-      {mode === 'herradura' ? (
-        // Disposición en herradura
-        Object.keys(porSeccion).map((sec) => {
-          const slot = slotsHerradura[sec];
-          if (!slot) return null;
-          const cnt = porSeccion[sec].length;
-          return <GrupoArc key={sec} W={W} H={H} slot={slot} count={cnt} sec={sec} />;
-        })
-      ) : (
-        // Disposición en filas
-        <FilasOrquesta W={W} H={H} porSeccion={porSeccion} orden={filasOrden} />
-      )}
+      {coro}{perc}{metal}{madera}
+      {arpasG}{tecG}
+      {v1}{v2}{va}{vc}{cb}
     </svg>
   );
 }
 
-// Renderizado de un grupo en arco (herradura)
-function GrupoArc({ W, H, slot, count, sec }) {
-  const cx = slot.cx * W, cy = slot.cy * H;
-  const r = slot.r * W;
-  const color = colorSeccion(sec);
-  // Distribuir puntos en arco
-  const pts = [];
-  const n = Math.min(count, 16);
-  const sweep = (slot.sweep * Math.PI) / 180;
-  const span = (slot.angle * Math.PI) / 180;
-  for (let i = 0; i < n; i++) {
-    const a = sweep + (n > 1 ? span * (i / (n - 1) - 0.5) : 0);
-    pts.push({ x: cx + r * Math.cos(a + Math.PI / 2), y: cy + r * Math.sin(a + Math.PI / 2) });
-  }
-  // Si más de 16, hacer 2 filas
-  const extra = [];
-  if (count > 16) {
-    const r2 = r * 0.72;
-    for (let i = 0; i < count - 16 && i < 16; i++) {
-      const a = sweep + (span * (i / (Math.min(count - 16, 16) - 1 || 1) - 0.5));
-      extra.push({ x: cx + r2 * Math.cos(a + Math.PI / 2), y: cy + r2 * Math.sin(a + Math.PI / 2) });
-    }
-  }
+// Disposición en filas (rectangular, secciones de izq a der)
+function PlanoFilas({ W, H, porSeccion }) {
+  const filasOrden = ['8. Percusión', '7. Viento Metal', '6. Viento Madera',
+                       '2. Violines II', '3. Violas', '1. Violines I',
+                       '4. Violonchelos', '5. Contrabajos', '10. Coro'];
+  const filas = filasOrden.filter(s => (porSeccion[s] || []).length);
+  const filaH = (H * 0.84) / Math.max(1, filas.length);
   return (
-    <g>
-      {pts.map((p, i) => <circle key={'p' + i} cx={p.x} cy={p.y} r="6" fill={color} stroke="white" strokeWidth="1.5" />)}
-      {extra.map((p, i) => <circle key={'e' + i} cx={p.x} cy={p.y} r="6" fill={color} stroke="white" strokeWidth="1.5" />)}
-      <text x={cx} y={cy} textAnchor="middle" fill="#1e293b" fontSize="9" fontWeight="bold">{sec.split('. ')[1]}</text>
-      <text x={cx} y={cy + 11} textAnchor="middle" fill="#475569" fontSize="8">({count})</text>
-    </g>
-  );
-}
-
-// Disposición en filas
-function FilasOrquesta({ W, H, porSeccion, orden }) {
-  const filaH = (H * 0.78) / Math.max(1, orden.filter(s => porSeccion[s]).length);
-  const padTop = H * 0.05;
-  const filas = orden.filter(s => porSeccion[s] && porSeccion[s].length);
-  return (
-    <>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" data-testid="plano-filas">
+      <rect x="0" y="0" width={W} height={H} fill="#fef9e7" rx="12" />
       {filas.map((sec, idx) => {
-        const cnt = porSeccion[sec].length;
-        const y = padTop + idx * filaH + filaH / 2;
-        const color = colorSeccion(sec);
-        const pts = [];
-        const usableW = W * 0.78;
-        const startX = W * 0.13;
-        for (let i = 0; i < cnt; i++) {
-          const x = startX + (cnt > 1 ? usableW * (i / (cnt - 1)) : usableW / 2);
-          pts.push({ x, y });
-        }
+        const arr = porSeccion[sec] || [];
+        const y = H * 0.04 + idx * filaH + filaH / 2;
+        const cfg = SECCION_PLANO[sec] || {};
+        const w = 50, h = 32;
+        const usableW = W * 0.74;
+        const startX = W * 0.16;
         return (
           <g key={sec}>
-            <text x={W * 0.10} y={y + 3} textAnchor="end" fill="#1e293b" fontSize="9" fontWeight="bold">{sec.split('. ')[1]}</text>
-            {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="6" fill={color} stroke="white" strokeWidth="1.5" />)}
-            <text x={W * 0.93} y={y + 3} fill="#475569" fontSize="9">{cnt}</text>
+            <text x={W * 0.13} y={y + 4} textAnchor="end" fill="#1e293b" fontSize="11" fontWeight="bold">{cfg.label || sec}</text>
+            {arr.slice(0, 18).map((m, i) => {
+              const t = arr.length > 1 ? (i / Math.min(arr.length - 1, 17)) : 0.5;
+              const x = startX + usableW * t - w / 2;
+              return <Atril key={i} x={x} y={y - h / 2} w={w} h={h}
+                            num={i + 1} nombre={`${m.apellidos || ''}, ${m.nombre || ''}`} sec={sec} />;
+            })}
+            <text x={W * 0.95} y={y + 4} fill="#475569" fontSize="11">{arr.length}</text>
           </g>
         );
       })}
-    </>
+      {/* Director abajo */}
+      <g>
+        <circle cx={W / 2} cy={H - 28} r="16" fill="#1A3A5C" />
+        <text x={W / 2} y={H - 24} textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">DIR</text>
+      </g>
+      <text x={W / 2} y={H - 6} textAnchor="middle" fill="#64748b" fontSize="9">PÚBLICO</text>
+    </svg>
   );
 }
 

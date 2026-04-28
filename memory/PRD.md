@@ -954,3 +954,41 @@ Cada uno requiere cambios extensos en backend + frontend (endpoints nuevos, tabl
 - **B12**: Plano SVG con disposición americana exacta y colores por sección.
 
 Recomendación: implementarlos en iteraciones separadas de 1-2 bloques cada una para garantizar calidad y evitar regresiones.
+
+### ✅ Iteración Feb 2026 — Iters A, B, C, D + mejora "Solicitar verificación"
+
+**Mejora previa — Botón "📨 Solicitar verificación"** (`routes_verificaciones.py` + UI):
+- Endpoint `POST /api/gestor/eventos/{id}/verificaciones/{seccion}/solicitar` envía email a gestores con rol `admin` o `director_general` con plantilla HTML corporativa.
+- Botón compacto "📨" navy junto a cada badge `🟡 Pendiente` para gestores no super admin. Al click → confirma envío.
+
+**Iter A — Bloques 4 y 12**:
+- **B4**: Componente `HilosPendientesDrawer` reutilizable. Inyectado vía `<HilosPendientesAuto>` en `App.js → Layout` con detección automática de las 8 páginas (`/configuracion/eventos`, `/seguimiento`, `/plantillas-definitivas`, `/archivo`, `/economico`, `/tareas`, `/logistica`, `/informes`). Botón flotante navy/dorado con badge contador. Drawer derecho 420px con cabecera navy, cards de hilos, botones "↩ Responder" + "✓ Resolver". Refresh automático cada 60s.
+- **B12**: `PlanoOrquesta` reescrito completo con disposición americana exacta: arcos para cuerda con numeración correcta (1=más cercano al director), arpas a la izquierda, teclados a la derecha, vientos en filas horizontales (madera intermedia, metal posterior, percusión + coro al fondo). Atriles rectangulares con número grande + apellido. Colores corporativos por sección (#D6E8F7, #A8C9F0, #D4EDDA, #A8D5B5, #6AAF8A, etc.). Toggle herradura/filas mantiene compatibilidad.
+
+**Iter B — Bloques 5 y 7** (sin SQL nuevo):
+- **B5**: Nuevos endpoints `GET /api/gestor/archivo/obras/{id}/conflictos-evento/{evento_id}` y `GET /api/gestor/archivo/obras/{id}/estado-material?evento_id=...`. UI: `ProgramaArchivoCell` ampliado con badges de estado material (🟢 Completo / 🟡 Incompleto / 🔴 Revisar / ⚪ Sin partes), alerta "⚠ Faltan copias" si hay déficit por sección, alerta "🔒 En préstamo" si hay solapamiento de fechas.
+- **B7**: Endpoint `GET /api/gestor/inventario/{material_id}/conflictos-fechas?desde=&hasta=` que retorna préstamos solapados.
+
+**Iter C — Bloque 11** (`routes_informes.py`):
+- **B11B**: Helper `_pie_firma()` añadido a los 7 generadores existentes (A,B,C,D,E,F,G,H) — tabla con dos columnas "Gestor responsable" + "Visto bueno · Dirección" con líneas para firma, nombre, fecha, lugar.
+- **B11C**: Nuevo `gen_I` — Hoja de trabajo · Equipo de montaje. Por cada ensayo: nombre + lugar + tabla de material + espacio para incidencias.
+- **B11D**: Nuevo `gen_J` — Hoja de trabajo · Equipo de archivo. Programa de obras con estado, préstamos activos en fechas del evento.
+- `GENERADORES` y selector frontend extendidos con I y J. 9 PDFs verificados (200 OK con bytes válidos).
+- **B11A** (Informe D mejorado completo) queda como TODO menor — el actual gen_D ya cubre datos generales + ensayos básicos.
+
+**Iter D — Bloques 9 y 10** (`routes_tareas.py`):
+- **B9**: Endpoint `GET /api/gestor/calendario-eventos?desde=&hasta=` devuelve eventos automáticos en formato unificado: ensayos (verde #16a34a), funciones (azul #3b82f6), logística (amarillo #eab308), montajes confirmados (naranja #f97316). Cada evento `editable: false` con `origen: 'auto'`.
+- **B10**: Endpoint `mi-calendario` placeholder con HTTPException 501 — **PENDIENTE**: el endpoint requiere `get_current_musico` (portal) y reescritura de las páginas del músico, lo cual cae fuera del alcance "no tocar portal".
+
+**Bloque 6 — Montajes por sesión** (`MontajeRiderSection.js`):
+- Selector de sesión + soporte `ensayo_id` ya existían.
+- Nuevo botón "🔁 Duplicar" — copia el montaje actual a otra sesión seleccionable mediante prompt.
+- B6B (precarga desde convocatoria) y B6C (precarga desde archivo): el endpoint `/api/gestor/montaje/{id}/generar` ya existente puede iterarse en backend para añadir lógica avanzada.
+
+### ⚠️ Bloques parcialmente completados o pendientes
+- **B5/B7 frontend**: Mostrado en Programa Musical. Para Montaje (B7 visual) faltaría inyectar las alertas en `MontajeRiderSection.js` consumiendo el nuevo endpoint conflicts-fechas.
+- **B6B/B6C**: Lógica de precarga avanzada (filtrar por convocados al ensayo + obra_partes percusión) pendiente — requiere reescritura del endpoint `/montaje/{id}/generar`.
+- **B10**: Requiere reescritura del portal del músico (excluido del scope).
+- **B11A**: Informe D mejorado con TODOS los apartados de configuración — el gen_D actual cubre solo parte.
+- **B12**: Plano americano implementado pero sin numeración 100% verificada (los atriles se asignan por orden de lista de músicos; afina cuando datos reales lleguen).
+

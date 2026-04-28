@@ -13,6 +13,8 @@ const ProgramaArchivoCell = ({ item, eventoId }) => {
   const [match, setMatch] = useState(null);    // {id, codigo, titulo, autor, completo}
   const [verif, setVerif] = useState(null);    // resultado del cálculo
   const [openModal, setOpenModal] = useState(false);
+  const [estadoMat, setEstadoMat] = useState(null); // {estado, deficit_por_seccion, ...}
+  const [conflictos, setConflictos] = useState([]); // préstamos solapando fechas (B5)
   const titulo = (item.obra || '').trim();
 
   useEffect(() => {
@@ -29,6 +31,25 @@ const ProgramaArchivoCell = ({ item, eventoId }) => {
     return () => { cancel = true; };
   }, [titulo, api]);
 
+  // Bloque 5 — estado de material + conflictos
+  useEffect(() => {
+    if (!match?.id) { setEstadoMat(null); setConflictos([]); return; }
+    let cancel = false;
+    (async () => {
+      try {
+        const r1 = await api.get(`/api/gestor/archivo/obras/${match.id}/estado-material${eventoId ? `?evento_id=${eventoId}` : ''}`);
+        if (!cancel) setEstadoMat(r1.data);
+      } catch {/* noop */ }
+      if (eventoId) {
+        try {
+          const r2 = await api.get(`/api/gestor/archivo/obras/${match.id}/conflictos-evento/${eventoId}`);
+          if (!cancel) setConflictos(r2.data?.conflictos || []);
+        } catch {/* noop */ }
+      }
+    })();
+    return () => { cancel = true; };
+  }, [match?.id, eventoId, api]);
+
   if (!titulo) return null;
   if (!match) {
     return (
@@ -44,9 +65,35 @@ const ProgramaArchivoCell = ({ item, eventoId }) => {
     setVerif(r.data); setOpenModal(true);
   };
 
+  // Indicador de estado de material
+  const estadoCfg = {
+    completo: { l: '🟢 Completo', c: 'bg-emerald-100 text-emerald-700' },
+    incompleto: { l: '🟡 Incompleto', c: 'bg-amber-100 text-amber-700' },
+    necesita_revision: { l: '🔴 Revisar', c: 'bg-red-100 text-red-700' },
+    sin_partes: { l: '⚪ Sin partes', c: 'bg-slate-100 text-slate-600' },
+  }[estadoMat?.estado] || null;
+
   return (
-    <span className="flex items-center gap-1">
+    <span className="flex items-center gap-1 flex-wrap">
       <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700" title={`En catálogo: ${match.codigo}`}>🟢 archivo</span>
+      {estadoCfg && (
+        <span className={`px-1.5 py-0.5 rounded text-[10px] ${estadoCfg.c}`}
+              title={`${estadoMat.copias_total} copias · ${estadoMat.partes_count} partes`}>
+          {estadoCfg.l}
+        </span>
+      )}
+      {estadoMat?.copias_suficientes === false && (
+        <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-700"
+              title={`Déficit: ${(estadoMat.deficit_por_seccion || []).map(d => `${d.seccion}(-${d.deficit})`).join(', ')}`}>
+          ⚠ Faltan copias
+        </span>
+      )}
+      {conflictos.length > 0 && (
+        <span className="px-1.5 py-0.5 rounded text-[10px] bg-orange-100 text-orange-800"
+              title={`En préstamo durante el evento (${conflictos.length})`}>
+          🔒 En préstamo
+        </span>
+      )}
       <button type="button" onClick={verificar}
         data-testid={`btn-verif-atriles-${match.id}`}
         className="text-[10px] text-blue-600 hover:underline">Ver atriles</button>
@@ -134,9 +181,10 @@ const ICONOS_SECCION = {
   logistica_material: '🚚', programa_musical: '🎵', presupuesto: '💰',
   montaje: '🛠️', partituras: '📜',
 };
-const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion }) => {
+const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion, eventoId, api }) => {
   const [open, setOpen] = useState(false);
   const [notas, setNotas] = useState('');
+  const [solicitando, setSolicitando] = useState(false);
   const cfg = {
     pendiente: { l: '🟡 Pendiente', c: 'bg-amber-100 text-amber-800 border-amber-300' },
     verificado: { l: '✅ Verificado', c: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
@@ -146,17 +194,39 @@ const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion }) => {
     await onChange(seccion, nuevo, notas);
     setOpen(false); setNotas('');
   };
+  const solicitar = async (e) => {
+    e.stopPropagation();
+    if (solicitando || !eventoId) return;
+    setSolicitando(true);
+    try {
+      const r = await api.post(`/api/gestor/eventos/${eventoId}/verificaciones/${seccion}/solicitar`);
+      alert(`✅ Solicitud enviada a ${r.data?.enviados?.length || 0} administradores.`);
+    } catch (err) {
+      alert('No se pudo enviar la solicitud: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setSolicitando(false);
+    }
+  };
   return (
-    <div className="relative inline-block" data-testid={`verif-badge-${seccion}`}>
+    <div className="relative inline-flex items-center gap-1" data-testid={`verif-badge-${seccion}`}>
       <button
         type="button"
         disabled={!puedeEditar}
-        onClick={() => puedeEditar && setOpen(o => !o)}
+        onClick={(e) => { e.stopPropagation(); puedeEditar && setOpen(o => !o); }}
         className={`text-xs px-2 py-0.5 rounded-full border ${cfg.c} ${puedeEditar ? 'cursor-pointer hover:shadow-sm' : 'cursor-default'}`}
         title={puedeEditar ? 'Click para cambiar el estado' : 'Solo administradores y director general pueden modificar'}
       >
         {cfg.l}
       </button>
+      {/* Botón solicitar verificación — solo visible si pendiente y NO super admin */}
+      {!puedeEditar && estado === 'pendiente' && eventoId && (
+        <button type="button" onClick={solicitar} disabled={solicitando}
+                data-testid={`verif-solicitar-${seccion}`}
+                title="Notificar al director general por email"
+                className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#1A3A5C] hover:bg-[#163050] text-white disabled:opacity-50 transition">
+          {solicitando ? '…' : '📨'}
+        </button>
+      )}
       {open && (
         <div className="absolute z-30 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 w-64" data-testid={`verif-dropdown-${seccion}`}>
           <textarea value={notas} onChange={e => setNotas(e.target.value)}
@@ -357,6 +427,8 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
       puedeEditar={verifMeta.puede_editar}
       onChange={cambiarVerif}
       seccion={s}
+      eventoId={event?.id}
+      api={api}
     />
   );
 

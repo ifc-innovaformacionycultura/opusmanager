@@ -88,3 +88,77 @@ async def put_verificacion(evento_id: str, seccion: str, payload: VerificacionUp
     else:
         supabase.table('evento_verificaciones').insert(record).execute()
     return {'ok': True, 'seccion': seccion, 'estado': payload.estado}
+
+
+@router.post("/{evento_id}/verificaciones/{seccion}/solicitar")
+async def solicitar_verificacion(evento_id: str, seccion: str,
+                                  current_user: dict = Depends(get_current_gestor)):
+    """Envía email a todos los super admins (admin + director_general) pidiendo verificar una sección."""
+    import os
+    import resend as _resend
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Servicio de email no configurado")
+    if seccion not in SECCIONES_VALIDAS:
+        raise HTTPException(status_code=400, detail=f"Sección inválida: {seccion}")
+    # Destinatarios: admin + director_general
+    admins = supabase.table('usuarios').select('email,nombre,apellidos,rol') \
+        .in_('rol', ['admin', 'director_general']).execute().data or []
+    emails = [a['email'] for a in admins if a.get('email')]
+    if not emails:
+        raise HTTPException(status_code=404, detail="No hay administradores ni director general con email")
+    # Datos del evento
+    ev_r = supabase.table('eventos').select('nombre,fecha_inicio').eq('id', evento_id).limit(1).execute().data or []
+    ev = ev_r[0] if ev_r else {}
+    profile = current_user.get('profile') or {}
+    solicitante = f"{profile.get('nombre','')} {profile.get('apellidos','')}".strip() or current_user.get('email', 'un gestor')
+    sender = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev").strip()
+    label_seccion = ICONOS_SECCION_LABELS.get(seccion, seccion)
+    asunto = f"Solicitud de verificación: {label_seccion} — {ev.get('nombre','evento')}"
+    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial;color:#0f172a">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:24px 0">
+<tr><td align="center"><table width="600" style="background:#fff;border-radius:12px;border:1px solid #e2e8f0">
+<tr><td style="background:#1A3A5C;padding:24px;color:#fff;border-bottom:3px solid #C9920A">
+<h1 style="margin:0;font-size:18px">IFC · OPUS MANAGER</h1>
+<p style="margin:6px 0 0;font-size:13px;color:#C9920A">Solicitud de verificación</p>
+</td></tr>
+<tr><td style="padding:24px">
+<p style="font-size:14px;line-height:1.6">Hola,</p>
+<p style="font-size:14px;line-height:1.6"><b>{solicitante}</b> solicita la verificación de la sección <b>{label_seccion}</b> del evento:</p>
+<div style="background:#F1F5F9;border-left:3px solid #C9920A;padding:14px;border-radius:4px;margin:12px 0">
+<div style="font-size:15px;font-weight:600;color:#1A3A5C">{ev.get('nombre','—')}</div>
+<div style="font-size:12px;color:#475569;margin-top:4px">{(ev.get('fecha_inicio') or '')[:10]}</div>
+</div>
+<p style="font-size:13px;color:#475569">Accede al sistema y revisa la sección correspondiente para marcarla como verificada o autorizada sin verificar.</p>
+</td></tr></table></td></tr></table></body></html>"""
+    _resend.api_key = api_key
+    enviados = []
+    for to in emails:
+        try:
+            r = _resend.Emails.send({"from": sender, "to": [to], "subject": asunto, "html": html})
+            enviados.append(to)
+            try:
+                supabase.table('email_log').insert({
+                    'destinatario': to, 'asunto': asunto,
+                    'tipo': f'solicitud_verificacion_{seccion}', 'estado': 'enviado',
+                    'resend_id': (r.get('id') if isinstance(r, dict) else None),
+                    'evento_id': evento_id,
+                }).execute()
+            except Exception:
+                pass
+        except Exception:
+            pass
+    return {'ok': True, 'enviados': enviados, 'total_admins': len(emails)}
+
+
+# Etiquetas legibles
+ICONOS_SECCION_LABELS = {
+    'datos_generales': 'Datos Generales',
+    'ensayos': 'Ensayos y Funciones',
+    'logistica_musicos': 'Transportes y Alojamientos · Músicos',
+    'logistica_material': 'Transporte de Material',
+    'programa_musical': 'Programa Musical',
+    'presupuesto': 'Presupuesto',
+    'montaje': 'Montaje y Rider Técnico',
+    'partituras': 'Partituras y Materiales',
+}

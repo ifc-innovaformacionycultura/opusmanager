@@ -37,7 +37,7 @@ LIGHT = colors.HexColor("#F1F5F9")
 
 
 class InformeReq(BaseModel):
-    tipo: Literal['A','B','C','D','E','F','G','H']
+    tipo: Literal['A','B','C','D','E','F','G','H','I','J']
     evento_ids: List[str]
     ensayo_id: Optional[str] = None
     opciones: Optional[dict] = {}
@@ -271,6 +271,8 @@ def gen_A(evento_ids, opciones=None) -> bytes:
             elements.append(t)
         if eid != evento_ids[-1]:
             elements.append(PageBreak())
+    elements += _pie_firma()
+
     doc.build(elements, onFirstPage=first, onLaterPages=later)
     return buf.getvalue()
 
@@ -365,6 +367,8 @@ def gen_E(evento_ids, opciones=None) -> bytes:
         elements.append(firma)
         if eid != evento_ids[-1]:
             elements.append(PageBreak())
+    elements += _pie_firma()
+
     doc.build(elements, onFirstPage=first, onLaterPages=later)
     return buf.getvalue()
 
@@ -437,6 +441,8 @@ def gen_F(evento_ids, opciones=None) -> bytes:
             elements.append(Spacer(1, 4*mm))
         if eid != evento_ids[-1]:
             elements.append(PageBreak())
+    elements += _pie_firma()
+
     doc.build(elements, onFirstPage=first, onLaterPages=later)
     return buf.getvalue()
 
@@ -486,6 +492,8 @@ def gen_B(evento_ids, opciones=None) -> bytes:
         ]))
         elements.append(t)
         if eid != evento_ids[-1]: elements.append(PageBreak())
+    elements += _pie_firma()
+
     doc.build(elements, onFirstPage=first, onLaterPages=later)
     return buf.getvalue()
 
@@ -513,6 +521,8 @@ def gen_C(evento_ids, opciones=None) -> bytes:
         ('GRID', (0,0), (-1,-1), 0.25, colors.HexColor('#CBD5E1')),
     ]))
     elements.append(t)
+    elements += _pie_firma()
+
     doc.build(elements, onFirstPage=first, onLaterPages=later)
     return buf.getvalue()
 
@@ -548,6 +558,8 @@ def gen_D(evento_ids, opciones=None) -> bytes:
         else:
             elements.append(Paragraph("Sin ensayos.", S['p']))
         if eid != evento_ids[-1]: elements.append(PageBreak())
+    elements += _pie_firma()
+
     doc.build(elements, onFirstPage=first, onLaterPages=later)
     return buf.getvalue()
 
@@ -586,6 +598,8 @@ def gen_G(evento_ids, opciones=None) -> bytes:
             elements.append(Spacer(1, 8*mm))
             elements.append(Paragraph("Atentamente,<br/><br/>El equipo de gestión de IFC", S['p']))
             elements.append(PageBreak())
+    elements += _pie_firma()
+
     doc.build(elements, onFirstPage=first, onLaterPages=later)
     return buf.getvalue()
 
@@ -606,6 +620,7 @@ def gen_H(evento_ids, opciones=None) -> bytes:
         elements.append(Paragraph(sec, S['h1']))
         elements.append(Paragraph(f"Ver PDF individual de tipo {sec.split(' — ')[0]}.", S['p']))
         elements.append(Spacer(1, 8*mm))
+    elements += _pie_firma()
     doc.build(elements, onFirstPage=first, onLaterPages=later)
     # NOTA: la versión combinada real requiere pypdf para mergear; aquí
     # se entrega placeholder + recomendación de descargar individuales.
@@ -613,9 +628,176 @@ def gen_H(evento_ids, opciones=None) -> bytes:
 
 
 # ============================================================
+# Bloque 11B — Pie de firma reutilizable
+# ============================================================
+def _pie_firma():
+    """Devuelve elementos reportlab con dos columnas para firma."""
+    S = _styles()
+    tabla = Table([
+        [Paragraph("<b>Gestor responsable</b>", S['small']),
+         Paragraph("<b>Visto bueno · Dirección</b>", S['small'])],
+        [Paragraph("Firma:<br/><br/>____________________________", S['small']),
+         Paragraph("Firma:<br/><br/>____________________________", S['small'])],
+        [Paragraph("Nombre y apellidos:<br/>____________________________", S['small']),
+         Paragraph("Nombre y apellidos:<br/>____________________________", S['small'])],
+        [Paragraph(f"Fecha: ____ / ____ / ______<br/>Lugar: ________________________", S['small']),
+         Paragraph(f"Fecha: ____ / ____ / ______<br/>Lugar: ________________________", S['small'])],
+    ], colWidths=[8.5*cm, 8.5*cm])
+    tabla.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
+    ]))
+    return [Spacer(1, 10*mm), Paragraph("FIRMAS", S['h2']), tabla]
+
+
+# ============================================================
+# Bloque 11C — Informe I: Hoja de trabajo para montaje
+# ============================================================
+def gen_I(evento_ids, opciones=None) -> bytes:
+    buf = BytesIO()
+    doc, first, later = _build_doc(buf, "Hoja de trabajo · Equipo de montaje")
+    S = _styles()
+    el = []
+    for evid in evento_ids:
+        ev = _evento(evid) or {}
+        el.append(Paragraph(f"<b>{ev.get('nombre','—')}</b>", S['h1']))
+        el.append(Paragraph(f"Fecha: {(ev.get('fecha_inicio') or '')[:10]} · Lugar: {ev.get('lugar') or '—'}", S['p']))
+        el.append(Spacer(1, 4*mm))
+        # Lista de ensayos/funciones (rehearsals)
+        try:
+            ensayos = supabase.table('rehearsals').select('*').eq('event_id', evid).order('fecha').execute().data or []
+        except Exception:
+            ensayos = []
+        for ens in ensayos:
+            el.append(Paragraph(f"<b>{ens.get('tipo','sesión').upper()} — {(ens.get('fecha') or '')[:10]} · {(ens.get('hora_inicio') or '')[:5]}</b>", S['h2']))
+            el.append(Paragraph(f"Lugar: {ens.get('lugar') or '—'}", S['small']))
+            el.append(Spacer(1, 1*mm))
+            # Material asociado al evento (filtrado por sesión si existiera)
+            try:
+                m_q = supabase.table('evento_montaje').select('*, material:inventario_material(nombre,grupo)').eq('evento_id', evid)
+                if 'ensayo_id' in (m_q.execute().data[0] if m_q.execute().data else {}):
+                    m_q = m_q.eq('ensayo_id', ens['id'])
+                materiales = m_q.execute().data or []
+            except Exception:
+                materiales = []
+            if materiales:
+                rows = [['Item', 'Grupo', 'Cant.', 'Sección', 'Conf.']]
+                for m in materiales:
+                    rows.append([
+                        (m.get('material') or {}).get('nombre') or m.get('nombre_material') or '—',
+                        (m.get('material') or {}).get('grupo') or '—',
+                        str(m.get('cantidad_necesaria') or 0),
+                        m.get('seccion_escenario') or '—',
+                        '✓' if m.get('confirmado') else '·',
+                    ])
+                t = Table(rows, repeatRows=1, colWidths=[7*cm, 2.5*cm, 1.5*cm, 3*cm, 1*cm])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1A3A5C')),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('FONTSIZE', (0,0), (-1,-1), 8),
+                    ('GRID', (0,0), (-1,-1), 0.3, colors.HexColor('#cbd5e1')),
+                ]))
+                el.append(t)
+            else:
+                el.append(Paragraph("Sin material configurado.", S['small']))
+            el.append(Spacer(1, 4*mm))
+        # Espacio para incidencias
+        el.append(Paragraph("<b>Incidencias y observaciones</b>", S['h2']))
+        el.append(Paragraph("_______________________________________________________________________<br/>_______________________________________________________________________<br/>_______________________________________________________________________", S['small']))
+        el.append(Spacer(1, 4*mm))
+        if evid != evento_ids[-1]:
+            el.append(PageBreak())
+    el += _pie_firma()
+    doc.build(el, onFirstPage=first, onLaterPages=later)
+    return buf.getvalue()
+
+
+# ============================================================
+# Bloque 11D — Informe J: Hoja de trabajo para archivo
+# ============================================================
+def gen_J(evento_ids, opciones=None) -> bytes:
+    buf = BytesIO()
+    doc, first, later = _build_doc(buf, "Hoja de trabajo · Equipo de archivo")
+    S = _styles()
+    el = []
+    for evid in evento_ids:
+        ev = _evento(evid) or {}
+        el.append(Paragraph(f"<b>{ev.get('nombre','—')}</b>", S['h1']))
+        el.append(Paragraph(f"Fecha: {(ev.get('fecha_inicio') or '')[:10]}", S['p']))
+        el.append(Spacer(1, 3*mm))
+        # Programa de obras
+        try:
+            evobras = supabase.table('evento_obras').select('*, obra:obras(id,codigo,titulo,autor)') \
+                .eq('evento_id', evid).execute().data or []
+        except Exception:
+            evobras = []
+        if evobras:
+            el.append(Paragraph("<b>Programa de obras</b>", S['h2']))
+            rows = [['Cód.', 'Autor / Título', 'Estado material', 'Notas']]
+            for eo in evobras:
+                ob = eo.get('obra') or {}
+                rows.append([
+                    ob.get('codigo') or '—',
+                    f"{ob.get('autor') or ''} — {ob.get('titulo') or eo.get('titulo_provisional') or '—'}",
+                    eo.get('estado') or '—',
+                    eo.get('notas') or '',
+                ])
+            t = Table(rows, repeatRows=1, colWidths=[2*cm, 8.5*cm, 3.5*cm, 3*cm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1A3A5C')),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('FONTSIZE', (0,0), (-1,-1), 8),
+                ('GRID', (0,0), (-1,-1), 0.3, colors.HexColor('#cbd5e1')),
+            ]))
+            el.append(t)
+            el.append(Spacer(1, 4*mm))
+        # Préstamos activos que afecten al evento
+        try:
+            f_ini = (ev.get('fecha_inicio') or '')[:10]
+            prest = supabase.table('obra_prestamos').select('*, obra:obras(titulo,codigo)') \
+                .neq('estado', 'devuelto').execute().data or []
+        except Exception:
+            prest = []
+        prest_evento = []
+        for p in prest:
+            ps = (p.get('fecha_salida') or '')[:10]
+            pe = (p.get('fecha_devolucion_real') or p.get('fecha_prevista_devolucion') or '')[:10]
+            if ps and ps <= (f_ini or '9999-12-31') and (not pe or pe >= (f_ini or '0000-01-01')):
+                prest_evento.append(p)
+        if prest_evento:
+            el.append(Paragraph("<b>Préstamos activos en fechas del evento</b>", S['h2']))
+            rows = [['Obra', 'Salida', 'Prevista', 'Estado']]
+            for p in prest_evento:
+                ob = p.get('obra') or {}
+                rows.append([
+                    f"{ob.get('codigo') or ''} — {ob.get('titulo') or '—'}",
+                    (p.get('fecha_salida') or '')[:10],
+                    (p.get('fecha_prevista_devolucion') or '')[:10] or '—',
+                    p.get('estado') or '—',
+                ])
+            t = Table(rows, repeatRows=1, colWidths=[8*cm, 3*cm, 3*cm, 3*cm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#C9920A')),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('FONTSIZE', (0,0), (-1,-1), 8),
+                ('GRID', (0,0), (-1,-1), 0.3, colors.HexColor('#cbd5e1')),
+            ]))
+            el.append(t)
+            el.append(Spacer(1, 4*mm))
+        if evid != evento_ids[-1]:
+            el.append(PageBreak())
+    el += _pie_firma()
+    doc.build(el, onFirstPage=first, onLaterPages=later)
+    return buf.getvalue()
+
+
+# ============================================================
 # Endpoint
 # ============================================================
-GENERADORES = {'A': gen_A, 'B': gen_B, 'C': gen_C, 'D': gen_D, 'E': gen_E, 'F': gen_F, 'G': gen_G, 'H': gen_H}
+GENERADORES = {'A': gen_A, 'B': gen_B, 'C': gen_C, 'D': gen_D, 'E': gen_E, 'F': gen_F, 'G': gen_G, 'H': gen_H, 'I': gen_I, 'J': gen_J}
 
 
 @router.post("/generar")
@@ -666,7 +848,7 @@ async def preview_informe(tipo: str, evento_id: str, current_user: dict = Depend
 # Envío por email (Resend con adjunto PDF)
 # ============================================================
 class EnviarInformeReq(BaseModel):
-    tipo: Literal['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    tipo: Literal['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     evento_ids: List[str]
     destinatarios: List[str]  # lista de emails
     asunto: str

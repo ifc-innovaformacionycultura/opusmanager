@@ -91,6 +91,26 @@ const MontajeRiderSection = ({ evento, api, onEventChange }) => {
     setItems(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // Bloque 6 — Duplicar montaje a otra sesión
+  const duplicarMontaje = () => {
+    const opciones = [{ id: '', label: 'General del evento' }, ...ensayos.map(en => ({
+      id: en.id, label: `${en.tipo} · ${en.fecha} · ${(en.hora_inicio || '').slice(0, 5)}`,
+    }))].filter(o => o.id !== (ensayoActivo || ''));
+    if (!opciones.length) { alert('No hay otra sesión donde duplicar.'); return; }
+    const dest = window.prompt(`Duplicar este montaje a:\n${opciones.map((o, i) => `${i + 1}. ${o.label}`).join('\n')}\n\nIntroduce el número:`);
+    const idx = parseInt(dest, 10) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= opciones.length) return;
+    const target = opciones[idx];
+    // Clonar items (sin id, con nuevo ensayo_id)
+    const clones = items.filter(it => !it._deleted).map(it => ({
+      ...it, id: undefined, _local: true,
+      ensayo_id: target.id || null,
+    }));
+    setEnsayoActivo(target.id || null);
+    setItems(clones);
+    setMsg({ type: 'success', text: `✅ ${clones.length} items duplicados a "${target.label}". Pulsa "Guardar montaje".` });
+  };
+
   const espacioSel = espacios.find(e => e.id === evento.espacio_id);
   const matMap = Object.fromEntries(materiales.map(m => [m.id, m]));
 
@@ -202,6 +222,12 @@ const MontajeRiderSection = ({ evento, api, onEventChange }) => {
                     title={ensayoActivo ? 'El generador automático trabaja sólo con el montaje general del evento.' : ''}
                     className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">
               {generando ? 'Generando…' : '✨ Generar montaje automático'}
+            </button>
+            <button onClick={duplicarMontaje} disabled={!items.length}
+                    data-testid="btn-duplicar-montaje"
+                    title="Copiar este montaje a otra sesión del evento"
+                    className="px-3 py-1.5 text-xs bg-amber-50 text-amber-800 border border-amber-300 rounded disabled:opacity-50">
+              🔁 Duplicar
             </button>
             <button onClick={addRow} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-300 rounded">
               + Fila
