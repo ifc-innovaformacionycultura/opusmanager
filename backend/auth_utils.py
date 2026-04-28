@@ -50,12 +50,35 @@ async def get_current_user(
 async def get_current_gestor(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> Dict:
-    """Dependency for gestor-only endpoints. El rol 'archivero' tiene acceso idéntico al 'gestor'."""
+    """Dependency for gestor-only endpoints. Roles permitidos: gestor, archivero, director_general, admin."""
     user = await get_current_user(credentials)
-    if user.get("rol") not in ("gestor", "archivero"):
+    if user.get("rol") not in ("gestor", "archivero", "director_general", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso denegado. Se requiere rol de gestor o archivero."
+            detail="Acceso denegado. Se requiere rol de gestor, archivero o director general."
+        )
+    return user
+
+
+def is_super_admin(user: Dict) -> bool:
+    """True para admin/director_general/admin@convocatorias.com — los únicos con permisos de verificación
+    y publicación bypass."""
+    if not user: return False
+    if user.get("rol") in ("admin", "director_general"):
+        return True
+    email = (user.get("profile") or {}).get("email") or user.get("email") or ""
+    return email.lower() == "admin@convocatorias.com"
+
+
+async def require_super_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> Dict:
+    """Dependency for endpoints reserved to super admins (verificaciones, override publicación)."""
+    user = await get_current_user(credentials)
+    if not is_super_admin(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado. Se requiere rol de director general o administrador."
         )
     return user
 

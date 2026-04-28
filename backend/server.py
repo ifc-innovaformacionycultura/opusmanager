@@ -25,6 +25,7 @@ from routes_comentarios_equipo import router as comentarios_equipo_router
 from routes_inventario import router as inventario_router
 from routes_montaje import router as montaje_router
 from routes_informes import router as informes_router
+from routes_verificaciones import router as verificaciones_router
 
 # ==================== App Configuration ====================
 
@@ -73,6 +74,7 @@ app.include_router(comentarios_equipo_router)  # /api/gestor/comentarios-equipo/
 app.include_router(inventario_router)  # /api/gestor/inventario/*
 app.include_router(montaje_router)  # /api/gestor/montaje/*, /espacios, /transporte-material
 app.include_router(informes_router)  # /api/gestor/informes/*
+app.include_router(verificaciones_router)  # /api/gestor/eventos/{id}/verificaciones/*
 
 # ==================== Health Check ====================
 

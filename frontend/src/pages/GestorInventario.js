@@ -24,6 +24,15 @@ const fmtDate = (iso) => {
   try { return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return iso; }
 };
 
+// Bloque 8 — Permiso de edición: archivero, director_general, admin@convocatorias.com
+const usePuedeEditarInventario = () => {
+  const { user } = useAuth();
+  if (!user) return false;
+  const rol = user?.profile?.rol || user?.rol;
+  const email = (user?.profile?.email || user?.email || '').toLowerCase();
+  return ['archivero', 'director_general', 'admin'].includes(rol) || email === 'admin@convocatorias.com';
+};
+
 export default function GestorInventario() {
   const [tab, setTab] = useState('catalogo');
   return (
@@ -57,6 +66,7 @@ export default function GestorInventario() {
 // ============================================================
 function CatalogoTab() {
   const { api } = useAuth();
+  const puedeEditar = usePuedeEditarInventario();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtros, setFiltros] = useState({ grupo: '', estado: '', q: '' });
@@ -97,8 +107,10 @@ function CatalogoTab() {
           <option value="necesita_revision">Necesita revisión</option>
           <option value="fuera_servicio">Fuera de servicio</option>
         </select>
-        <button onClick={() => setShowNew(true)} data-testid="btn-nuevo-material"
-                className="ml-auto px-3 py-1.5 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">
+        <button onClick={() => puedeEditar && setShowNew(true)} data-testid="btn-nuevo-material"
+                disabled={!puedeEditar}
+                title={puedeEditar ? '' : 'Sin permisos de edición'}
+                className={`ml-auto px-3 py-1.5 text-sm rounded ${puedeEditar ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
           + Nuevo elemento
         </button>
       </div>
@@ -142,13 +154,13 @@ function CatalogoTab() {
           </table>
         </div>
       )}
-      {ficha && <FichaMaterialModal materialId={ficha} api={api} onClose={() => setFicha(null)} onChange={cargar} />}
-      {showNew && <FichaMaterialModal materialId={null} api={api} onClose={() => setShowNew(false)} onChange={cargar} />}
+      {ficha && <FichaMaterialModal materialId={ficha} api={api} onClose={() => setFicha(null)} onChange={cargar} puedeEditar={puedeEditar} />}
+      {showNew && puedeEditar && <FichaMaterialModal materialId={null} api={api} onClose={() => setShowNew(false)} onChange={cargar} puedeEditar={puedeEditar} />}
     </div>
   );
 }
 
-function FichaMaterialModal({ materialId, api, onClose, onChange }) {
+function FichaMaterialModal({ materialId, api, onClose, onChange, puedeEditar = true }) {
   const [m, setM] = useState({ grupo: 'mobiliario', cantidad_total: 1, estado: 'bueno' });
   const [historial, setHistorial] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -278,11 +290,13 @@ function FichaMaterialModal({ materialId, api, onClose, onChange }) {
           </div>
         )}
         <footer className="px-6 py-3 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm border border-slate-300 rounded hover:bg-white">Cancelar</button>
-          <button onClick={guardar} disabled={saving || !m.nombre || !m.grupo} data-testid="btn-guardar-material"
-                  className="px-4 py-1.5 text-sm bg-emerald-600 text-white rounded disabled:opacity-50 hover:bg-emerald-700">
-            {saving ? 'Guardando…' : 'Guardar'}
-          </button>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm border border-slate-300 rounded hover:bg-white">{puedeEditar ? 'Cancelar' : 'Cerrar'}</button>
+          {puedeEditar && (
+            <button onClick={guardar} disabled={saving || !m.nombre || !m.grupo} data-testid="btn-guardar-material"
+                    className="px-4 py-1.5 text-sm bg-emerald-600 text-white rounded disabled:opacity-50 hover:bg-emerald-700">
+              {saving ? 'Guardando…' : 'Guardar'}
+            </button>
+          )}
         </footer>
       </div>
     </div>
@@ -301,6 +315,7 @@ const Field = ({ label, col2, children }) => (
 // ============================================================
 function PrestamosTab() {
   const { api } = useAuth();
+  const puedeEditar = usePuedeEditarInventario();
   const [prestamos, setPrestamos] = useState([]);
   const [filtros, setFiltros] = useState({ tipo: '', estado: '' });
   const [showNew, setShowNew] = useState(false);
@@ -358,8 +373,10 @@ function PrestamosTab() {
           <option value="devuelto">Devuelto</option>
           <option value="parcial">Parcial</option>
         </select>
-        <button onClick={() => setShowNew(true)} data-testid="btn-nuevo-prestamo"
-                className="ml-auto px-3 py-1.5 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">
+        <button onClick={() => puedeEditar && setShowNew(true)} data-testid="btn-nuevo-prestamo"
+                disabled={!puedeEditar}
+                title={puedeEditar ? '' : 'Sin permisos de edición'}
+                className={`ml-auto px-3 py-1.5 text-sm rounded ${puedeEditar ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
           + Nuevo préstamo
         </button>
       </div>

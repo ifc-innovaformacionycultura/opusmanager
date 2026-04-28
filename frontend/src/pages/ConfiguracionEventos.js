@@ -115,12 +115,100 @@ const SectionTitle = ({ children, color }) => {
     orange: 'bg-orange-500',
     purple: 'bg-purple-500',
     indigo: 'bg-indigo-500',
-    pink: 'bg-pink-500'
+    pink: 'bg-pink-500',
+    teal: 'bg-teal-500',
+    red: 'bg-red-500',
+    gray: 'bg-gray-500',
   };
   return (
     <div className="flex items-center gap-2 mb-3 mt-4">
       <div className={`w-1 h-5 ${colors[color] || 'bg-slate-500'} rounded`}></div>
       <h4 className="font-semibold text-slate-800 text-sm uppercase tracking-wide">{children}</h4>
+    </div>
+  );
+};
+
+// Badge de verificación de sección
+const ICONOS_SECCION = {
+  datos_generales: '📋', ensayos: '🎼', logistica_musicos: '🚌',
+  logistica_material: '🚚', programa_musical: '🎵', presupuesto: '💰',
+  montaje: '🛠️', partituras: '📜',
+};
+const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion }) => {
+  const [open, setOpen] = useState(false);
+  const [notas, setNotas] = useState('');
+  const cfg = {
+    pendiente: { l: '🟡 Pendiente', c: 'bg-amber-100 text-amber-800 border-amber-300' },
+    verificado: { l: '✅ Verificado', c: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    autorizado_sin_verificar: { l: '⚡ Autorizado sin verificar', c: 'bg-blue-100 text-blue-800 border-blue-300' },
+  }[estado || 'pendiente'];
+  const apply = async (nuevo) => {
+    await onChange(seccion, nuevo, notas);
+    setOpen(false); setNotas('');
+  };
+  return (
+    <div className="relative inline-block" data-testid={`verif-badge-${seccion}`}>
+      <button
+        type="button"
+        disabled={!puedeEditar}
+        onClick={() => puedeEditar && setOpen(o => !o)}
+        className={`text-xs px-2 py-0.5 rounded-full border ${cfg.c} ${puedeEditar ? 'cursor-pointer hover:shadow-sm' : 'cursor-default'}`}
+        title={puedeEditar ? 'Click para cambiar el estado' : 'Solo administradores y director general pueden modificar'}
+      >
+        {cfg.l}
+      </button>
+      {open && (
+        <div className="absolute z-30 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 w-64" data-testid={`verif-dropdown-${seccion}`}>
+          <textarea value={notas} onChange={e => setNotas(e.target.value)}
+                    placeholder="Notas (opcional)…"
+                    className="w-full text-xs border border-slate-300 rounded px-2 py-1 mb-1" rows={2} />
+          <button onClick={() => apply('verificado')}
+                  data-testid={`verif-btn-verificado-${seccion}`}
+                  className="w-full text-left text-xs px-2 py-1 hover:bg-emerald-50 rounded">✅ Marcar como verificado</button>
+          <button onClick={() => apply('autorizado_sin_verificar')}
+                  data-testid={`verif-btn-autorizado-${seccion}`}
+                  className="w-full text-left text-xs px-2 py-1 hover:bg-blue-50 rounded">⚡ Autorizar sin verificar</button>
+          <button onClick={() => apply('pendiente')}
+                  data-testid={`verif-btn-pendiente-${seccion}`}
+                  className="w-full text-left text-xs px-2 py-1 hover:bg-amber-50 rounded">🟡 Volver a pendiente</button>
+          <button onClick={() => setOpen(false)} className="w-full text-left text-xs px-2 py-1 text-slate-400 hover:bg-slate-50 rounded mt-1 border-t">Cancelar</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Subacordeón coloreado por sección
+const SECCION_BG = {
+  blue: 'bg-blue-50 border-blue-200',
+  green: 'bg-green-50 border-green-200',
+  teal: 'bg-teal-50 border-teal-200',
+  yellow: 'bg-yellow-50 border-yellow-200',
+  purple: 'bg-purple-50 border-purple-200',
+  orange: 'bg-orange-50 border-orange-200',
+  red: 'bg-red-50 border-red-200',
+  gray: 'bg-gray-50 border-gray-200',
+  indigo: 'bg-indigo-50 border-indigo-200',
+};
+const Section = ({ titulo, icono, color = 'gray', defaultOpen = false, badge, children, sectionKey }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  const bg = SECCION_BG[color] || SECCION_BG.gray;
+  return (
+    <div className={`rounded-lg border ${bg} overflow-hidden`} data-testid={`section-${sectionKey}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-black/5 transition"
+        data-testid={`section-toggle-${sectionKey}`}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{icono}</span>
+          <span className="font-semibold text-slate-800 text-sm uppercase tracking-wide">{titulo}</span>
+          {badge}
+        </div>
+        <span className={`text-slate-500 transform transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+      </button>
+      {open && <div className="p-4 pt-2 border-t border-black/5">{children}</div>}
     </div>
   );
 };
@@ -231,11 +319,46 @@ const InstrumentationSection = ({ instrumentation, onChange }) => {
 
 // Event Form
 const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
-  const { api } = useGestorAuth();
+  const { api, user } = useGestorAuth();
   const [rehearsals, setRehearsals] = useState([]);
   const [rehearsalsInitial, setRehearsalsInitial] = useState([]); // snapshot para diff
   const [program, setProgram] = useState(event.program || []);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  // BLOQUE 2 — Verificaciones por sección
+  const [verifs, setVerifs] = useState([]);  // [{seccion, estado, ...}]
+  const [verifMeta, setVerifMeta] = useState({ verificadas: 0, total: 8, puede_publicar: false, puede_editar: false });
+  const cargarVerifs = async () => {
+    if (!event?.id) return;
+    try {
+      const r = await api.get(`/api/gestor/eventos/${event.id}/verificaciones`);
+      setVerifs(r.data?.verificaciones || []);
+      setVerifMeta({
+        verificadas: r.data?.verificadas || 0,
+        total: r.data?.total || 8,
+        puede_publicar: !!r.data?.puede_publicar,
+        puede_editar: !!r.data?.puede_editar,
+      });
+    } catch { /* noop */ }
+  };
+  useEffect(() => { cargarVerifs(); /* eslint-disable-next-line */ }, [event?.id]);
+  const estadoSeccion = (s) => verifs.find(v => v.seccion === s)?.estado || 'pendiente';
+  const cambiarVerif = async (seccion, estado, notas) => {
+    try {
+      await api.put(`/api/gestor/eventos/${event.id}/verificaciones/${seccion}`, { estado, notas: notas || null });
+      cargarVerifs();
+    } catch (e) {
+      alert('No se pudo cambiar: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+  const renderBadge = (s) => (
+    <VerificacionBadge
+      estado={estadoSeccion(s)}
+      puedeEditar={verifMeta.puede_editar}
+      onChange={cambiarVerif}
+      seccion={s}
+    />
+  );
 
   // Convierte ensayos de backend { id, fecha, hora, hora_fin, tipo, obligatorio, lugar, notas }
   // al formato del formulario { id?, date, start, end, tipo, obligatorio, lugar, notas }
@@ -292,9 +415,31 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
   };
 
   return (
-    <div className="space-y-4 pt-4">
+    <div className="space-y-3 pt-4">
+      {/* Indicador global de verificación */}
+      {event?.id && (
+        <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3" data-testid="verif-progreso">
+          <div className="text-2xl">{verifMeta.puede_publicar ? '✅' : '🔍'}</div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-slate-800">
+              {verifMeta.verificadas}/{verifMeta.total} secciones verificadas
+              {verifMeta.puede_publicar && <span className="ml-2 text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">Listo para publicar</span>}
+            </div>
+            <div className="w-full bg-slate-200 rounded-full h-2 mt-1.5 overflow-hidden">
+              <div className={`h-full rounded-full transition-all ${verifMeta.puede_publicar ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                   style={{ width: `${(verifMeta.verificadas / Math.max(1, verifMeta.total)) * 100}%` }} />
+            </div>
+          </div>
+          {verifMeta.puede_editar && (
+            <span className="text-xs text-slate-500 italic">Click en cada badge para verificar</span>
+          )}
+        </div>
+      )}
+
       {/* Datos Generales */}
-      <SectionTitle color="blue">Datos Generales</SectionTitle>
+      <Section titulo="Datos Generales" icono={ICONOS_SECCION.datos_generales} color="blue"
+               sectionKey="datos_generales" defaultOpen={true}
+               badge={event?.id ? renderBadge('datos_generales') : null}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <InputField
           label="Nombre del evento"
@@ -436,10 +581,13 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
           />
         </div>
       </div>
+      </Section>
 
       {/* Ensayos y Funciones */}
-      <SectionTitle color="green">Ensayos y Funciones</SectionTitle>
-      <p className="text-xs text-slate-500 -mt-2 mb-2">
+      <Section titulo="Ensayos y Funciones" icono={ICONOS_SECCION.ensayos} color="green"
+               sectionKey="ensayos"
+               badge={event?.id ? renderBadge('ensayos') : null}>
+      <p className="text-xs text-slate-500 mb-2">
         Añade ensayos y funciones (conciertos) del evento. Los ensayos aparecerán como subcolumnas en Seguimiento de Plantillas.
       </p>
       <div className="space-y-2">
@@ -549,18 +697,20 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
           Añadir ensayo/función
         </button>
       </div>
+      </Section>
 
       {/* Logística — Transportes y Alojamientos (Bloque 2) */}
       {event.id && (
-        <div className="mt-4">
-          <SectionTitle color="indigo">Transportes y Alojamientos</SectionTitle>
+        <Section titulo="Transportes y Alojamientos · Músicos" icono={ICONOS_SECCION.logistica_musicos}
+                 color="yellow" sectionKey="logistica_musicos"
+                 badge={renderBadge('logistica_musicos')}>
           <LogisticaSection eventoId={event.id} api={api} />
-        </div>
+        </Section>
       )}
 
       {/* Comentarios del equipo sobre este evento */}
       {event.id && (
-        <div className="mt-4">
+        <div className="mt-2">
           <ComentariosEquipoInline
             api={api}
             entidadTipo="evento"
@@ -574,25 +724,29 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
 
       {/* Montaje y Rider Técnico (Bloque 3) */}
       {event.id && (
-        <div className="mt-4">
-          <SectionTitle color="purple">Montaje y Rider Técnico</SectionTitle>
+        <Section titulo="Montaje y Rider Técnico" icono={ICONOS_SECCION.montaje}
+                 color="orange" sectionKey="montaje"
+                 badge={renderBadge('montaje')}>
           <MontajeRiderSection
             evento={event}
             api={api}
             onEventChange={(patch) => onChange({ ...event, ...patch })}
           />
-        </div>
+        </Section>
       )}
 
       {/* Instrumentación */}
-      <SectionTitle color="yellow">Propuesta de Plantilla</SectionTitle>
-      <InstrumentationSection
-        instrumentation={event.instrumentation || {}}
-        onChange={(inst) => onChange({ ...event, instrumentation: inst })}
-      />
+      <Section titulo="Propuesta de Plantilla" icono="🎻" color="teal" sectionKey="propuesta_plantilla">
+        <InstrumentationSection
+          instrumentation={event.instrumentation || {}}
+          onChange={(inst) => onChange({ ...event, instrumentation: inst })}
+        />
+      </Section>
 
       {/* Programa Musical */}
-      <SectionTitle color="orange">Programa Musical</SectionTitle>
+      <Section titulo="Programa Musical" icono={ICONOS_SECCION.programa_musical}
+               color="purple" sectionKey="programa_musical"
+               badge={event?.id ? renderBadge('programa_musical') : null}>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -649,12 +803,13 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
           Añadir obra
         </button>
       </div>
-
-      {/* Fechas adicionales — MOVIDAS a Datos Generales */}
+      </Section>
 
       {/* Partituras y materiales por sección */}
-      <SectionTitle color="yellow">Partituras y materiales por sección</SectionTitle>
-      <p className="text-xs text-slate-500 -mt-2 mb-2">Pega un enlace (Google Drive, Dropbox...) para cada sección. Cada músico verá sólo el de su instrumento.</p>
+      <Section titulo="Partituras y materiales por sección" icono={ICONOS_SECCION.partituras}
+               color="yellow" sectionKey="partituras"
+               badge={event?.id ? renderBadge('partituras') : null}>
+      <p className="text-xs text-slate-500 mb-2">Pega un enlace (Google Drive, Dropbox...) para cada sección. Cada músico verá sólo el de su instrumento.</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {[
           { key: 'partitura_cuerda',        label: 'Cuerda (violines, violas, cellos, contrabajos)' },
@@ -673,9 +828,10 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
           />
         ))}
       </div>
+      </Section>
 
       {/* Notas para los músicos + información adicional */}
-      <SectionTitle color="orange">Notas e información para músicos</SectionTitle>
+      <Section titulo="Notas e información para músicos" icono="📝" color="gray" sectionKey="notas_musicos">
       <div className="mb-3">
         <label className="block text-sm text-slate-600 mb-1">Notas para los músicos (visibles en el portal)</label>
         <textarea
@@ -701,22 +857,23 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
           );
         })}
       </div>
+      </Section>
 
       {/* Formulario de inscripción */}
-      <SectionTitle color="purple">Formulario de Inscripción</SectionTitle>
+      <Section titulo="Formulario de Inscripción" icono="📋" color="indigo" sectionKey="form_inscripcion">
       <InputField
         label="Enlace a Google Form"
         value={event.form_url}
         onChange={(v) => onChange({ ...event, form_url: v })}
         placeholder="https://docs.google.com/forms/..."
       />
+      </Section>
 
       {/* Notas internas del equipo */}
       {event.id && !String(event.id).startsWith('temp-') && (
-        <div className="pt-2">
-          <SectionTitle color="slate">Notas internas del equipo</SectionTitle>
+        <Section titulo="Notas internas del equipo" icono="🗒️" color="gray" sectionKey="notas_internas">
           <ComentariosPanel tipo="evento" entidadId={event.id} title="Notas internas del evento" />
-        </div>
+        </Section>
       )}
 
       {/* Save Button + Eliminar evento (condicional) */}
@@ -734,7 +891,21 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
           )}
         </div>
         <button
-          onClick={onSave}
+          onClick={() => {
+            // BLOQUE 2B — Bloqueo de publicación
+            const cambiandoAAbierto = (event.estado === 'abierto');
+            const pendientes = verifs.filter(v => v.estado === 'pendiente').map(v => v.seccion);
+            if (cambiandoAAbierto && pendientes.length > 0 && !verifMeta.puede_editar) {
+              alert(`No se puede publicar el evento. Faltan secciones por verificar:\n\n• ${pendientes.join('\n• ')}\n\nContacta con un administrador o director general.`);
+              return;
+            }
+            if (cambiandoAAbierto && pendientes.length > 0 && verifMeta.puede_editar) {
+              if (!window.confirm(`⚠️ Aún hay ${pendientes.length} secciones pendientes de verificación:\n\n• ${pendientes.join('\n• ')}\n\n¿Quieres publicar el evento de todas formas? (Solo administradores)`)) {
+                return;
+              }
+            }
+            onSave();
+          }}
           className="px-4 py-2 bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors text-sm font-medium"
           data-testid="save-event-btn"
         >

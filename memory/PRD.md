@@ -914,3 +914,43 @@ No se marcó `SeguimientoConvocatorias.js` porque la página muestra múltiples 
 - UI: 3 envíos visibles, fila más reciente muestra evento `pruebas 7 · 2026-06-25` y `Admin OPUS · admin@convocatorias.com`. Las 2 filas previas (del envío anterior a este fix) se ven con "— sin evento —" y "—" como esperado.
 - Click "↻ Reenviar" → modal abre con destinatario, asunto y mensaje pre-rellenados; botón muestra "Enviar a 1 destinatario".
 
+
+
+### ✅ Iteración Feb 2026 — Bloques 1, 2, 3, 8 (DONE)
+
+**Bloque 1 — Rol director_general** (`auth_utils.py`):
+- `get_current_gestor` ahora acepta `gestor`, `archivero`, `director_general`, `admin`.
+- Nuevo helper `is_super_admin(user)` y dependency `require_super_admin`: TRUE para `admin`, `director_general` o email `admin@convocatorias.com`.
+
+**Bloque 2 — Verificación de secciones** (`routes_verificaciones.py` nuevo):
+- `GET /api/gestor/eventos/{id}/verificaciones` → 8 secciones (`datos_generales`, `ensayos`, `logistica_musicos`, `logistica_material`, `programa_musical`, `presupuesto`, `montaje`, `partituras`) con estado `pendiente|verificado|autorizado_sin_verificar`. Devuelve `puede_publicar` y `puede_editar`.
+- `PUT /api/gestor/eventos/{id}/verificaciones/{seccion}` → solo super admins. Guarda `verificado_por`, `verificado_por_nombre`, `verificado_at`, `notas`.
+- Frontend (`ConfiguracionEventos.js`):
+  - Indicador global `verif-progreso` con barra de progreso "X/8 secciones verificadas".
+  - Componente `VerificacionBadge` por sección — solo super admins ven el dropdown con 3 opciones + textarea de notas.
+  - **Bloqueo de publicación** en botón "Guardar cambios": si estado=`abierto` y hay secciones `pendiente`, alert al gestor normal o `confirm()` con override para super admins.
+
+**Bloque 3 — Sombreado y subacordeones** (`ConfiguracionEventos.js`):
+- Nuevo wrapper `<Section>` con sombreado de fondo + subacordeón colapsable + badge integrado.
+- 10 secciones aplicadas: Datos Generales (blue), Ensayos (green), Transportes y Alojamientos (yellow), Montaje (orange), Propuesta de Plantilla (teal), Programa Musical (purple), Partituras (yellow), Notas e Info Músicos (gray), Formulario Inscripción (indigo), Notas Internas (gray).
+- Datos Generales abierto por defecto, resto colapsados.
+- Cada cabecera muestra: icono + título + badge de verificación (si aplica) + flecha rotatoria.
+
+**Bloque 8 — Restricción inventario por rol** (`GestorInventario.js`):
+- Hook `usePuedeEditarInventario` — TRUE si rol ∈ {archivero, director_general, admin} o email = admin@convocatorias.com.
+- Botones "+ Nuevo elemento", "+ Nuevo préstamo" y "Guardar" del modal: deshabilitados (gris) con tooltip "Sin permisos de edición" para gestores sin rol.
+- Modal en modo solo-lectura cierra con "Cerrar" en lugar de "Cancelar/Guardar".
+
+### ⚠️ Bloques 4, 5, 6, 7, 9, 10, 11, 12 — PENDIENTES
+
+Cada uno requiere cambios extensos en backend + frontend (endpoints nuevos, tablas, componentes) que NO se pudieron completar en esta iteración por restricciones de contexto:
+- **B4**: Drawer flotante "💬 Hilos pendientes" en cada página principal (8 páginas).
+- **B5**: Buscador de obras + estado de material + alertas de préstamo en sección Programa Musical.
+- **B6**: Montajes por sesión (selector ensayo/función + duplicar + precarga desde convocatoria/archivo).
+- **B7**: Alertas de inventario por solapamiento de fechas (endpoint nuevo + UI en montaje y archivo).
+- **B9**: Auto-eventos en planificador (ensayos, funciones, logística, montajes) en Gantt/Calendario/Lista solo lectura.
+- **B10**: Desplazamientos + alojamientos en calendario del músico portal.
+- **B11**: Informe D mejorado + pie de firma + nuevo Informe I (montaje técnico) + nuevo Informe J (archivo).
+- **B12**: Plano SVG con disposición americana exacta y colores por sección.
+
+Recomendación: implementarlos en iteraciones separadas de 1-2 bloques cada una para garantizar calidad y evitar regresiones.
