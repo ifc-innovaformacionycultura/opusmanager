@@ -294,10 +294,12 @@ const Section = ({ titulo, icono, color = 'gray', defaultOpen = false, badge, ch
   const bg = SECCION_BG[color] || SECCION_BG.gray;
   return (
     <div className={`rounded-lg border ${bg} overflow-hidden`} data-testid={`section-${sectionKey}`}>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setOpen(o => !o)}
-        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-black/5 transition"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); } }}
+        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-black/5 transition cursor-pointer select-none"
         data-testid={`section-toggle-${sectionKey}`}
       >
         <div className="flex items-center gap-2">
@@ -306,7 +308,7 @@ const Section = ({ titulo, icono, color = 'gray', defaultOpen = false, badge, ch
           {badge}
         </div>
         <span className={`text-slate-500 transform transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
-      </button>
+      </div>
       {open && <div className="p-4 pt-2 border-t border-black/5">{children}</div>}
     </div>
   );
@@ -426,7 +428,13 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
 
   // BLOQUE 2 — Verificaciones por sección
   const [verifs, setVerifs] = useState([]);  // [{seccion, estado, ...}]
-  const [verifMeta, setVerifMeta] = useState({ verificadas: 0, total: 8, puede_publicar: false, puede_editar: false });
+  // puedeEditar derivado del rol del usuario (sync) para evitar flash UI
+  const puedeEditarSync = React.useMemo(() => {
+    const rol = user?.profile?.rol || user?.rol;
+    const email = (user?.profile?.email || user?.email || '').toLowerCase();
+    return ['admin', 'director_general'].includes(rol) || email === 'admin@convocatorias.com';
+  }, [user]);
+  const [verifMeta, setVerifMeta] = useState({ verificadas: 0, total: 8, puede_publicar: false, puede_editar: puedeEditarSync });
   // Estado original del evento (para distinguir publicación nueva vs cambios en publicado)
   // Snapshot al primer render del evento.
   const estadoOriginalRef = React.useRef(event?.estado);
@@ -446,7 +454,7 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
         verificadas: r.data?.verificadas || 0,
         total: r.data?.total || 8,
         puede_publicar: !!r.data?.puede_publicar,
-        puede_editar: !!r.data?.puede_editar,
+        puede_editar: puedeEditarSync || !!r.data?.puede_editar,
       });
     } catch { /* noop */ }
   };
