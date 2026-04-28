@@ -747,6 +747,16 @@ async def enviar_informe_email(req: EnviarInformeReq, current_user: dict = Depen
     filename = f"informe_{req.tipo}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     html = _email_html_informe(req.asunto, req.mensaje, req.tipo)
     enviados, errores = [], []
+    # Resolver usuario_id del gestor en tabla `usuarios` para poder mostrarlo en el historial
+    sender_uid = None
+    try:
+        au_id = (current_user or {}).get('id')
+        if au_id:
+            ur = supabase.table('usuarios').select('id').or_(f'id.eq.{au_id},user_id.eq.{au_id}').limit(1).execute().data or []
+            sender_uid = ur[0]['id'] if ur else None
+    except Exception:
+        sender_uid = None
+    primary_evento_id = req.evento_ids[0] if req.evento_ids else None
     try:
         import resend as _resend
         _resend.api_key = api_key
@@ -770,6 +780,8 @@ async def enviar_informe_email(req: EnviarInformeReq, current_user: dict = Depen
                         "tipo": f"informe_{req.tipo}",
                         "estado": "enviado",
                         "resend_id": eid,
+                        "usuario_id": sender_uid,
+                        "evento_id": primary_evento_id,
                     }).execute()
                 except Exception:
                     pass
@@ -782,6 +794,8 @@ async def enviar_informe_email(req: EnviarInformeReq, current_user: dict = Depen
                         "tipo": f"informe_{req.tipo}",
                         "estado": "error",
                         "error_mensaje": str(e)[:500],
+                        "usuario_id": sender_uid,
+                        "evento_id": primary_evento_id,
                     }).execute()
                 except Exception:
                     pass

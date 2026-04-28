@@ -891,3 +891,26 @@ No se marcó `SeguimientoConvocatorias.js` porque la página muestra múltiples 
 - curl: `POST /enviar-email` → `{"ok":true,"enviados":[{"email":"jesusalonsodirector@gmail.com","id":"fad9b277-..."}],"errores":[]}` con `informe_D_20260428_1224.pdf` adjunto. Resend ID confirmado.
 - Playwright: modal abre, contactos cargan (9 gestores), filtro funciona, chip de email se añade, "Enviar a 1 destinatario" actualiza contador, **envío real ejecutado** → pantalla "✅ Email enviado correctamente".
 - Limitación heredada: Resend en modo testing solo permite enviar al email propietario (`jesusalonsodirector@gmail.com`). Para enviar a otros destinatarios, verificar dominio en resend.com/domains.
+
+### ✅ Iteración Feb 2026 (continuación) — Historial de envíos como pestaña en /informes (DONE)
+
+**Frontend** (`Informes.js` — único cambio frontend):
+- Sistema de **2 tabs** en la cabecera: "📑 Generar" (vista actual con 2 paneles) | "📨 Historial de envíos" (nueva).
+- Botones "Exportar PDF" y "Enviar por email" se ocultan cuando se está en la vista historial.
+- Componente `HistorialTab` que lee `GET /api/gestor/emails/log?limit=300` y filtra por `tipo.startsWith('informe_')`.
+- **Agrupación inteligente**: envíos al mismo minuto + mismo asunto + mismo tipo + mismo evento + mismo gestor se agrupan en una única fila con N destinatarios.
+- **Tabla** con columnas: Fecha y hora, Tipo (badge navy con letra A-H), Evento (resuelto desde `evento_id` → `eventos[]`), Enviado por (resuelto desde `usuario_id` → `gestores[]` con avatar de inicial), Destinatarios (chips verde ✓ enviado / rojo ✗ error, +N más cuando >5), Estado (badge `N ✓ Enviado`, `N ✗ Error` o mixto), Acciones.
+- **Filtros**: Todos / ✅ Enviados / ❌ Con error.
+- Botón **"↻ Reenviar"** dorado por fila — pre-rellena el modal `EnviarEmailModal` con `tipo`, `evento_ids`, `destinatarios`, `asunto` originales.
+- Modal extendido con prop `prefill` que sobrescribe `destinos`/`asunto`/`mensaje` iniciales.
+- 7 nuevos data-testids: `tab-generar`, `tab-historial`, `historial-tab`, `historial-vacio`, `historial-filter-{todos,enviado,error}`, `btn-historial-refresh`, `envio-row-{i}`, `btn-reenviar-{i}`.
+
+**Backend** (cambio mínimo en `routes_informes.py`):
+- `POST /enviar-email` ahora guarda `usuario_id` (gestor que envía, resuelto desde `usuarios.id == auth.id` o `usuarios.user_id == auth.id`) y `evento_id` (primer evento) en cada fila de `email_log`.
+- Sin alterar otros archivos ni tablas (la tabla `email_log` ya tenía esas columnas).
+
+**Verificación E2E**:
+- Envío de prueba tipo C → `email_log` registra `usuario_id=ba8bcde5-... (Admin OPUS), evento_id=65b7e576-... (pruebas 7)`, tipo `informe_C`, estado `enviado`.
+- UI: 3 envíos visibles, fila más reciente muestra evento `pruebas 7 · 2026-06-25` y `Admin OPUS · admin@convocatorias.com`. Las 2 filas previas (del envío anterior a este fix) se ven con "— sin evento —" y "—" como esperado.
+- Click "↻ Reenviar" → modal abre con destinatario, asunto y mensaje pre-rellenados; botón muestra "Enviar a 1 destinatario".
+

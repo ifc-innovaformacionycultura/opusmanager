@@ -1,7 +1,7 @@
 // /informes — Módulo de Informes (8 tipos PDF A-H).
 // Layout: Panel izquierdo (1/3) configuración + Panel derecho (2/3) vista previa.
 // Backend: POST /api/gestor/informes/generar (PDF) + GET /api/gestor/informes/preview/{tipo}/{evento_id}.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 // ============================================================
@@ -53,6 +53,9 @@ export default function Informes() {
   const [cargandoPreview, setCargandoPreview] = useState(false);
   // Envío email
   const [showEmail, setShowEmail] = useState(false);
+  const [emailPrefill, setEmailPrefill] = useState(null);
+  // Tab activo (generar | historial)
+  const [vista, setVista] = useState('generar');
 
   // 1) Cargar lista de eventos
   useEffect(() => {
@@ -123,31 +126,53 @@ export default function Informes() {
   return (
     <div className="h-screen flex flex-col bg-slate-50" data-testid="page-informes">
       {/* Cabecera */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
-        <div>
-          <h1 className="font-cabinet text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <span className="text-3xl">📑</span> Informes
-          </h1>
-          <p className="text-sm text-slate-500">Genera 8 tipos de informes PDF profesionales en colores corporativos.</p>
+      <div className="bg-white border-b border-slate-200 px-4 pt-3 flex-shrink-0">
+        <div className="flex items-center justify-between pb-2">
+          <div>
+            <h1 className="font-cabinet text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <span className="text-3xl">📑</span> Informes
+            </h1>
+            <p className="text-sm text-slate-500">Genera 8 tipos de informes PDF profesionales en colores corporativos.</p>
+          </div>
+          {vista === 'generar' && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setEmailPrefill(null); setShowEmail(true); }} disabled={!eventosSel.length}
+                      data-testid="btn-enviar-email"
+                      className="border border-[#1A3A5C] text-[#1A3A5C] hover:bg-[#1A3A5C]/5 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 transition">
+                <span>✉️</span> Enviar por email
+              </button>
+              <button onClick={generarPDF} disabled={generando || !eventosSel.length}
+                      data-testid="btn-generar-informe"
+                      className="bg-[#1A3A5C] hover:bg-[#163050] disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition">
+                {generando ? (
+                  <><span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />Generando…</>
+                ) : (
+                  <><span>⬇️</span> Exportar PDF · Tipo {tipoActivo}</>
+                )}
+              </button>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowEmail(true)} disabled={!eventosSel.length}
-                  data-testid="btn-enviar-email"
-                  className="border border-[#1A3A5C] text-[#1A3A5C] hover:bg-[#1A3A5C]/5 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 transition">
-            <span>✉️</span> Enviar por email
-          </button>
-          <button onClick={generarPDF} disabled={generando || !eventosSel.length}
-                  data-testid="btn-generar-informe"
-                  className="bg-[#1A3A5C] hover:bg-[#163050] disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition">
-            {generando ? (
-              <><span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />Generando…</>
-            ) : (
-              <><span>⬇️</span> Exportar PDF · Tipo {tipoActivo}</>
-            )}
-          </button>
+        {/* Tabs */}
+        <div className="flex gap-1 -mb-px">
+          {[
+            { k: 'generar', l: '📑 Generar' },
+            { k: 'historial', l: '📨 Historial de envíos' },
+          ].map(t => (
+            <button key={t.k} onClick={() => setVista(t.k)}
+                    data-testid={`tab-${t.k}`}
+                    className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${vista === t.k ? 'border-[#1A3A5C] text-[#1A3A5C]' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
+              {t.l}
+            </button>
+          ))}
         </div>
       </div>
 
+      {vista === 'historial' ? (
+        <HistorialTab api={api} eventos={eventos}
+                      onReenviar={(prefill) => { setEmailPrefill(prefill); setShowEmail(true); }} />
+      ) : (
+      <>
       {/* Layout 2 paneles */}
       <div className="flex-1 flex min-h-0">
         {/* Panel izquierdo (1/3) */}
@@ -266,15 +291,18 @@ export default function Informes() {
           </div>
         </main>
       </div>
+      </>
+      )}
 
       {showEmail && (
         <EnviarEmailModal
           api={api}
-          tipo={tipoActivo}
-          eventoIds={eventosSel}
+          tipo={emailPrefill?.tipo || tipoActivo}
+          eventoIds={emailPrefill?.evento_ids || eventosSel}
           eventos={eventos}
           planoMode={planoMode}
-          onClose={() => setShowEmail(false)}
+          prefill={emailPrefill}
+          onClose={() => { setShowEmail(false); setEmailPrefill(null); }}
         />
       )}
     </div>
@@ -893,16 +921,18 @@ function LoadingPreview() {
 // ============================================================
 // MODAL · Enviar PDF por email
 // ============================================================
-function EnviarEmailModal({ api, tipo, eventoIds, eventos, planoMode, onClose }) {
+function EnviarEmailModal({ api, tipo, eventoIds, eventos, planoMode, prefill, onClose }) {
   const tInfo = TIPOS.find(t => t.k === tipo);
   const evPrincipal = useMemo(() => eventos.find(e => e.id === eventoIds[0]), [eventos, eventoIds]);
   // Asunto pre-rellenado
   const asuntoDefault = useMemo(() => {
+    if (prefill?.asunto) return prefill.asunto;
     const evNombre = evPrincipal?.nombre ? ` · ${evPrincipal.nombre}` : '';
     return `Informe ${tipo} — ${tInfo?.l || ''}${evNombre}`;
-  }, [tipo, tInfo, evPrincipal]);
+  }, [tipo, tInfo, evPrincipal, prefill]);
   // Mensaje pre-rellenado
   const mensajeDefault = useMemo(() => {
+    if (prefill?.mensaje) return prefill.mensaje;
     const evLine = evPrincipal?.nombre
       ? `evento «${evPrincipal.nombre}»${evPrincipal.fecha_inicio ? ' (' + evPrincipal.fecha_inicio.slice(0, 10) + ')' : ''}`
       : `los eventos seleccionados (${eventoIds.length})`;
@@ -914,9 +944,9 @@ Cualquier consulta o aclaración, no dudes en contactarnos.
 
 Un saludo,
 Equipo de gestión IFC`;
-  }, [evPrincipal, eventoIds]);
+  }, [evPrincipal, eventoIds, prefill]);
 
-  const [destinos, setDestinos] = useState([]); // emails
+  const [destinos, setDestinos] = useState(prefill?.destinatarios || []); // emails
   const [emailInput, setEmailInput] = useState('');
   const [asunto, setAsunto] = useState(asuntoDefault);
   const [mensaje, setMensaje] = useState(mensajeDefault);
@@ -1180,3 +1210,216 @@ function ResultadoEnvio({ resultado, onClose }) {
     </div>
   );
 }
+
+// ============================================================
+// HISTORIAL DE ENVÍOS (lee /api/gestor/emails/log filtrado por tipo informe_*)
+// ============================================================
+function HistorialTab({ api, eventos, onReenviar }) {
+  const [logs, setLogs] = useState([]);
+  const [gestores, setGestores] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(null);
+  const [filtroEstado, setFiltroEstado] = useState('todos'); // todos | enviado | error
+
+  const cargar = useCallback(async () => {
+    setCargando(true); setError(null);
+    try {
+      const [logsR, destR] = await Promise.all([
+        api.get('/api/gestor/emails/log?limit=300'),
+        api.get('/api/gestor/informes/destinatarios'),
+      ]);
+      const all = logsR.data?.emails || logsR.data || [];
+      const onlyInformes = all.filter(e => (e.tipo || '').startsWith('informe_'));
+      setLogs(onlyInformes);
+      setGestores(destR.data?.gestores || []);
+    } catch (e) {
+      setError('No se pudo cargar el historial: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setCargando(false);
+    }
+  }, [api]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  // Mapas de resolución
+  const evMap = useMemo(() => Object.fromEntries((eventos || []).map(e => [e.id, e])), [eventos]);
+  const gestorMap = useMemo(() => Object.fromEntries((gestores || []).map(g => [g.id, g])), [gestores]);
+
+  // Agrupar envíos: misma hora±60s + mismo asunto + mismo tipo + mismo evento_id + mismo usuario_id
+  const envios = useMemo(() => {
+    const groups = [];
+    const sorted = [...logs].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    for (const l of sorted) {
+      const tsec = Math.floor(new Date(l.created_at || 0).getTime() / 60000); // bucket por minuto
+      const key = `${tsec}|${l.tipo}|${l.asunto}|${l.evento_id || ''}|${l.usuario_id || ''}`;
+      const exist = groups.find(g => g.key === key);
+      if (exist) {
+        exist.items.push(l);
+      } else {
+        groups.push({ key, items: [l], created_at: l.created_at, tipo: l.tipo,
+                      asunto: l.asunto, evento_id: l.evento_id, usuario_id: l.usuario_id });
+      }
+    }
+    return groups;
+  }, [logs]);
+
+  const enviosFiltrados = useMemo(() => {
+    if (filtroEstado === 'todos') return envios;
+    return envios.filter(g => {
+      const someErr = g.items.some(i => i.estado === 'error');
+      const someOk = g.items.some(i => i.estado === 'enviado');
+      if (filtroEstado === 'error') return someErr;
+      if (filtroEstado === 'enviado') return someOk && !someErr;
+      return true;
+    });
+  }, [envios, filtroEstado]);
+
+  const handleReenviar = (g) => {
+    const tipoLetra = (g.tipo || '').replace('informe_', '');
+    onReenviar({
+      tipo: tipoLetra,
+      evento_ids: g.evento_id ? [g.evento_id] : [],
+      destinatarios: g.items.map(i => i.destinatario).filter(Boolean),
+      asunto: g.asunto,
+    });
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4" data-testid="historial-tab">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold uppercase text-slate-500">Filtrar:</span>
+          {[
+            { k: 'todos', l: `Todos (${envios.length})` },
+            { k: 'enviado', l: '✅ Enviados' },
+            { k: 'error', l: '❌ Con error' },
+          ].map(f => (
+            <button key={f.k} onClick={() => setFiltroEstado(f.k)}
+                    data-testid={`historial-filter-${f.k}`}
+                    className={`px-3 py-1 text-xs rounded-full border transition ${filtroEstado === f.k ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+              {f.l}
+            </button>
+          ))}
+        </div>
+        <button onClick={cargar} data-testid="btn-historial-refresh"
+                className="text-xs text-[#1A3A5C] hover:underline flex items-center gap-1">
+          🔄 Actualizar
+        </button>
+      </div>
+
+      {cargando ? (
+        <div className="text-center py-12 text-sm text-slate-500">
+          <span className="animate-spin inline-block h-5 w-5 border-2 border-slate-400 border-t-transparent rounded-full mr-2 align-middle" />
+          Cargando historial…
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{error}</div>
+      ) : enviosFiltrados.length === 0 ? (
+        <div className="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-8 text-center" data-testid="historial-vacio">
+          <div className="text-4xl mb-2">📭</div>
+          <div className="text-sm font-medium text-slate-700">Aún no hay envíos de informes</div>
+          <div className="text-xs text-slate-500 mt-1">Cuando envíes tu primer informe por email, aparecerá aquí.</div>
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[#1A3A5C] text-white text-xs uppercase tracking-wide">
+                <th className="text-left px-3 py-2.5 w-36">Fecha y hora</th>
+                <th className="text-left px-3 py-2.5 w-16">Tipo</th>
+                <th className="text-left px-3 py-2.5">Evento</th>
+                <th className="text-left px-3 py-2.5 w-44">Enviado por</th>
+                <th className="text-left px-3 py-2.5">Destinatarios</th>
+                <th className="text-left px-3 py-2.5 w-24">Estado</th>
+                <th className="text-right px-3 py-2.5 w-28">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {enviosFiltrados.map((g, i) => {
+                const ev = g.evento_id ? evMap[g.evento_id] : null;
+                const ges = g.usuario_id ? gestorMap[g.usuario_id] : null;
+                const okCount = g.items.filter(it => it.estado === 'enviado').length;
+                const errCount = g.items.filter(it => it.estado === 'error').length;
+                const tipoLetra = (g.tipo || '').replace('informe_', '');
+                const fecha = g.created_at ? new Date(g.created_at) : null;
+                return (
+                  <tr key={g.key} data-testid={`envio-row-${i}`} className={i % 2 ? 'bg-slate-50/30' : ''}>
+                    <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">
+                      {fecha ? (
+                        <>
+                          <div className="font-medium">{fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                          <div className="text-slate-500">{fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</div>
+                        </>
+                      ) : '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#1A3A5C] text-white text-xs font-bold">{tipoLetra || '?'}</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {ev ? (
+                        <>
+                          <div className="font-medium text-slate-900 truncate max-w-[260px]">{ev.nombre}</div>
+                          <div className="text-slate-500">{(ev.fecha_inicio || '').slice(0, 10)}</div>
+                        </>
+                      ) : (
+                        <span className="text-slate-400 italic">— sin evento —</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {ges ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-6 h-6 rounded-full bg-[#1A3A5C]/10 text-[#1A3A5C] flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                            {(ges.nombre || ges.email || '?').slice(0, 1).toUpperCase()}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-medium text-slate-800 truncate">{ges.nombre || '—'}</div>
+                            <div className="text-slate-500 truncate text-[10px]">{ges.email}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 italic">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      <div className="flex flex-wrap gap-1 max-w-[280px]">
+                        {g.items.slice(0, 5).map(it => (
+                          <span key={it.id}
+                                className={`px-1.5 py-0.5 rounded text-[10px] ${it.estado === 'enviado' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}
+                                title={`${it.estado}${it.error_mensaje ? ': ' + it.error_mensaje : ''}`}>
+                            {it.estado === 'enviado' ? '✓' : '✗'} {it.destinatario}
+                          </span>
+                        ))}
+                        {g.items.length > 5 && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600">
+                            +{g.items.length - 5} más
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {errCount === 0 ? (
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-medium text-[10px]">{okCount} ✓ Enviado</span>
+                      ) : okCount === 0 ? (
+                        <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded font-medium text-[10px]">{errCount} ✗ Error</span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-medium text-[10px]">{okCount}✓ {errCount}✗</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => handleReenviar(g)}
+                              data-testid={`btn-reenviar-${i}`}
+                              className="text-xs bg-[#C9920A] hover:bg-[#a87908] text-white px-2.5 py-1 rounded font-semibold flex items-center gap-1 ml-auto">
+                        <span>↻</span> Reenviar
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
