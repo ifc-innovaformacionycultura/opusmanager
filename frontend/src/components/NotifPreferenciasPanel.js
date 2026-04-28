@@ -93,6 +93,25 @@ export default function NotifPreferenciasPanel({
     } finally { setSaving(null); }
   };
 
+  // === Botón "Enviarme un push de prueba" ===
+  const [testing, setTesting] = useState(false);
+  const enviarPushPrueba = async () => {
+    setTesting(true); setError(null); setFeedback(null);
+    try {
+      const d = await _post(clientOrToken, '/api/push/test', {
+        titulo: '🔔 Prueba OPUS MANAGER',
+        body: 'Si ves esta notificación, todo funciona correctamente.',
+        url: '/',
+      }, 'POST');
+      const n = d?.enviadas ?? 0;
+      if (n > 0) setFeedback(`✅ Push enviado (${n} dispositivo${n === 1 ? '' : 's'})`);
+      else setFeedback('⚠️ No hay dispositivos suscritos. Acepta el permiso de notificaciones primero.');
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (e) {
+      setError(e?.message || 'No se pudo enviar el push de prueba');
+    } finally { setTesting(false); }
+  };
+
   if (loading) {
     return (
       <div className={`bg-white border border-slate-200 rounded-lg p-4 ${className}`} data-testid="notif-prefs-loading">
@@ -160,8 +179,19 @@ export default function NotifPreferenciasPanel({
         })}
       </ul>
 
-      <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-500">
-        Las notificaciones críticas del sistema (errores, incidencias) siempre se entregan a los administradores.
+      <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-slate-500 flex-1">
+          Las notificaciones críticas (errores, incidencias) siempre se entregan.
+        </span>
+        <button
+          type="button"
+          onClick={enviarPushPrueba}
+          disabled={testing}
+          data-testid="btn-push-test"
+          className="px-2.5 py-1 text-[11px] font-medium bg-slate-900 hover:bg-slate-800 text-white rounded disabled:opacity-60 whitespace-nowrap"
+        >
+          {testing ? 'Enviando…' : '🔔 Enviarme un push de prueba'}
+        </button>
       </div>
     </div>
   );

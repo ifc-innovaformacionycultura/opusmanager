@@ -31,6 +31,40 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Feb 28, 2026 (madrugada) — Botón push test + Recordatorios automáticos cron
+
+**Botón "🔔 Enviarme un push de prueba":**
+- Añadido al footer del `NotifPreferenciasPanel.js` (visible en Mi perfil de gestor y músico).
+- Llama a `POST /api/push/test` (endpoint ya existente) y muestra feedback in-line:
+  - ✅ Si hay dispositivos suscritos: `Push enviado (N dispositivos)`.
+  - ⚠️ Si no hay suscripciones: `No hay dispositivos suscritos. Acepta el permiso de notificaciones primero`.
+
+**Recordatorios automáticos (APScheduler):**
+- SQL ejecutado: tabla `recordatorios_enviados (usuario_id, tipo, entidad_id, dias_antes, fecha_objetivo, enviado_at, UNIQUE)` + columna opcional `eventos.fecha_limite_disponibilidad`.
+- Dependencias instaladas: `APScheduler==3.11.2`, `pytz==2026.1.post1` (en `requirements.txt`).
+- Variables env nuevas en `backend/.env` (también añadir en Railway):
+  - `DIAS_ANTES_DISPONIBILIDAD=3`
+  - `DIAS_ANTES_LOGISTICA=2`
+- Nuevo módulo `routes_recordatorios.py`:
+  - `init_scheduler()` arranca un `BackgroundScheduler` con `CronTrigger(hour=9, minute=0, timezone=Europe/Madrid)` desde `server.py @startup` (idempotente).
+  - `shutdown_scheduler()` en `@shutdown`.
+  - **Job disponibilidad**: para eventos en estado abierto/publicado/borrador cuyo deadline efectivo cae a `DIAS_ANTES_DISPONIBILIDAD` días, busca asignaciones publicadas con `fecha_respuesta IS NULL && estado = 'pendiente'` y dispara push tipo `recordatorio`. Deadline efectivo: `eventos.fecha_limite_disponibilidad` → `fecha_inicio_preparacion` → `fecha_inicio - 7 días`.
+  - **Job logística**: filtra `evento_logistica.fecha_limite_confirmacion = today + DIAS_ANTES_LOGISTICA` y avisa a todos los músicos publicados del evento.
+  - Idempotencia con tabla `recordatorios_enviados` (UNIQUE constraint).
+  - Cada push respeta `notif_preferencias.recordatorios` del destinatario (vía `should_send_push`).
+- Endpoints REST nuevos:
+  - `GET /api/admin/recordatorios/status` → estado del scheduler + próximo disparo + config.
+  - `POST /api/admin/recordatorios/run-now` → fuerza ejecución manual (admin/director_general).
+
+**Pruebas E2E:**
+- ✅ `GET /status` → `running=true, next_run=2026-04-29 09:00:00+02:00, jobs=[recordatorios_diarios]`.
+- ✅ Test real con evento `Concierto de Navidad` cuyo deadline = today+3 días: 1ª ejecución envía 1 push (al admin con suscripción válida) + revisa 9 asignaciones; 2ª ejecución es idempotente (`enviados=0, revisados=9`).
+- ✅ Tabla `recordatorios_enviados` registra correctamente: `tipo=disponibilidad, dias_antes=3, fecha_objetivo=2026-05-01`.
+- ✅ Push test button con feedback adecuado en headless (sin permisos → mensaje de aviso correcto).
+
+### Feb 28, 2026 (noche) — Toggle de preferencias de notificaciones
+*(ver entrada anterior)*
+
 ### Feb 28, 2026 (noche) — Toggle de preferencias de notificaciones
 
 **SQL ejecutado**: `ALTER TABLE usuarios ADD COLUMN notif_preferencias JSONB DEFAULT {convocatorias, tareas, comentarios, recordatorios, reclamaciones, verificaciones: true}`. Migración suave aplicada para filas con NULL.

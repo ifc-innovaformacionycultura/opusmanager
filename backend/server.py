@@ -31,6 +31,7 @@ from routes_crm_contactos import router as crm_contactos_router
 from routes_invitaciones import router_gestor as invitaciones_gestor_router, router_portal as invitaciones_portal_router
 from routes_push import router as push_router
 from routes_notif_preferencias import router_gestor as notif_prefs_gestor_router, router_portal as notif_prefs_portal_router
+from routes_recordatorios import router as recordatorios_router, init_scheduler, shutdown_scheduler
 
 # ==================== App Configuration ====================
 
@@ -87,6 +88,7 @@ app.include_router(invitaciones_portal_router)  # /api/portal/activar/*
 app.include_router(push_router)  # /api/push/*
 app.include_router(notif_prefs_gestor_router)  # /api/auth/me/notif-preferencias
 app.include_router(notif_prefs_portal_router)  # /api/portal/perfil/notif-preferencias
+app.include_router(recordatorios_router)  # /api/admin/recordatorios/*
 
 # ==================== Health Check ====================
 
@@ -123,11 +125,20 @@ async def startup_event():
     print(f"📡 CORS allow_origin_regex: {cors_origin_regex}")
     print(f"🔐 Supabase URL: {os.environ.get('SUPABASE_URL', 'NOT SET')}")
     print(f"✅ Using Supabase Auth + PostgreSQL")
+    # APScheduler — recordatorios diarios @ 09:00 Europe/Madrid
+    try:
+        init_scheduler()
+    except Exception as e:
+        print(f"⚠️ Scheduler no iniciado: {e}")
     print("=" * 60)
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Application shutdown"""
+    try:
+        shutdown_scheduler()
+    except Exception:
+        pass
     print("🛑 OPUS MANAGER API - Shutting down...")
 
 if __name__ == "__main__":

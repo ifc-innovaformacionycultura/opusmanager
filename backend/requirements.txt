@@ -144,3 +144,5 @@ zstandard==0.25.0
 py-vapid==1.9.4
 pywebpush==2.3.0
 http-ece==1.2.1
+APScheduler==3.11.2
+pytz==2026.1.post1
