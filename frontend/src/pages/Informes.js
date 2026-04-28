@@ -254,15 +254,20 @@ export default function Informes() {
             {tipoActivo === 'A' && (
               <section>
                 <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">3 · Opciones plano</h2>
-                <div className="flex gap-1.5">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button onClick={() => setPlanoMode('herradura')}
                           data-testid="btn-plano-herradura"
-                          className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${planoMode === 'herradura' ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+                          className={`px-2 py-2 text-[11px] rounded-lg border transition ${planoMode === 'herradura' ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
                     🎭 Herradura
+                  </button>
+                  <button onClick={() => setPlanoMode('americano')}
+                          data-testid="btn-plano-americano"
+                          className={`px-2 py-2 text-[11px] rounded-lg border transition ${planoMode === 'americano' ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+                    🎻 Americano
                   </button>
                   <button onClick={() => setPlanoMode('filas')}
                           data-testid="btn-plano-filas"
-                          className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${planoMode === 'filas' ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+                          className={`px-2 py-2 text-[11px] rounded-lg border transition ${planoMode === 'filas' ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
                     🪑 Filas
                   </button>
                 </div>
@@ -499,7 +504,74 @@ const SECCION_PLANO = {
 function PlanoOrquesta({ porSeccion, mode }) {
   const W = 900, H = 560;
   if (mode === 'filas') return <PlanoFilas W={W} H={H} porSeccion={porSeccion} />;
+  if (mode === 'americano') return <PlanoAmericano W={W} H={H} porSeccion={porSeccion} />;
   return <PlanoHerradura W={W} H={H} porSeccion={porSeccion} />;
+}
+
+// Plano Americano = variante de la herradura clásica con cuerdas más extendidas hacia atrás
+function PlanoAmericano({ W, H, porSeccion }) {
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" data-testid="plano-americano">
+      <rect x="0" y="0" width={W} height={H} fill="#fef3c7" rx="12" />
+      <text x={W / 2} y="14" textAnchor="middle" fill="#94a3b8" fontSize="10" fontWeight="bold">DISPOSICIÓN AMERICANA — PERCUSIÓN · CORO</text>
+      <text x={W / 2} y={H - 4} textAnchor="middle" fill="#64748b" fontSize="11" fontWeight="bold">PÚBLICO</text>
+      {/* Director */}
+      <circle cx={W / 2} cy={H * 0.92} r="20" fill="#1A3A5C" />
+      <text x={W / 2} y={H * 0.92 + 4} textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">DIR</text>
+      {/* Reuso del helper de filaY de Herradura — haciendo render lineal por sección con orden americano */}
+      <PlanoHerraduraInner W={W} H={H} porSeccion={porSeccion} variante="americano" />
+    </svg>
+  );
+}
+
+// Inner component reutilizable
+function PlanoHerraduraInner({ W, H, porSeccion, variante = 'herradura' }) {
+  const cx = W / 2, dirY = H * 0.92;
+  const arcoCuerda = (sec, count, anguloInicio, anguloFin, radioBase, radioStep, atrilesPorFila = 8, dir = 1) => {
+    const elems = [];
+    const w = 56, h = 38;
+    let i = 1;
+    for (let fila = 0; fila < Math.ceil(count / atrilesPorFila); fila++) {
+      const r = radioBase + fila * radioStep;
+      const enFila = Math.min(atrilesPorFila, count - fila * atrilesPorFila);
+      for (let j = 0; j < enFila; j++) {
+        const t = enFila > 1 ? (j / (enFila - 1)) : 0.5;
+        const ang = anguloInicio + (anguloFin - anguloInicio) * t;
+        const ax = cx + r * Math.cos(ang);
+        const ay = dirY - r * Math.sin(ang);
+        const num = dir === 1 ? i : (count - i + 1);
+        const nombre = (porSeccion[sec] && porSeccion[sec][num - 1]) || {};
+        elems.push(
+          <Atril key={`${sec}-${i}`} x={ax - w / 2} y={ay - h / 2} w={w} h={h}
+                 num={num} nombre={`${nombre.apellidos || ''}, ${nombre.nombre || ''}`} sec={sec} />
+        );
+        i++;
+      }
+    }
+    return elems;
+  };
+  // En modo americano, las violas y chelos se sitúan más a la derecha del director (inverso a europeo)
+  const ofset = variante === 'americano' ? 20 : 0;
+  const v1 = arcoCuerda('1. Violines I', (porSeccion['1. Violines I'] || []).length, Math.PI * 0.55, Math.PI * 0.92, 200, 50, 6);
+  const v2 = arcoCuerda('2. Violines II', (porSeccion['2. Violines II'] || []).length, Math.PI * 0.62, Math.PI * 0.95, 290, 50, 6);
+  const va = arcoCuerda('3. Violas', (porSeccion['3. Violas'] || []).length, Math.PI * 0.45, Math.PI * 0.08, 200 + ofset, 50, 6);
+  const vc = arcoCuerda('4. Violonchelos', (porSeccion['4. Violonchelos'] || []).length, Math.PI * 0.38, Math.PI * 0.05, 290 + ofset, 50, 6);
+  const cb = arcoCuerda('5. Contrabajos', (porSeccion['5. Contrabajos'] || []).length, Math.PI * 0.10, Math.PI * 0.00, 360 + ofset, 0, 8, -1);
+  const filaY = (sec, y, xStart, xEnd) => {
+    const arr = porSeccion[sec] || [];
+    const w = 46, h = 32;
+    return arr.slice(0, 16).map((m, i) => {
+      const t = arr.length > 1 ? (i / Math.min(arr.length - 1, 15)) : 0.5;
+      const x = xStart + (xEnd - xStart) * t;
+      return <Atril key={`${sec}-${i}`} x={x - w / 2} y={y - h / 2} w={w} h={h}
+                    num={i + 1} nombre={`${m.apellidos || ''}, ${m.nombre || ''}`} sec={sec} />;
+    });
+  };
+  const madera = filaY('6. Viento Madera', H * 0.30, W * 0.22, W * 0.78);
+  const metal = filaY('7. Viento Metal', H * 0.18, W * 0.22, W * 0.78);
+  const perc = filaY('8. Percusión', H * 0.07, W * 0.18, W * 0.82);
+  const coro = filaY('10. Coro', H * 0.03, W * 0.10, W * 0.90);
+  return (<>{coro}{perc}{metal}{madera}{v1}{v2}{va}{vc}{cb}</>);
 }
 
 // Atril rectangular: número grande arriba, nombre debajo

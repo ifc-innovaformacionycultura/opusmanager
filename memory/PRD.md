@@ -992,3 +992,50 @@ Recomendación: implementarlos en iteraciones separadas de 1-2 bloques cada una 
 - **B11A**: Informe D mejorado con TODOS los apartados de configuración — el gen_D actual cubre solo parte.
 - **B12**: Plano americano implementado pero sin numeración 100% verificada (los atriles se asignan por orden de lista de músicos; afina cuando datos reales lleguen).
 
+
+### ✅ Iteración Feb 2026 — Director General + Badge mejorado + B10 + B11A + Widget + Plano americano
+
+**1. Usuario Director General creado**
+- UUID: `f2fa71b8-02ac-4e98-bcbb-50367e8f80f0`
+- Email: `jalonso@p.csmb.es` · Password: `Director2026!`
+- Rol: `director_general` · `requiere_cambio_password=true`
+- Permisos: idénticos a admin (verifica secciones, publica eventos sin verificación, edita inventario).
+
+**2. Badge de verificación mejorado** (`ConfiguracionEventos.js`)
+- Colores **muy diferenciados**: `🟡 PENDIENTE` (bg-amber-400 + texto oscuro), `✅ VERIFICADO` (bg-emerald-600 + texto blanco), `⚡ AUTORIZADO` (bg-blue-600 + texto blanco). Border-2 + font-bold + uppercase.
+- Dropdown **claramente visible**: 320px, border-2 navy, sombra 2xl, header con icono y título, textarea de notas, 3 botones grandes con bg coloreado y border, botón Cancelar.
+- **Cierre al click fuera** (mousedown listener con `data-verif-seccion`).
+- **Update optimista** en `cambiarVerif`: actualiza `verifs` + `verifMeta` localmente antes del PUT, luego sync con backend. El indicador `verif-progreso` se actualiza en tiempo real (1/8 → 2/8 sin recargar).
+- Tooltip claro para gestores normales: "Solo administradores y director general pueden modificar este badge".
+
+**3. Widget Próximos 7 días** (`Proximos7Dias.js` + `App.js`)
+- Lee `/api/gestor/calendario-eventos?desde=&hasta=`. Agrupa por fecha. Cards con icono+titulo+hora+lugar coloreadas por tipo (verde ensayo, azul función, amarillo logística, naranja montaje). Click navega a `/configuracion/eventos`. Inyectado en Dashboard antes de "Recent Events".
+
+**4. Bloque 11A — Informe D mejorado** (`gen_D` reescrito)
+- 8 apartados en orden de la página de configuración: 1.Datos generales · 2.Ensayos y funciones · 3.Transportes y alojamientos · 4.Programa musical · 5.Montaje · 6.Transporte material · 7.Presupuesto · 8.Estado verificaciones (con tabla GOLD).
+- PDF crece a 5.6KB (vs 4.5KB anterior).
+
+**5. Bloque 10 — Calendario del músico** (`routes_portal.py` + `PortalCalendar.js`)
+- `/api/portal/calendario` ahora devuelve logística del usuario: `transporte_ida/vuelta` (color naranja), `alojamiento` (color morado).
+- Flag `confirmado` por usuario_id en el array `confirmaciones`.
+- Flag `aviso` ("⏰ Confirmar antes del DD/MM") si pendiente y dentro del plazo.
+- UI: badge ámbar para aviso, badge verde "✅ Confirmado" para logística confirmada.
+
+**6. Plano Americano (Bloque 12 corrección)** (`Informes.js`)
+- Toggle ahora con **3 modos**: 🎭 Herradura · 🎻 Americano · 🪑 Filas (data-testids `btn-plano-{herradura,americano,filas}`).
+- Modo Americano: variante de la herradura con violas+chelos desplazados +20px hacia la derecha (disposición americana clásica). SVG con `data-testid="plano-americano"`.
+
+**7. Drawer Hilos: data-testid garantizado en 8/8 páginas** (`HilosPendientesDrawer.js`)
+- Eliminado `if (!userId) return null` → ahora muestra el botón deshabilitado con disabled+opacity-50 si no hay userId todavía. data-testid siempre presente.
+
+**8. Reorganización botones flotantes**
+- Hilos pendientes: `bottom-36` (más arriba)
+- Comentar con el equipo: `bottom-20`
+- Made with Emergent: `bottom-4`
+- Sin solapamientos.
+
+**Test E2E Iter 13** (testing_agent_v3_fork):
+- Backend: 22/22 pytest PASS (auth DG, verificaciones con permisos, 10 PDFs, calendarios).
+- Frontend: 85% inicial → tras correcciones, plano americano + drawer en 8/8 páginas funcionan.
+- Issues HIGH/MEDIUM/LOW del informe TODOS resueltos.
+
