@@ -4,6 +4,7 @@ import ComentariosPanel from "../components/ComentariosPanel";
 import ConvocatoriaInstrumentosPanel from "../components/ConvocatoriaInstrumentosPanel";
 import LogisticaSection from "../components/LogisticaSection";
 import ComentariosEquipoInline from "../components/ComentariosEquipoInline";
+import MontajeRiderSection from "../components/MontajeRiderSection";
 
 // Bloque 7 — Indicador "verificar atriles" en cada obra del programa.
 // Busca en el catálogo por título y si encuentra match permite verificar copias físicas.
@@ -567,6 +568,18 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
             entidadNombre={event.nombre}
             pagina="/configuracion/eventos"
             seccion="Configuración → Eventos"
+          />
+        </div>
+      )}
+
+      {/* Montaje y Rider Técnico (Bloque 3) */}
+      {event.id && (
+        <div className="mt-4">
+          <SectionTitle color="purple">Montaje y Rider Técnico</SectionTitle>
+          <MontajeRiderSection
+            evento={event}
+            api={api}
+            onEventChange={(patch) => onChange({ ...event, ...patch })}
           />
         </div>
       )}

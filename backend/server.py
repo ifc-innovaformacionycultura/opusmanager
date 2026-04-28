@@ -22,6 +22,9 @@ from routes_economia import router as economia_router
 from routes_mensajes import router as mensajes_router
 from routes_archivo import router as archivo_router
 from routes_comentarios_equipo import router as comentarios_equipo_router
+from routes_inventario import router as inventario_router
+from routes_montaje import router as montaje_router
+from routes_informes import router as informes_router
 
 # ==================== App Configuration ====================
 
@@ -67,6 +70,9 @@ app.include_router(economia_router)  # /api/gestor/{cachets-base,cachets-config,
 app.include_router(mensajes_router)  # /api/gestor/mensajes/*
 app.include_router(archivo_router)  # /api/gestor/archivo/*
 app.include_router(comentarios_equipo_router)  # /api/gestor/comentarios-equipo/*
+app.include_router(inventario_router)  # /api/gestor/inventario/*
+app.include_router(montaje_router)  # /api/gestor/montaje/*, /espacios, /transporte-material
+app.include_router(informes_router)  # /api/gestor/informes/*
 
 # ==================== Health Check ====================
 

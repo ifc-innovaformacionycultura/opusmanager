@@ -244,6 +244,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
         { id: "incidencias", label: "Feedback e incidencias", path: "/admin/incidencias" },
         { id: "mensajes", label: "💬 Mensajes", path: "/admin/mensajes" },
         { id: "archivo", label: "📚 Archivo musical", path: "/admin/archivo" },
+        { id: "inventario", label: "📦 Inventario material", path: "/admin/inventario" },
         { id: "recordatorios", label: "Recordatorios auto.", path: "/admin/recordatorios" },
         { id: "emails", label: "Historial de emails", path: "/admin/emails" },
         { id: "config-email", label: "Configuración de email", path: "/admin/emails/configuracion" },
@@ -463,6 +464,8 @@ const Layout = ({ children }) => {
       return { page: "Administración", section: "Mensajes" };
     } else if (path.startsWith("/admin/archivo")) {
       return { page: "Administración", section: "Archivo musical" };
+    } else if (path.startsWith("/admin/inventario")) {
+      return { page: "Administración", section: "Inventario de material" };
     } else if (path.startsWith("/ayuda")) {
       return { page: "Manual de Usuario", section: null };
     }
@@ -737,6 +740,7 @@ import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
 import GestorMusicos from "./pages/GestorMusicos";
 import GestorArchivo from "./pages/GestorArchivo";
+import GestorInventario from "./pages/GestorInventario";
 import ChatInterno from "./pages/ChatInterno";
 import KeepAlive from "./components/KeepAlive";
 import GestorMusicoDetalle from "./pages/GestorMusicoDetalle";
@@ -808,6 +812,7 @@ function App() {
                         <Route path="/admin/actividad" element={<RegistroActividad />} />
                         <Route path="/admin/mensajes" element={<ChatInterno />} />
                         <Route path="/admin/archivo" element={<GestorArchivo />} />
+                        <Route path="/admin/inventario" element={<GestorInventario />} />
                         <Route path="/ayuda" element={<ManualUsuario />} />
                       </Routes>
                     </Layout>
