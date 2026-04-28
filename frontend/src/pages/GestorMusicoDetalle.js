@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ComentariosEquipoInline from '../components/ComentariosEquipoInline';
+import InvitacionMusicoModal from '../components/InvitacionMusicoModal';
 
 const estadoBadge = (e) => ({
   confirmado: 'bg-green-100 text-green-800',
@@ -27,6 +28,7 @@ const GestorMusicoDetalle = () => {
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  const [showInvitar, setShowInvitar] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -67,14 +69,36 @@ const GestorMusicoDetalle = () => {
           className="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
           ← Volver a la lista
         </button>
-        <button
-          onClick={() => setShowDelete(true)}
-          data-testid="btn-eliminar-musico"
-          className="px-3 py-1.5 text-sm text-red-700 border border-red-300 bg-white hover:bg-red-50 rounded-md font-medium"
-        >
-          Eliminar músico
-        </button>
+        <div className="flex items-center gap-2">
+          {(m.estado_invitacion || 'pendiente') !== 'activado' && (
+            <button
+              onClick={() => setShowInvitar(true)}
+              data-testid="btn-invitar-musico"
+              className="px-3 py-1.5 text-sm text-white bg-slate-900 hover:bg-slate-800 rounded-md font-medium"
+            >
+              📨 {m.estado_invitacion === 'invitado' ? 'Reenviar invitación' : 'Enviar invitación'}
+            </button>
+          )}
+          <button
+            onClick={() => setShowDelete(true)}
+            data-testid="btn-eliminar-musico"
+            className="px-3 py-1.5 text-sm text-red-700 border border-red-300 bg-white hover:bg-red-50 rounded-md font-medium"
+          >
+            Eliminar músico
+          </button>
+        </div>
       </div>
+
+      <InvitacionMusicoModal
+        isOpen={showInvitar}
+        onClose={() => setShowInvitar(false)}
+        musico={m}
+        api={api}
+        onInvited={() => {
+          // Refrescar para que el badge cambie a 'invitado'
+          api.get(`/api/gestor/musicos/${id}`).then(r => setData(r.data)).catch(() => {});
+        }}
+      />
 
       {showDelete && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" data-testid="modal-eliminar-musico">
@@ -137,6 +161,15 @@ const GestorMusicoDetalle = () => {
               <h1 className="text-2xl font-bold text-slate-900">{m.nombre} {m.apellidos}</h1>
               {recientemente && <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium" data-testid="badge-actualizado">Actualizado recientemente</span>}
               <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${m.estado === 'activo' ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-700'}`}>{m.estado}</span>
+              {(() => {
+                const ei = m.estado_invitacion || 'pendiente';
+                const cfg = ei === 'activado'
+                  ? { label: '✅ Activado', cls: 'bg-green-100 text-green-800' }
+                  : ei === 'invitado'
+                    ? { label: '📨 Invitado', cls: 'bg-blue-100 text-blue-800' }
+                    : { label: '⚪ Pendiente', cls: 'bg-slate-200 text-slate-700' };
+                return <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`} data-testid="badge-invitacion">{cfg.label}</span>;
+              })()}
             </div>
             <p className="text-slate-600 mt-1">{m.email}</p>
             <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">

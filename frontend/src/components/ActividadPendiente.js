@@ -9,6 +9,7 @@ const KPI_CFG = [
   { k: 'comentarios_pendientes',    label: 'comentarios sin responder', icon: '💬', color: 'blue',   link: '/configuracion/eventos' },
   { k: 'tareas_proximas',            label: 'tareas próximas (15 días)', icon: '✅', color: 'emerald',link: '/tareas' },
   { k: 'eventos_proximos',           label: 'eventos próximos (15 días)', icon: '📅', color: 'sky',   link: '/configuracion/eventos' },
+  { k: 'musicos_sin_activar',        label: 'músicos pendientes de activación', icon: '📨', color: 'violet', link: '/admin/musicos?invitacion=pendiente' },
 ];
 
 const COLOR_CFG = {
@@ -16,6 +17,7 @@ const COLOR_CFG = {
   blue:    { bg: 'bg-blue-50',    text: 'text-blue-800',    border: 'border-blue-300',    dot: 'bg-blue-500' },
   emerald: { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-300', dot: 'bg-emerald-500' },
   sky:     { bg: 'bg-sky-50',     text: 'text-sky-800',     border: 'border-sky-300',     dot: 'bg-sky-500' },
+  violet:  { bg: 'bg-violet-50',  text: 'text-violet-800',  border: 'border-violet-300',  dot: 'bg-violet-500' },
 };
 
 export default function ActividadPendiente() {

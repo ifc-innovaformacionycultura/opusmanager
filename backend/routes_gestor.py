@@ -389,7 +389,7 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
 
         # 3) Músicos activos
         musicos_res = supabase.table('usuarios') \
-            .select('id,nombre,apellidos,email,instrumento,especialidad,nivel_estudios,baremo,localidad,direccion,anos_experiencia,estado') \
+            .select('id,nombre,apellidos,email,instrumento,especialidad,nivel_estudios,baremo,localidad,direccion,anos_experiencia,estado,estado_invitacion') \
             .eq('rol', 'musico') \
             .eq('estado', 'activo') \
             .order('apellidos', desc=False) \
@@ -428,6 +428,28 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
         # Index asignaciones por (usuario_id, evento_id)
         asig_index = {(a['usuario_id'], a['evento_id']): a for a in asigs_list}
 
+        # CRM contactos (Bloque 1) — resumen por (usuario_id, evento_id)
+        crm_index = {}  # (usuario_id, evento_id) -> {total, ultimo_tipo, ultimo_estado, ultima_fecha}
+        if evento_ids:
+            try:
+                cr = supabase.table('contactos_musico') \
+                    .select('usuario_id,evento_id,tipo,estado_respuesta,fecha_contacto') \
+                    .in_('evento_id', evento_ids) \
+                    .order('fecha_contacto', desc=True) \
+                    .execute().data or []
+                for row in cr:
+                    key = (row['usuario_id'], row['evento_id'])
+                    if key not in crm_index:
+                        crm_index[key] = {
+                            "total_contactos": 0,
+                            "ultimo_tipo": row.get('tipo'),
+                            "ultimo_estado": row.get('estado_respuesta'),
+                            "ultima_fecha": row.get('fecha_contacto'),
+                        }
+                    crm_index[key]["total_contactos"] += 1
+            except Exception:
+                pass
+
         # Total ensayos por evento
         total_ensayos_por_evento = {eid: len(evs) for eid, evs in ensayos_map.items()}
 
@@ -444,6 +466,7 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
                 "baremo": u.get('baremo'),
                 "localidad": _localidad_efectiva(u),
                 "anos_experiencia": u.get('anos_experiencia'),
+                "estado_invitacion": u.get('estado_invitacion') or 'pendiente',
                 # Shape unificado con /plantillas-definitivas: lista ordenada por evento.
                 # Cada item incluye `evento_id` para lookup directo en el frontend.
                 "asignaciones": []
@@ -485,6 +508,12 @@ async def get_seguimiento(current_user: dict = Depends(get_current_gestor)):
                     "disponibilidad": disp_list,
                     "porcentaje_disponibilidad": pct_disp,
                     "porcentaje_asistencia_real": pct_real,
+                    "crm": crm_index.get((u['id'], ev['id'])) or {
+                        "total_contactos": 0,
+                        "ultimo_tipo": None,
+                        "ultimo_estado": "no_contactado",
+                        "ultima_fecha": None,
+                    },
                 })
             musicos_out.append(m)
 

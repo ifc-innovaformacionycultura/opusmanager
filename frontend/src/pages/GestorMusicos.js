@@ -1,7 +1,8 @@
 // Gestor: Base de datos de Músicos con búsqueda, filtros y export Excel
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import InvitacionMusicoModal from '../components/InvitacionMusicoModal';
 
 const CrearMusicoModal = ({ isOpen, onClose, onCreated, api }) => {
   const [form, setForm] = useState({ nombre: '', apellidos: '', email: '', instrumento: '', telefono: '' });
@@ -352,16 +353,27 @@ const ImportarMusicosModal = ({ isOpen, onClose, onImported, api }) => {
 const GestorMusicos = () => {
   const { api } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [musicos, setMusicos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [instrumentoFiltro, setInstrumentoFiltro] = useState('');
   const [estadoFiltro, setEstadoFiltro] = useState('');
+  const [invitacionFiltro, setInvitacionFiltro] = useState('');
+
+  // Pre-filtrar desde query string ?invitacion=pendiente (link desde KPI dashboard)
+  useEffect(() => {
+    const v = searchParams.get('invitacion');
+    if (v && ['pendiente', 'invitado', 'activado'].includes(v)) {
+      setInvitacionFiltro(v);
+    }
+  }, [searchParams]);
   const [instrumentos, setInstrumentos] = useState([]);
   const [exporting, setExporting] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [invitarMusico, setInvitarMusico] = useState(null);  // músico al que invitar
 
   const cargarMusicos = useCallback(async () => {
     try {
@@ -404,7 +416,12 @@ const GestorMusicos = () => {
     setSearch('');
     setInstrumentoFiltro('');
     setEstadoFiltro('');
+    setInvitacionFiltro('');
   };
+
+  const musicosFiltrados = invitacionFiltro
+    ? musicos.filter(m => (m.estado_invitacion || 'pendiente') === invitacionFiltro)
+    : musicos;
 
   const exportarExcel = async () => {
     try {
@@ -575,8 +592,22 @@ const GestorMusicos = () => {
               <option value="inactivo">Inactivos</option>
             </select>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Invitación</label>
+            <select
+              value={invitacionFiltro}
+              onChange={(e) => setInvitacionFiltro(e.target.value)}
+              data-testid="musicos-filter-invitacion"
+              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+            >
+              <option value="">Todos</option>
+              <option value="pendiente">⚪ Pendientes</option>
+              <option value="invitado">📨 Invitados</option>
+              <option value="activado">✅ Activados</option>
+            </select>
+          </div>
         </div>
-        {(search || instrumentoFiltro || estadoFiltro) && (
+        {(search || instrumentoFiltro || estadoFiltro || invitacionFiltro) && (
           <div className="mt-3 flex justify-end">
             <button
               onClick={limpiarFiltros}
@@ -606,20 +637,21 @@ const GestorMusicos = () => {
                 <th className="px-4 py-3">Instrumento</th>
                 <th className="px-4 py-3">Teléfono</th>
                 <th className="px-4 py-3">Estado</th>
+                <th className="px-4 py-3">Invitación</th>
                 <th className="px-4 py-3">Fecha alta</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-500">Cargando...</td></tr>
-              ) : musicos.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">Cargando...</td></tr>
+              ) : musicosFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-500" data-testid="musicos-empty">
+                  <td colSpan={7} className="px-4 py-12 text-center text-slate-500" data-testid="musicos-empty">
                     No se encontraron músicos con los criterios actuales
                   </td>
                 </tr>
               ) : (
-                musicos.map(m => {
+                musicosFiltrados.map(m => {
                   const recientemente = m.ultima_actualizacion_perfil &&
                     (new Date() - new Date(m.ultima_actualizacion_perfil)) < 24 * 60 * 60 * 1000;
                   return (
@@ -644,6 +676,28 @@ const GestorMusicos = () => {
                         {m.estado || '—'}
                       </span>
                     </td>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      {(() => {
+                        const ei = m.estado_invitacion || 'pendiente';
+                        if (ei === 'activado') {
+                          return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" data-testid={`badge-invit-${m.id}`}>✅ Activado</span>;
+                        }
+                        const cls = ei === 'invitado'
+                          ? 'bg-blue-100 text-blue-800 border-blue-300'
+                          : 'bg-slate-100 text-slate-700 border-slate-300';
+                        const label = ei === 'invitado' ? '📨 Invitado' : '⚪ Pendiente';
+                        return (
+                          <button
+                            onClick={() => setInvitarMusico(m)}
+                            data-testid={`btn-invitar-${m.id}`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${cls} hover:opacity-80`}
+                            title={ei === 'invitado' ? 'Reenviar invitación' : 'Enviar invitación'}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3 text-slate-500 text-xs">
                       {m.fecha_alta ? new Date(m.fecha_alta).toLocaleDateString('es-ES') : (m.created_at ? new Date(m.created_at).toLocaleDateString('es-ES') : '—')}
                     </td>
@@ -656,9 +710,17 @@ const GestorMusicos = () => {
         </div>
 
         <div className="px-4 py-3 border-t border-slate-200 text-xs text-slate-600 bg-slate-50">
-          Total: <span className="font-semibold text-slate-900" data-testid="musicos-total">{musicos.length}</span> {musicos.length === 1 ? 'músico' : 'músicos'}
+          Total: <span className="font-semibold text-slate-900" data-testid="musicos-total">{musicosFiltrados.length}</span> {musicosFiltrados.length === 1 ? 'músico' : 'músicos'}
         </div>
       </div>
+
+      <InvitacionMusicoModal
+        isOpen={!!invitarMusico}
+        onClose={() => setInvitarMusico(null)}
+        musico={invitarMusico}
+        api={api}
+        onInvited={cargarMusicos}
+      />
     </div>
   );
 };

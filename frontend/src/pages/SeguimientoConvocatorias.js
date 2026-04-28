@@ -16,6 +16,10 @@
 //   POST /api/gestor/seguimiento/bulk-accion    {usuario_ids, evento_id, accion}
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
+import {
+  CRMToggleButton, useCRMExpandidos, ContactosBadge, UltimoContactoCell,
+  RegistrarContactoModal, HistorialPanel,
+} from "../components/CRMSeguimiento";
 
 // ============================================================
 // Mapeo Instrumento → sección (para ordenar y filtrar)
@@ -93,6 +97,12 @@ const SeguimientoConvocatorias = () => {
   const [filterLocalidad, setFilterLocalidad] = useState('');
   const [filterEvento, setFilterEvento] = useState(''); // columna (no filtra músicos)
 
+  // CRM (Bloque 1) — bloques de evento expandidos persisten en localStorage
+  const { expandidos: crmExpandidos, toggle: toggleCRM } = useCRMExpandidos();
+  const [crmRegistrar, setCrmRegistrar] = useState(null); // {musicoId, eventoId, musicoNombre, eventoNombre}
+  const [crmHistorial, setCrmHistorial] = useState(null); // {musicoId, eventoId, musicoNombre, eventoNombre}
+  const [crmHistorialData, setCrmHistorialData] = useState({ loading: false, contactos: [] });
+
   // Columnas de datos personales visibles (persistido en localStorage)
   const COLUMN_DEFS = [
     { key: 'apellidos',     label: 'Apellidos',     defaultVisible: true },
@@ -121,14 +131,15 @@ const SeguimientoConvocatorias = () => {
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (silencioso = false) => {
     try {
-      setLoading(true); setError(null);
+      if (!silencioso) setLoading(true);
+      setError(null);
       const r = await api.get('/api/gestor/seguimiento');
       setData(r.data || { eventos: [], musicos: [] });
     } catch (err) {
       setError(err.response?.data?.detail || err.message);
-    } finally { setLoading(false); }
+    } finally { if (!silencioso) setLoading(false); }
   }, [api]);
 
   useEffect(() => { cargar(); }, [cargar]);
@@ -308,6 +319,53 @@ const SeguimientoConvocatorias = () => {
     } catch (err) {
       showFeedback('error', err.response?.data?.detail || err.message);
     } finally { setBusy(false); }
+  };
+
+  // === CRM Contactos (Bloque 1) ===
+  const cargarHistorial = useCallback(async (musicoId, eventoId) => {
+    setCrmHistorialData({ loading: true, contactos: [] });
+    try {
+      const r = await api.get(`/api/gestor/contactos/${musicoId}/${eventoId}`);
+      setCrmHistorialData({ loading: false, contactos: r.data?.contactos || [] });
+    } catch (err) {
+      setCrmHistorialData({ loading: false, contactos: [] });
+      showFeedback('error', err.response?.data?.detail || err.message);
+    }
+  }, [api]);
+
+  const abrirHistorial = (musico, evento) => {
+    const ctx = {
+      musicoId: musico.id, eventoId: evento.id,
+      musicoNombre: `${musico.apellidos || ''}, ${musico.nombre || ''}`.trim().replace(/^,\s*/, ''),
+      eventoNombre: evento.nombre,
+    };
+    setCrmHistorial(ctx);
+    cargarHistorial(musico.id, evento.id);
+  };
+
+  const abrirRegistrar = (musico, evento) => {
+    setCrmRegistrar({
+      musicoId: musico.id, eventoId: evento.id,
+      musicoNombre: `${musico.apellidos || ''}, ${musico.nombre || ''}`.trim().replace(/^,\s*/, ''),
+      eventoNombre: evento.nombre,
+    });
+  };
+
+  const guardarContacto = async (payload) => {
+    if (!crmRegistrar) return;
+    const body = {
+      usuario_id: crmRegistrar.musicoId,
+      evento_id: crmRegistrar.eventoId,
+      ...payload,
+    };
+    await api.post('/api/gestor/contactos', body);
+    showFeedback('success', 'Contacto registrado');
+    // Refrescar resumen sin spinner global
+    await cargar(true);
+    if (crmHistorial && crmHistorial.musicoId === crmRegistrar.musicoId
+        && crmHistorial.eventoId === crmRegistrar.eventoId) {
+      await cargarHistorial(crmRegistrar.musicoId, crmRegistrar.eventoId);
+    }
   };
 
   if (loading) {
@@ -597,7 +655,13 @@ const SeguimientoConvocatorias = () => {
                   )}
                   {eventosVisibles.map(ev => {
                     const badge = ESTADO_EVENTO_BADGE[ev.estado] || { label: ev.estado, className: 'bg-slate-200 text-slate-700' };
-                    const subcols = ev.ensayos.length + 3; // ensayos + %Disp + Publicado + Acción
+                    const crmOn = crmExpandidos.has(ev.id);
+                    const subcols = ev.ensayos.length + 3 + (crmOn ? 3 : 0); // ensayos + %Disp + Publicado + Acción + (CRM 3)
+                    // Total contactos del evento (sumatorio musicos.asignaciones[ev.id].crm.total_contactos)
+                    const totalCRM = data.musicos.reduce((acc, m) => {
+                      const a = (Array.isArray(m.asignaciones) ? m.asignaciones.find(x => x.evento_id === ev.id) : null);
+                      return acc + (a?.crm?.total_contactos || 0);
+                    }, 0);
                     return (
                       <th
                         key={ev.id}
@@ -615,12 +679,13 @@ const SeguimientoConvocatorias = () => {
                               {fmtFecha(f.fecha)}{f.hora ? ` ${fmtHora(f.hora)}` : ''}
                             </span>
                           ))}
+                          <CRMToggleButton expanded={crmOn} onClick={() => toggleCRM(ev.id)} total={totalCRM} eventoId={ev.id} />
                         </div>
                       </th>
                     );
                   })}
                 </tr>
-                {/* Fila 2: subcolumnas (ensayos + %Disp + Publicado + Acción) */}
+                {/* Fila 2: subcolumnas (ensayos + %Disp + Publicado + Acción + [CRM 3]) */}
                 <tr>
                   {eventosVisibles.map(ev => {
                     // Contadores por tipo para numerar subcolumnas: Ens.1, Ens.2, Func.1...
@@ -631,6 +696,7 @@ const SeguimientoConvocatorias = () => {
                       if (t === 'funcion') return 'Func';
                       return 'Ens';
                     };
+                    const crmOn = crmExpandidos.has(ev.id);
                     return (
                       <React.Fragment key={ev.id}>
                         {ev.ensayos.map(e => {
@@ -652,7 +718,14 @@ const SeguimientoConvocatorias = () => {
                         })}
                         <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-slate-50 min-w-[50px]" title="% Disponibilidad">% Disp.</th>
                         <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-slate-50 min-w-[60px]">Publicado</th>
-                        <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-r-2 border-slate-400 bg-slate-50 min-w-[120px]">Acción</th>
+                        <th className={`px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b ${crmOn ? '' : 'border-r-2 border-slate-400'} border-slate-200 bg-slate-50 min-w-[120px]`}>Acción</th>
+                        {crmOn && (
+                          <>
+                            <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-blue-50 min-w-[60px]" data-testid={`crm-head-contactos-${ev.id}`}>Contactos</th>
+                            <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-slate-200 bg-blue-50 min-w-[90px]">Último</th>
+                            <th className="px-1 py-1.5 text-center font-normal text-[10px] text-slate-600 border-b border-r-2 border-slate-400 bg-blue-50 min-w-[40px]">➕</th>
+                          </>
+                        )}
                       </React.Fragment>
                     );
                   })}
@@ -670,7 +743,19 @@ const SeguimientoConvocatorias = () => {
                       />
                     </td>
                     {visibleCols.apellidos && (
-                      <td className="px-2 py-1.5 font-medium text-slate-900 border-r border-slate-200 whitespace-nowrap">{m.apellidos || '—'}</td>
+                      <td className="px-2 py-1.5 font-medium text-slate-900 border-r border-slate-200 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span>{m.apellidos || '—'}</span>
+                          {(m.estado_invitacion && m.estado_invitacion !== 'activado') && (
+                            <span
+                              title={m.estado_invitacion === 'invitado' ? 'Invitado pero sin activar la cuenta' : 'Cuenta nunca invitada'}
+                              data-testid={`badge-sin-activar-${m.id}`}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                              ⚠️ Sin activar
+                            </span>
+                          )}
+                        </div>
+                      </td>
                     )}
                     {visibleCols.nombre && (
                       <td className="px-2 py-1.5 text-slate-900 whitespace-nowrap">{m.nombre || '—'}</td>
@@ -696,6 +781,7 @@ const SeguimientoConvocatorias = () => {
                         : (m.asignaciones || {})[ev.id])
                         || { publicado_musico: false, estado: null, disponibilidad: [], porcentaje_disponibilidad: 0 };
                       const isPub = Boolean(asig.publicado_musico);
+                      const crmOn = crmExpandidos.has(ev.id);
                       return (
                         <React.Fragment key={ev.id}>
                           {ev.ensayos.map(e => {
@@ -729,7 +815,7 @@ const SeguimientoConvocatorias = () => {
                               </span>
                             </label>
                           </td>
-                          <td className="px-1 py-1.5 text-center border-r-2 border-slate-300">
+                          <td className={`px-1 py-1.5 text-center ${crmOn ? '' : 'border-r-2 border-slate-300'}`}>
                             <select
                               value={asig.estado || ''}
                               onChange={(e) => cambiarAccion(m.id, ev.id, e.target.value)}
@@ -742,6 +828,28 @@ const SeguimientoConvocatorias = () => {
                               {ACCIONES.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
                             </select>
                           </td>
+                          {crmOn && (
+                            <>
+                              <td className="px-1 py-1.5 text-center bg-blue-50/50" data-testid={`cell-crm-contactos-${m.id}-${ev.id}`}>
+                                <ContactosBadge crm={asig.crm} onClick={() => abrirHistorial(m, ev)}
+                                  dataTestId={`crm-badge-${m.id}-${ev.id}`} />
+                              </td>
+                              <td className="px-1 py-1.5 text-center bg-blue-50/50">
+                                <UltimoContactoCell crm={asig.crm} />
+                              </td>
+                              <td className="px-1 py-1.5 text-center border-r-2 border-slate-300 bg-blue-50/50">
+                                <button
+                                  type="button"
+                                  onClick={() => abrirRegistrar(m, ev)}
+                                  data-testid={`crm-add-${m.id}-${ev.id}`}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold"
+                                  title="Registrar nuevo contacto"
+                                >
+                                  +
+                                </button>
+                              </td>
+                            </>
+                          )}
                         </React.Fragment>
                       );
                     })}
@@ -764,6 +872,33 @@ const SeguimientoConvocatorias = () => {
         <span>💾</span>
         <span>Los cambios individuales (toggle <strong>Publicar</strong> y selector <strong>Acción</strong>) se guardan automáticamente al instante.</span>
       </div>
+
+      {/* CRM — Modales y panel lateral (Bloque 1) */}
+      <RegistrarContactoModal
+        open={!!crmRegistrar}
+        onClose={() => setCrmRegistrar(null)}
+        onSubmit={guardarContacto}
+        musicoNombre={crmRegistrar?.musicoNombre}
+        eventoNombre={crmRegistrar?.eventoNombre}
+      />
+      <HistorialPanel
+        open={!!crmHistorial}
+        onClose={() => setCrmHistorial(null)}
+        contactos={crmHistorialData.contactos}
+        loading={crmHistorialData.loading}
+        musicoNombre={crmHistorial?.musicoNombre}
+        eventoNombre={crmHistorial?.eventoNombre}
+        onAddNew={() => {
+          if (!crmHistorial) return;
+          // Abrir modal de registro con el mismo contexto, sin cerrar el panel
+          setCrmRegistrar({
+            musicoId: crmHistorial.musicoId,
+            eventoId: crmHistorial.eventoId,
+            musicoNombre: crmHistorial.musicoNombre,
+            eventoNombre: crmHistorial.eventoNombre,
+          });
+        }}
+      />
     </div>
   );
 };

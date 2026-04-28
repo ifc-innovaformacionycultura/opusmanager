@@ -12,6 +12,7 @@ import LoginUnificado from "./pages/LoginUnificado";
 // Import portal pages
 import PortalDashboard from "./pages/portal/PortalDashboard";
 import ResetPassword from "./pages/ResetPassword";
+import ActivarCuenta from "./pages/ActivarCuenta";
 
 // Protected Route for Gestores (uses AuthContext)
 const ProtectedGestorRoute = ({ children }) => {
@@ -785,6 +786,9 @@ function App() {
               
               {/* Reset Password - Recuperación de contraseña */}
               <Route path="/reset-password" element={<ResetPassword />} />
+
+              {/* Activación de invitación - pública, sin login */}
+              <Route path="/activar/:token" element={<ActivarCuenta />} />
               
               {/* Portal de Músicos - usa SupabaseAuthContext */}
               <Route 

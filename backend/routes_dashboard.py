@@ -191,11 +191,24 @@ async def dashboard_resumen(current_user: dict = Depends(get_current_gestor)):
         pass
 
     # ============ KPIs ============
+    # Bloque 2: contar músicos con cuenta sin activar
+    musicos_sin_activar = 0
+    try:
+        ms_res = supabase.table('usuarios').select('id', count='exact') \
+            .eq('rol', 'musico') \
+            .eq('estado', 'activo') \
+            .in_('estado_invitacion', ['pendiente', 'invitado']) \
+            .execute()
+        musicos_sin_activar = ms_res.count or 0
+    except Exception:
+        pass
+
     kpis = {
         'verificaciones_pendientes': sum(p['pendientes'] for p in pendientes_verif),
         'comentarios_pendientes': len([p for p in pendientes_equipo if p['tipo'] == 'comentario']),
         'tareas_proximas': len([p for p in pendientes_equipo if p['tipo'] == 'tarea']),
         'eventos_proximos': len(proximos),
+        'musicos_sin_activar': musicos_sin_activar,
     }
 
     return {

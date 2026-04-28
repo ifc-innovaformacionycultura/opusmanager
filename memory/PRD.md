@@ -31,6 +31,32 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Feb 28, 2026 — Bloques 1+2 nuevos: CRM de contactos + Sistema de invitación
+
+**Bloque 1 — CRM de contactos por (músico × evento) en Seguimiento de Plantillas:**
+- Nueva tabla `contactos_musico` (id, usuario_id, evento_id, tipo, estado_respuesta, notas, gestor_id, fecha_contacto).
+- Nuevo router `routes_crm_contactos.py` con `GET /api/gestor/contactos/{usuario}/{evento}`, `POST /api/gestor/contactos`, `GET /api/gestor/contactos/resumen`.
+- `/api/gestor/seguimiento` extendido: cada asignación incluye `crm: {total_contactos, ultimo_tipo, ultimo_estado, ultima_fecha}`.
+- UI: botón `📞 CRM` colapsable por evento (persistido en localStorage `seguimiento_crm_expandidos`). Cuando expandido añade 3 sub-columnas: badge de Contactos por color del último estado, fecha+icono del último contacto, botón ➕ que abre mini-modal de registro. Click en el badge abre panel lateral con historial completo.
+- Componente nuevo `/app/frontend/src/components/CRMSeguimiento.js` con todos los helpers visuales.
+
+**Bloque 2 — Sistema de invitación a músicos:**
+- ALTER `usuarios` con `estado_invitacion`, `fecha_invitacion`, `token_invitacion (UNIQUE)`, `fecha_activacion`. Migración suave que marca como 'activado' los músicos con último_acceso previo.
+- Nuevo router `routes_invitaciones.py` (gestor + portal):
+  - `POST /api/gestor/musicos/{id}/invitar` — genera UUID token, marca 'invitado', envía email Resend (HTML corporativo IFC), devuelve `{url_activacion, token, email}`.
+  - `GET /api/portal/activar/{token}` — público; devuelve datos del músico para la página de bienvenida.
+  - `POST /api/portal/activar/{token}` — público; fija contraseña vía `auth.admin.update_user_by_id`, marca 'activado', limpia token (one-shot).
+- UI:
+  - Botón **📨 Enviar / Reenviar invitación** en `GestorMusicoDetalle.js` + badge `⚪ Pendiente / 📨 Invitado / ✅ Activado` en cabecera.
+  - Nueva columna **"Invitación"** en `GestorMusicos.js` con badge clickable (abre modal). Filtro adicional por estado de invitación + pre-filtrado vía query string `?invitacion=pendiente`.
+  - Modal `InvitacionMusicoModal.js`: 3 opciones (Enviar email · Solo generar enlace · QR auto-renderizado vía `api.qrserver.com`). Sin dependencias nuevas.
+  - Página pública `/activar/:token` (`ActivarCuenta.js`): formulario con doble password + login automático Supabase tras éxito → redirige a `/portal`.
+  - Badge `⚠️ Sin activar` junto al apellido del músico en Seguimiento de Plantillas (visible para `pendiente` o `invitado`).
+- Dashboard: nuevo KPI **📨 "X músicos pendientes de activación"** (color violet) que enlaza a `/admin/musicos?invitacion=pendiente`. Backend extiende `dashboard/resumen.kpis.musicos_sin_activar`.
+
+### Feb 27, 2026 — Bloques 1-12 (Director General, verificaciones, drawer hilos, dashboard, informes I/J, layout SVG americano)
+*Mantenido del histórico — ver entradas anteriores.*
+
 ### Feb 2026 — Sesión XL: Bloques 1-7 (Presupuestos persistente, Portal unificado, Gestión económica, Análisis, Planificador)
 
 **Bloque 1 — Presupuestos REAL (elimina mensaje "próxima versión"):**

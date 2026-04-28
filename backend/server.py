@@ -27,6 +27,8 @@ from routes_montaje import router as montaje_router
 from routes_informes import router as informes_router
 from routes_verificaciones import router as verificaciones_router
 from routes_dashboard import router as dashboard_router
+from routes_crm_contactos import router as crm_contactos_router
+from routes_invitaciones import router_gestor as invitaciones_gestor_router, router_portal as invitaciones_portal_router
 
 # ==================== App Configuration ====================
 
@@ -77,6 +79,9 @@ app.include_router(montaje_router)  # /api/gestor/montaje/*, /espacios, /transpo
 app.include_router(informes_router)  # /api/gestor/informes/*
 app.include_router(verificaciones_router)  # /api/gestor/eventos/{id}/verificaciones/*
 app.include_router(dashboard_router)  # /api/gestor/dashboard/resumen
+app.include_router(crm_contactos_router)  # /api/gestor/contactos/*
+app.include_router(invitaciones_gestor_router)  # /api/gestor/musicos/{id}/invitar
+app.include_router(invitaciones_portal_router)  # /api/portal/activar/*
 
 # ==================== Health Check ====================
 
