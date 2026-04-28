@@ -951,6 +951,15 @@ Equipo de gestión IFC`;
   };
   const removeEmail = (e) => setDestinos(prev => prev.filter(x => x !== e));
 
+  const addTodosGestores = () => {
+    const emails = (destinatariosDisp.gestores || [])
+      .map(g => (g.email || '').trim().toLowerCase())
+      .filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+    if (!emails.length) { setError('No hay gestores con email disponibles.'); return; }
+    setDestinos(prev => Array.from(new Set([...prev, ...emails])));
+    setError(null);
+  };
+
   const onKeyDownEmail = (e) => {
     if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
       e.preventDefault();
@@ -1026,6 +1035,13 @@ Equipo de gestión IFC`;
             <section className="border border-slate-200 rounded-lg">
               <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 bg-slate-50 rounded-t-lg">
                 <span className="text-xs font-bold uppercase tracking-wide text-slate-600 flex-1">Contactos disponibles</span>
+                <button onClick={addTodosGestores}
+                        disabled={!destinatariosDisp.gestores?.length}
+                        data-testid="btn-todos-gestores"
+                        title="Añade todos los gestores como destinatarios"
+                        className="text-xs px-2 py-1 rounded bg-[#1A3A5C] hover:bg-[#163050] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold flex items-center gap-1 transition">
+                  <span>📋</span> Todos los gestores ({destinatariosDisp.gestores?.length || 0})
+                </button>
                 <input value={filtro} onChange={e => setFiltro(e.target.value)}
                        placeholder="Filtrar nombre o email…"
                        data-testid="email-filtro"
