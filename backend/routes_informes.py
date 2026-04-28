@@ -9,6 +9,7 @@ Tipos:
   G — Carta de convocatoria por músico
   H — A + B + C + D combinado
 """
+import os
 from typing import List, Optional, Literal
 from datetime import datetime
 from io import BytesIO
@@ -658,3 +659,166 @@ async def preview_informe(tipo: str, evento_id: str, current_user: dict = Depend
         logs = supabase.table('evento_logistica').select('*').eq('evento_id', evento_id).order('orden').execute().data or []
         return {"evento": ev, "logistica": logs}
     return {"evento": ev}
+
+
+
+# ============================================================
+# Envío por email (Resend con adjunto PDF)
+# ============================================================
+class EnviarInformeReq(BaseModel):
+    tipo: Literal['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    evento_ids: List[str]
+    destinatarios: List[str]  # lista de emails
+    asunto: str
+    mensaje: str
+    opciones: Optional[dict] = {}
+
+
+def _email_html_informe(asunto: str, mensaje: str, tipo: str) -> str:
+    """HTML corporativo IFC navy/gold para el envío del informe."""
+    tipos_label = {
+        'A': 'Plantilla definitiva + plano + montaje',
+        'B': 'Económico por evento',
+        'C': 'Estadístico de asistencia',
+        'D': 'Configuración de eventos',
+        'E': 'Hoja servicio · Transporte material',
+        'F': 'Hoja servicio · Transporte músicos',
+        'G': 'Carta de convocatoria por músico',
+        'H': 'Informe completo (A+B+C+D)',
+    }
+    safe_msg = (mensaje or '').replace('\n', '<br/>')
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
+        <tr><td style="background:#1A3A5C;padding:24px 32px;color:#ffffff;border-bottom:3px solid #C9920A">
+          <h1 style="margin:0;font-size:20px;letter-spacing:0.5px">IFC · INNOVACIÓN, FORMACIÓN Y CULTURA</h1>
+          <p style="margin:6px 0 0;font-size:13px;color:#C9920A">Informe tipo {tipo} — {tipos_label.get(tipo, '')}</p>
+        </td></tr>
+        <tr><td style="padding:28px 32px">
+          <h2 style="margin:0 0 14px;font-size:18px;color:#1A3A5C">{asunto}</h2>
+          <div style="font-size:14px;line-height:1.55;color:#334155">{safe_msg}</div>
+          <div style="margin:20px 0;padding:14px 16px;background:#F1F5F9;border-left:3px solid #C9920A;border-radius:4px;font-size:13px;color:#475569">
+            📎 Encontrarás el informe en formato PDF adjunto a este correo.
+          </div>
+          <p style="margin:18px 0 0;font-size:12px;color:#64748b">
+            Generado por OPUS MANAGER · {datetime.now().strftime('%d/%m/%Y %H:%M')}
+          </p>
+        </td></tr>
+        <tr><td style="background:#f8fafc;padding:14px 32px;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b">
+          Este correo se ha enviado automáticamente desde el sistema OPUS MANAGER.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>""".strip()
+
+
+@router.post("/enviar-email")
+async def enviar_informe_email(req: EnviarInformeReq, current_user: dict = Depends(get_current_gestor)):
+    """Genera el PDF y lo envía adjunto a una o varias direcciones de email vía Resend."""
+    import base64
+    import re
+    if req.tipo not in GENERADORES:
+        raise HTTPException(status_code=400, detail=f"Tipo {req.tipo} no soportado")
+    if not req.evento_ids:
+        raise HTTPException(status_code=400, detail="evento_ids vacío")
+    if not req.destinatarios:
+        raise HTTPException(status_code=400, detail="Sin destinatarios")
+    # Validación básica de emails
+    email_rx = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+    destinatarios = [e.strip() for e in req.destinatarios if e and e.strip()]
+    invalidos = [e for e in destinatarios if not email_rx.match(e)]
+    if invalidos:
+        raise HTTPException(status_code=400, detail=f"Emails inválidos: {', '.join(invalidos)}")
+    # Generar PDF
+    try:
+        pdf_bytes = GENERADORES[req.tipo](req.evento_ids, req.opciones or {})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando PDF: {e}")
+    # Enviar vía Resend con attachment
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Servicio de email no configurado (falta RESEND_API_KEY)")
+    sender = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev").strip()
+    pdf_b64 = base64.b64encode(pdf_bytes).decode('ascii')
+    filename = f"informe_{req.tipo}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    html = _email_html_informe(req.asunto, req.mensaje, req.tipo)
+    enviados, errores = [], []
+    try:
+        import resend as _resend
+        _resend.api_key = api_key
+        for to in destinatarios:
+            try:
+                params = {
+                    "from": sender,
+                    "to": [to],
+                    "subject": req.asunto or f"Informe {req.tipo}",
+                    "html": html,
+                    "attachments": [{"filename": filename, "content": pdf_b64}],
+                }
+                result = _resend.Emails.send(params)
+                eid = result.get("id") if isinstance(result, dict) else None
+                enviados.append({"email": to, "id": eid})
+                # Log
+                try:
+                    supabase.table('email_log').insert({
+                        "destinatario": to,
+                        "asunto": req.asunto,
+                        "tipo": f"informe_{req.tipo}",
+                        "estado": "enviado",
+                        "resend_id": eid,
+                    }).execute()
+                except Exception:
+                    pass
+            except Exception as e:
+                errores.append({"email": to, "error": str(e)[:200]})
+                try:
+                    supabase.table('email_log').insert({
+                        "destinatario": to,
+                        "asunto": req.asunto,
+                        "tipo": f"informe_{req.tipo}",
+                        "estado": "error",
+                        "error_mensaje": str(e)[:500],
+                    }).execute()
+                except Exception:
+                    pass
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Librería 'resend' no instalada")
+    return {"ok": True, "enviados": enviados, "errores": errores, "filename": filename}
+
+
+@router.get("/destinatarios")
+async def destinatarios_disponibles(evento_ids: Optional[str] = None,
+                                     current_user: dict = Depends(get_current_gestor)):
+    """Devuelve gestores + músicos confirmados (de los eventos pasados) para selector de email.
+    evento_ids: cadena CSV opcional de UUIDs."""
+    out = {"gestores": [], "musicos": []}
+    # Gestores
+    try:
+        gestores = supabase.table('usuarios').select('id,nombre,apellidos,email,rol') \
+            .in_('rol', ['admin', 'gestor']).execute().data or []
+        out["gestores"] = [{"id": g['id'], "email": g.get('email'),
+                            "nombre": f"{g.get('nombre','')} {g.get('apellidos','')}".strip(),
+                            "rol": g.get('rol')} for g in gestores if g.get('email')]
+    except Exception:
+        pass
+    # Músicos confirmados de esos eventos
+    if evento_ids:
+        eids = [e.strip() for e in evento_ids.split(',') if e.strip()]
+        if eids:
+            try:
+                asigs = supabase.table('asignaciones').select('usuario_id,evento_id,estado') \
+                    .in_('evento_id', eids).eq('estado', 'confirmado').execute().data or []
+                uids = list({a['usuario_id'] for a in asigs if a.get('usuario_id')})
+                if uids:
+                    musicos = supabase.table('usuarios').select('id,nombre,apellidos,email,instrumento') \
+                        .in_('id', uids).execute().data or []
+                    out["musicos"] = [{"id": m['id'], "email": m.get('email'),
+                                       "nombre": f"{m.get('nombre','')} {m.get('apellidos','')}".strip(),
+                                       "instrumento": m.get('instrumento')} for m in musicos if m.get('email')]
+            except Exception:
+                pass
+    return out

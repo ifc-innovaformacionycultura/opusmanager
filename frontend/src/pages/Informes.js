@@ -51,6 +51,8 @@ export default function Informes() {
   // Datos para vista previa
   const [previewData, setPreviewData] = useState(null);
   const [cargandoPreview, setCargandoPreview] = useState(false);
+  // Envío email
+  const [showEmail, setShowEmail] = useState(false);
 
   // 1) Cargar lista de eventos
   useEffect(() => {
@@ -128,15 +130,22 @@ export default function Informes() {
           </h1>
           <p className="text-sm text-slate-500">Genera 8 tipos de informes PDF profesionales en colores corporativos.</p>
         </div>
-        <button onClick={generarPDF} disabled={generando || !eventosSel.length}
-                data-testid="btn-generar-informe"
-                className="bg-[#1A3A5C] hover:bg-[#163050] disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition">
-          {generando ? (
-            <><span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />Generando…</>
-          ) : (
-            <><span>⬇️</span> Exportar PDF · Tipo {tipoActivo}</>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowEmail(true)} disabled={!eventosSel.length}
+                  data-testid="btn-enviar-email"
+                  className="border border-[#1A3A5C] text-[#1A3A5C] hover:bg-[#1A3A5C]/5 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 transition">
+            <span>✉️</span> Enviar por email
+          </button>
+          <button onClick={generarPDF} disabled={generando || !eventosSel.length}
+                  data-testid="btn-generar-informe"
+                  className="bg-[#1A3A5C] hover:bg-[#163050] disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition">
+            {generando ? (
+              <><span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />Generando…</>
+            ) : (
+              <><span>⬇️</span> Exportar PDF · Tipo {tipoActivo}</>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Layout 2 paneles */}
@@ -257,6 +266,17 @@ export default function Informes() {
           </div>
         </main>
       </div>
+
+      {showEmail && (
+        <EnviarEmailModal
+          api={api}
+          tipo={tipoActivo}
+          eventoIds={eventosSel}
+          eventos={eventos}
+          planoMode={planoMode}
+          onClose={() => setShowEmail(false)}
+        />
+      )}
     </div>
   );
 }
@@ -865,6 +885,282 @@ function LoadingPreview() {
         <span className="animate-spin h-4 w-4 border-2 border-slate-400 border-t-transparent rounded-full" />
         Cargando vista previa…
       </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// MODAL · Enviar PDF por email
+// ============================================================
+function EnviarEmailModal({ api, tipo, eventoIds, eventos, planoMode, onClose }) {
+  const tInfo = TIPOS.find(t => t.k === tipo);
+  const evPrincipal = useMemo(() => eventos.find(e => e.id === eventoIds[0]), [eventos, eventoIds]);
+  // Asunto pre-rellenado
+  const asuntoDefault = useMemo(() => {
+    const evNombre = evPrincipal?.nombre ? ` · ${evPrincipal.nombre}` : '';
+    return `Informe ${tipo} — ${tInfo?.l || ''}${evNombre}`;
+  }, [tipo, tInfo, evPrincipal]);
+  // Mensaje pre-rellenado
+  const mensajeDefault = useMemo(() => {
+    const evLine = evPrincipal?.nombre
+      ? `evento «${evPrincipal.nombre}»${evPrincipal.fecha_inicio ? ' (' + evPrincipal.fecha_inicio.slice(0, 10) + ')' : ''}`
+      : `los eventos seleccionados (${eventoIds.length})`;
+    return `Hola,
+
+Adjunto te envío el informe en formato PDF correspondiente al ${evLine}.
+
+Cualquier consulta o aclaración, no dudes en contactarnos.
+
+Un saludo,
+Equipo de gestión IFC`;
+  }, [evPrincipal, eventoIds]);
+
+  const [destinos, setDestinos] = useState([]); // emails
+  const [emailInput, setEmailInput] = useState('');
+  const [asunto, setAsunto] = useState(asuntoDefault);
+  const [mensaje, setMensaje] = useState(mensajeDefault);
+  const [destinatariosDisp, setDestinatariosDisp] = useState({ gestores: [], musicos: [] });
+  const [filtro, setFiltro] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null); // {ok, enviados, errores}
+  const [error, setError] = useState(null);
+
+  // Refresca asunto/mensaje si cambia tipo o evento (mientras no se haya editado manualmente)
+  const [editado, setEditado] = useState({ asunto: false, mensaje: false });
+  useEffect(() => { if (!editado.asunto) setAsunto(asuntoDefault); }, [asuntoDefault, editado.asunto]);
+  useEffect(() => { if (!editado.mensaje) setMensaje(mensajeDefault); }, [mensajeDefault, editado.mensaje]);
+
+  // Cargar gestores + músicos confirmados al abrir
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get(`/api/gestor/informes/destinatarios?evento_ids=${eventoIds.join(',')}`);
+        setDestinatariosDisp({ gestores: r.data?.gestores || [], musicos: r.data?.musicos || [] });
+      } catch {/* noop */ }
+    })();
+  }, [api, eventoIds]);
+
+  const addEmail = (em) => {
+    const e = (em || '').trim().toLowerCase();
+    if (!e) return;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { setError(`Email inválido: ${e}`); return; }
+    if (destinos.includes(e)) return;
+    setDestinos(prev => [...prev, e]);
+    setError(null);
+  };
+  const removeEmail = (e) => setDestinos(prev => prev.filter(x => x !== e));
+
+  const onKeyDownEmail = (e) => {
+    if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+      e.preventDefault();
+      addEmail(emailInput);
+      setEmailInput('');
+    }
+  };
+
+  const enviar = async () => {
+    if (!destinos.length) { setError('Añade al menos un destinatario.'); return; }
+    if (!asunto.trim()) { setError('El asunto es obligatorio.'); return; }
+    setEnviando(true); setError(null); setResultado(null);
+    try {
+      const r = await api.post('/api/gestor/informes/enviar-email', {
+        tipo, evento_ids: eventoIds, destinatarios: destinos,
+        asunto, mensaje,
+        opciones: { plano_mode: planoMode }
+      }, { timeout: 120000 });
+      setResultado(r.data);
+    } catch (e) {
+      setError('Error al enviar: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const filtrarLista = (arr) => {
+    const f = filtro.trim().toLowerCase();
+    if (!f) return arr;
+    return arr.filter(x => (x.email || '').toLowerCase().includes(f) || (x.nombre || '').toLowerCase().includes(f));
+  };
+  const gestoresF = filtrarLista(destinatariosDisp.gestores);
+  const musicosF = filtrarLista(destinatariosDisp.musicos);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" data-testid="email-modal">
+      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-start justify-between px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-[#1A3A5C] to-[#234265] text-white rounded-t-xl">
+          <div>
+            <h2 className="text-lg font-bold flex items-center gap-2"><span>✉️</span> Enviar informe por email</h2>
+            <p className="text-xs text-slate-200 mt-0.5">Tipo {tipo} · {tInfo?.l} · {eventoIds.length} evento(s)</p>
+          </div>
+          <button onClick={onClose} data-testid="email-close"
+                  className="text-slate-200 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        {resultado ? (
+          <ResultadoEnvio resultado={resultado} onClose={onClose} />
+        ) : (
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {/* Para */}
+            <section>
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Para</label>
+              <div className="mt-1 border border-slate-300 rounded-lg p-2 min-h-[44px] flex flex-wrap gap-1.5 focus-within:border-[#1A3A5C] focus-within:ring-2 focus-within:ring-[#1A3A5C]/20">
+                {destinos.map(e => (
+                  <span key={e} className="bg-[#1A3A5C] text-white text-xs px-2 py-1 rounded-full flex items-center gap-1.5" data-testid={`destino-${e}`}>
+                    {e}
+                    <button onClick={() => removeEmail(e)} className="hover:bg-white/20 rounded-full w-4 h-4 flex items-center justify-center text-[10px]">×</button>
+                  </span>
+                ))}
+                <input type="email" value={emailInput} onChange={e => setEmailInput(e.target.value)}
+                       onKeyDown={onKeyDownEmail}
+                       onBlur={() => { if (emailInput.trim()) { addEmail(emailInput); setEmailInput(''); } }}
+                       placeholder={destinos.length ? 'Añade otro…' : 'email@ejemplo.com (Enter o coma)'}
+                       data-testid="email-input"
+                       className="flex-1 min-w-[180px] outline-none text-sm py-1" />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">Pulsa Enter o coma para añadir. También puedes seleccionar de la lista.</p>
+            </section>
+
+            {/* Selector contactos */}
+            <section className="border border-slate-200 rounded-lg">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 bg-slate-50 rounded-t-lg">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-600 flex-1">Contactos disponibles</span>
+                <input value={filtro} onChange={e => setFiltro(e.target.value)}
+                       placeholder="Filtrar nombre o email…"
+                       data-testid="email-filtro"
+                       className="text-xs px-2 py-1 border border-slate-300 rounded w-44" />
+              </div>
+              <div className="max-h-[180px] overflow-y-auto">
+                {gestoresF.length > 0 && (
+                  <>
+                    <div className="px-3 py-1 bg-slate-50 text-[10px] uppercase font-bold text-slate-500 border-b border-slate-100">Gestores ({gestoresF.length})</div>
+                    {gestoresF.map(g => (
+                      <button key={g.id} onClick={() => addEmail(g.email)}
+                              data-testid={`add-gestor-${g.id}`}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-[#1A3A5C]/5 border-b border-slate-100 flex items-center gap-2 group">
+                        <span className="w-7 h-7 rounded-full bg-[#1A3A5C]/10 text-[#1A3A5C] flex items-center justify-center text-[10px] font-bold flex-shrink-0">G</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-slate-900 truncate">{g.nombre || '(Sin nombre)'}</div>
+                          <div className="text-[10px] text-slate-500 truncate">{g.email}</div>
+                        </div>
+                        <span className="opacity-0 group-hover:opacity-100 text-[#1A3A5C] text-xs">+ Añadir</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+                {musicosF.length > 0 && (
+                  <>
+                    <div className="px-3 py-1 bg-slate-50 text-[10px] uppercase font-bold text-slate-500 border-b border-slate-100">Músicos confirmados ({musicosF.length})</div>
+                    {musicosF.map(m => (
+                      <button key={m.id} onClick={() => addEmail(m.email)}
+                              data-testid={`add-musico-${m.id}`}
+                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-[#C9920A]/5 border-b border-slate-100 flex items-center gap-2 group">
+                        <span className="w-7 h-7 rounded-full bg-[#C9920A]/10 text-[#C9920A] flex items-center justify-center text-[10px] font-bold flex-shrink-0">M</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-slate-900 truncate">{m.nombre || '(Sin nombre)'}</div>
+                          <div className="text-[10px] text-slate-500 truncate">{m.instrumento} · {m.email}</div>
+                        </div>
+                        <span className="opacity-0 group-hover:opacity-100 text-[#C9920A] text-xs">+ Añadir</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+                {gestoresF.length === 0 && musicosF.length === 0 && (
+                  <div className="px-3 py-4 text-xs text-slate-400 text-center">Sin contactos que coincidan.</div>
+                )}
+              </div>
+            </section>
+
+            {/* Asunto */}
+            <section>
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Asunto</label>
+              <input type="text" value={asunto}
+                     onChange={e => { setAsunto(e.target.value); setEditado(p => ({ ...p, asunto: true })); }}
+                     data-testid="email-asunto"
+                     className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A3A5C]/30 focus:border-[#1A3A5C]" />
+            </section>
+
+            {/* Mensaje */}
+            <section>
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Mensaje</label>
+              <textarea value={mensaje}
+                        onChange={e => { setMensaje(e.target.value); setEditado(p => ({ ...p, mensaje: true })); }}
+                        rows={7}
+                        data-testid="email-mensaje"
+                        className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A3A5C]/30 focus:border-[#1A3A5C] font-mono" />
+              <p className="text-[11px] text-slate-500 mt-1">El PDF se adjunta automáticamente al correo.</p>
+            </section>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs" data-testid="email-error">
+                {error}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!resultado && (
+          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-xl">
+            <button onClick={onClose}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition">
+              Cancelar
+            </button>
+            <button onClick={enviar} disabled={enviando || !destinos.length}
+                    data-testid="btn-enviar"
+                    className="bg-[#1A3A5C] hover:bg-[#163050] disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition">
+              {enviando ? (
+                <><span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />Enviando…</>
+              ) : (
+                <><span>📤</span> Enviar a {destinos.length} destinatario{destinos.length !== 1 ? 's' : ''}</>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResultadoEnvio({ resultado, onClose }) {
+  const okCount = resultado?.enviados?.length || 0;
+  const errCount = resultado?.errores?.length || 0;
+  return (
+    <div className="flex-1 overflow-y-auto p-6 text-center" data-testid="email-resultado">
+      {okCount > 0 && errCount === 0 ? (
+        <>
+          <div className="text-5xl mb-3">✅</div>
+          <h3 className="text-lg font-bold text-emerald-700">Email{okCount !== 1 ? 's' : ''} enviado{okCount !== 1 ? 's' : ''} correctamente</h3>
+          <p className="text-sm text-slate-600 mt-2">Se ha enviado el informe a {okCount} destinatario{okCount !== 1 ? 's' : ''}.</p>
+        </>
+      ) : errCount > 0 && okCount === 0 ? (
+        <>
+          <div className="text-5xl mb-3">❌</div>
+          <h3 className="text-lg font-bold text-red-700">No se pudo enviar el email</h3>
+        </>
+      ) : (
+        <>
+          <div className="text-5xl mb-3">⚠️</div>
+          <h3 className="text-lg font-bold text-amber-700">Envío parcial</h3>
+          <p className="text-sm text-slate-600 mt-2">{okCount} OK · {errCount} con error.</p>
+        </>
+      )}
+      {resultado?.enviados?.length > 0 && (
+        <div className="mt-4 text-left max-w-md mx-auto bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs">
+          <div className="font-bold text-emerald-800 mb-1">Enviados:</div>
+          {resultado.enviados.map(e => <div key={e.email} className="text-emerald-700">✓ {e.email}</div>)}
+        </div>
+      )}
+      {resultado?.errores?.length > 0 && (
+        <div className="mt-2 text-left max-w-md mx-auto bg-red-50 border border-red-200 rounded-lg p-3 text-xs">
+          <div className="font-bold text-red-800 mb-1">Errores:</div>
+          {resultado.errores.map(e => <div key={e.email} className="text-red-700">✗ {e.email}: {e.error}</div>)}
+        </div>
+      )}
+      <button onClick={onClose} data-testid="email-close-resultado"
+              className="mt-5 bg-[#1A3A5C] hover:bg-[#163050] text-white px-5 py-2 rounded-lg text-sm font-semibold">
+        Cerrar
+      </button>
     </div>
   );
 }

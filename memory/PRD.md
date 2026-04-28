@@ -868,3 +868,26 @@ No se marcó `SeguimientoConvocatorias.js` porque la página muestra múltiples 
 - P2: Mejoras emails Resend.
 - LOW: Considerar extraer BloqueA-H a `/app/frontend/src/pages/informes/bloques/` si se añaden más bloques (archivo actual ~870 líneas).
 - LOW: Documentar para usuario que vista previa de tipos B/C/G/H es indicativa (PDF real trae datos completos).
+
+
+### ✅ Iteración Feb 2026 (continuación) — Envío de informes por email (DONE)
+
+**Backend** (`routes_informes.py`):
+- `POST /api/gestor/informes/enviar-email` — genera el PDF (reusa `GENERADORES`), lo codifica en base64 y lo envía como **adjunto** vía Resend a una lista de destinatarios. Validación de emails (regex), respuesta `{ok, enviados, errores, filename}`. Cada envío se registra en `email_log` con tipo `informe_{A..H}`.
+- `GET /api/gestor/informes/destinatarios?evento_ids=...` — devuelve listas de gestores (todos los `usuarios.rol IN ('admin','gestor')`) y músicos confirmados de los eventos pasados (joining `asignaciones` + `usuarios`).
+- HTML corporativo del email con cabecera **navy `#1A3A5C` + dorado `#C9920A`** y badge "📎 Encontrarás el informe en formato PDF adjunto".
+
+**Frontend** (`Informes.js`):
+- Botón **"✉️ Enviar por email"** junto a "Exportar PDF · Tipo X" en la cabecera (outline navy).
+- **Modal `EnviarEmailModal`** con header navy degradado:
+  - **Para**: input con chips, separadores Enter/coma/espacio, validación inline, botón × por chip.
+  - **Contactos disponibles**: panel scrollable con avatares G/M (gestores azul, músicos dorado), filtro de texto en vivo, click "+ Añadir" en hover.
+  - **Asunto** pre-rellenado: `Informe {tipo} — {tInfo.l} · {evento.nombre}`. Editable (con flag `editado.asunto` que evita sobrescribirlo si el usuario lo ha tocado).
+  - **Mensaje** pre-rellenado con plantilla profesional firmada por "Equipo de gestión IFC". Misma lógica de no-sobrescritura.
+  - **Resultado** post-envío: pantalla de éxito (✅), error (❌) o parcial (⚠️) con desglose de enviados y errores.
+- 13 nuevos data-testids: `btn-enviar-email`, `email-modal`, `email-input`, `email-filtro`, `email-asunto`, `email-mensaje`, `btn-enviar`, `email-error`, `email-resultado`, `email-close`, `email-close-resultado`, `add-gestor-{id}`, `add-musico-{id}`, `destino-{email}`.
+
+**Verificación E2E**:
+- curl: `POST /enviar-email` → `{"ok":true,"enviados":[{"email":"jesusalonsodirector@gmail.com","id":"fad9b277-..."}],"errores":[]}` con `informe_D_20260428_1224.pdf` adjunto. Resend ID confirmado.
+- Playwright: modal abre, contactos cargan (9 gestores), filtro funciona, chip de email se añade, "Enviar a 1 destinatario" actualiza contador, **envío real ejecutado** → pantalla "✅ Email enviado correctamente".
+- Limitación heredada: Resend en modo testing solo permite enviar al email propietario (`jesusalonsodirector@gmail.com`). Para enviar a otros destinatarios, verificar dominio en resend.com/domains.
