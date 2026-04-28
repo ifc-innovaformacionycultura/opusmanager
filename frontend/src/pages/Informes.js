@@ -102,7 +102,7 @@ export default function Informes() {
     try {
       const res = await api.post('/api/gestor/informes/generar',
         { tipo: tipoActivo, evento_ids: eventosSel, opciones: { plano_mode: planoMode } },
-        { responseType: 'blob' }
+        { responseType: 'blob', timeout: 90000 }
       );
       const blob = new Blob([res.data], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
@@ -328,7 +328,6 @@ function BloqueA({ data, planoMode }) {
     });
     return map;
   }, [musicos]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const seccionesOrdenadas = Object.keys(porSeccion).sort((a, b) => {
     const oa = SECCIONES.findIndex(s => s.k === a);
     const ob = SECCIONES.findIndex(s => s.k === b);
@@ -378,8 +377,15 @@ function BloqueA({ data, planoMode }) {
       {/* Plano */}
       <div className="mt-6">
         <SectionTitle num="2" titulo={`Plano del escenario · disposición ${planoMode === 'herradura' ? 'herradura' : 'filas'}`} />
-        <div className="border-2 border-slate-300 rounded-lg p-3 bg-gradient-to-b from-slate-50 to-slate-100">
+        <div className="border-2 border-slate-300 rounded-lg p-3 bg-gradient-to-b from-slate-50 to-slate-100 relative">
           <PlanoOrquesta porSeccion={porSeccion} mode={planoMode} />
+          {Object.keys(porSeccion).length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none" data-testid="plano-vacio">
+              <div className="bg-white/90 border border-slate-300 rounded px-3 py-1.5 text-[11px] text-slate-600 font-medium shadow-sm">
+                ℹ️ Sin músicos asignados — el plano se completará al confirmar la plantilla.
+              </div>
+            </div>
+          )}
           <LeyendaPlano porSeccion={porSeccion} />
         </div>
       </div>

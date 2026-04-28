@@ -828,3 +828,43 @@ No se marcó `SeguimientoConvocatorias.js` porque la página muestra múltiples 
 - Lint JS: ✅ sin errores en archivos tocados.
 
 **6. Páginas NO optimizadas para móvil (decisión documentada)**: Presupuestos, Seguimiento de Plantillas, Plantillas Definitivas, Gestión Económica — son tablas pivot/matriz que requieren pantalla amplia.
+
+
+## Iteración Feb 2026 — Bloque 4 Informes UI completado (fork resume)
+
+### ✅ `/informes` reescrito con layout dos paneles + plano SVG dinámico (DONE)
+
+**Reemplazado** `/app/frontend/src/pages/Informes.js` (legacy 960 líneas con Recharts) por nueva implementación de 870 líneas con diseño tipo Figma de "informe profesional":
+- **Panel izquierdo (1/3)** — Configuración:
+  - Selector de **8 tipos** (A-H) con descripción contextual y código grande tipo PDF.
+  - **Multiselect de eventos** ordenados por fecha con checkboxes; primer evento marcado obtiene badge ámbar "VISTA PREVIA". Botones rápidos "Todos / Ninguno".
+  - **Toggle plano herradura/filas** visible solo cuando tipo='A'.
+- **Panel derecho (2/3)** — Vista previa HTML estilo PDF A4 (`maxWidth: 210mm`) con:
+  - Cabecera corporativa **navy `#1A3A5C` + dorado `#C9920A`** con logo IFC.
+  - Datos del evento (nombre, fecha, lugar, estado).
+  - Bloques específicos por tipo: A (lista músicos por sección + plano + montaje), B (tabla económica con totales), C (KPIs), D (configuración), E (transporte material), F (transporte músicos), G (carta convocatoria muestra), H (combinado).
+- **Plano SVG dinámico** (`viewBox 700×360`) con:
+  - Modo herradura: posiciones por sección en arcos semi-circulares (Violines I/II, Violas, Chelos, Contrabajos, Madera, Metal, Percusión, Teclados, Coro).
+  - Modo filas: distribución horizontal por sección con label izquierda + recuento derecha.
+  - Director (`DIR`) en la base + leyenda con colores y conteos.
+  - Overlay "ℹ️ Sin músicos asignados" cuando porSeccion está vacío.
+- **Botón "Exportar PDF · Tipo X"** descarga via POST `/api/gestor/informes/generar` (timeout 90s para tipo H combinado).
+- **data-testids**: `page-informes`, `panel-config`, `panel-preview`, `tipo-A..H`, `btn-generar-informe`, `btn-todos-eventos`, `btn-plano-herradura/filas`, `plano-herradura/filas`, `plano-vacio`, `lista-eventos`, `evento-{id}`, `preview-doc`, `informes-error`.
+
+### Tests
+- Backend pytest: **11/11 PASS** (POST `/generar` para A,B,C,D,E,F,G,H + GET `/preview/{A,E,F}/{evento_id}`).
+- Frontend smoke: **95% verificado** (toggle herradura↔filas, cambio entre 8 tipos, multiselect eventos, badge VISTA PREVIA, mensaje plano vacío). Sin errores en consola.
+
+### Bloques Inventario + Montaje + Backend Informes (recap del fork anterior)
+- Backend `routes_informes.py` (8 PDFs reportlab con cabecera navy+gold, paginación, footer, agrupación por sección color-coded).
+- Backend `routes_inventario.py` (CRUD material + préstamos + alertas + foto al bucket `inventario`).
+- Backend `routes_montaje.py` (CRUD montaje + transporte_material + espacios).
+- Frontend `GestorInventario.js` (`/admin/inventario` con 3 tabs: Catálogo / Préstamos / Alertas).
+- Frontend `MontajeRiderSection.js` integrado en `ConfiguracionEventos` (selector de espacio + transporte + tabla montaje + montaje específico por ensayo).
+
+### Próximas tareas
+- P1: Notificaciones push PWA (Web Push API + VAPID).
+- P1: Google OAuth para músicos.
+- P2: Mejoras emails Resend.
+- LOW: Considerar extraer BloqueA-H a `/app/frontend/src/pages/informes/bloques/` si se añaden más bloques (archivo actual ~870 líneas).
+- LOW: Documentar para usuario que vista previa de tipos B/C/G/H es indicativa (PDF real trae datos completos).
