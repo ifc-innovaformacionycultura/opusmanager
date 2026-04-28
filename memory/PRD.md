@@ -31,6 +31,29 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Feb 28, 2026 (noche) — Toggle de preferencias de notificaciones
+
+**SQL ejecutado**: `ALTER TABLE usuarios ADD COLUMN notif_preferencias JSONB DEFAULT {convocatorias, tareas, comentarios, recordatorios, reclamaciones, verificaciones: true}`. Migración suave aplicada para filas con NULL.
+
+**Backend (`routes_notif_preferencias.py`)**:
+- 4 endpoints: GET/PUT `/api/auth/me/notif-preferencias` (gestor JWT) y GET/PUT `/api/portal/perfil/notif-preferencias` (músico Supabase JWT).
+- Helper `should_send_push(usuario_id, tipo)` integrado en `notify_push` — si el tipo está silenciado, se omite el envío (return 0).
+- Tipos críticos (`incidencia`, `general`) siempre se envían.
+- Mapeo: convocatoria→convocatorias, tarea→tareas, comentario→comentarios, recordatorio→recordatorios, reclamacion→reclamaciones, verificacion→verificaciones.
+
+**Frontend**:
+- Componente reutilizable `/components/NotifPreferenciasPanel.js` con 6 toggles + descripción de cada tipo, optimistic update y feedback "✅ Guardado".
+- Acepta `clientOrToken` polimórfico (axios o Bearer string) — único componente para gestores y músicos.
+- Prop `showVerificaciones`: oculta el toggle 🛡️ excepto para `admin` y `director_general`.
+
+**Páginas integradas**:
+- 🎼 **Músico** — Sección "🔔 Notificaciones" añadida al final de `/portal/perfil` (`MiPerfil.js`), debajo de "Datos personales" y archivos.
+- 🛡️ **Gestor/Admin** — Nueva ruta `/admin/mi-perfil` (`MiPerfilGestor.js`) con panel de Datos personales (lectura) + panel de Notificaciones.
+- Enlace **"👤 Mi perfil"** añadido en sidebar (bajo "Conectado como…") para acceso rápido del gestor.
+
+### Feb 28, 2026 (tarde) — WhatsApp + Web Push PWA
+*(ver entrada anterior)*
+
 ### Feb 28, 2026 (tarde) — WhatsApp + Web Push PWA
 
 **Botón WhatsApp en Modal de Invitación:**

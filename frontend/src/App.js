@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, Link } from "react-router-dom";
 import "@/App.css";
 
 // Dual Auth System
@@ -401,6 +401,14 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
           <div className="mb-3 px-2">
             <p className="text-xs text-slate-400">Conectado como</p>
             <p className="text-sm font-medium text-white truncate">{user.name}</p>
+            <Link
+              to="/admin/mi-perfil"
+              data-testid="link-mi-perfil"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white"
+            >
+              <span aria-hidden>👤</span>
+              <span>Mi perfil</span>
+            </Link>
           </div>
         )}
         <button
@@ -742,6 +750,7 @@ import Logistica from "./pages/Logistica";
 import AnalisisEconomico from "./pages/AnalisisEconomico";
 import Informes from "./pages/Informes";
 import GestionUsuarios from "./pages/GestionUsuarios";
+import MiPerfilGestor from "./pages/MiPerfilGestor";
 import RegistroActividad from "./pages/RegistroActividad";
 import GestionPermisos from "./pages/GestionPermisos";
 import ManualUsuario from "./pages/ManualUsuario";
@@ -824,6 +833,7 @@ function App() {
                         <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
                         <Route path="/informes" element={<Informes />} />
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
+                        <Route path="/admin/mi-perfil" element={<MiPerfilGestor />} />
                         <Route path="/admin/usuarios" element={<GestionUsuarios />} />
                         <Route path="/admin/musicos" element={<GestorMusicos />} />
                         <Route path="/admin/musicos/:id" element={<GestorMusicoDetalle />} />

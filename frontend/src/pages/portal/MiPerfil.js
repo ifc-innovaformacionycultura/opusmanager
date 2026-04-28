@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import { computeProfileCompleteness } from '../../lib/profileCompleteness';
+import NotifPreferenciasPanel from '../../components/NotifPreferenciasPanel';
 
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:8001/api'
@@ -38,7 +39,7 @@ const Field = ({ label, children }) => (
 );
 
 const MiPerfil = () => {
-  const { profile, reloadProfile } = useAuth();
+  const { profile, reloadProfile, session } = useAuth();
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -452,6 +453,13 @@ const MiPerfil = () => {
           </div>
           <p className="text-xs text-slate-500 mt-2">Archivo PDF, máx 5MB.</p>
         </SectionCard>
+
+        {/* Notificaciones push */}
+        <NotifPreferenciasPanel
+          clientOrToken={session?.access_token}
+          endpoint="/api/portal/perfil/notif-preferencias"
+          showVerificaciones={false}
+        />
 
         {/* Save */}
         <div className="flex justify-end sticky bottom-4">

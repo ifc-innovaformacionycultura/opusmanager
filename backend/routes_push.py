@@ -125,9 +125,20 @@ def notify_push(usuario_id: str, titulo: str, body: str, url: str = "/", tipo: s
 
     Returns número de suscripciones a las que se envió correctamente.
     No lanza excepciones: errores se loguean.
+
+    Respeta `notif_preferencias` del usuario: si el tipo está silenciado, no envía nada.
     """
     if not usuario_id or not titulo:
         return 0
+
+    # Filtrar por preferencias del usuario
+    try:
+        from routes_notif_preferencias import should_send_push
+        if not should_send_push(usuario_id, tipo):
+            return 0
+    except Exception:
+        pass  # Best-effort: si falla la lectura, sigue enviando
+
     pub = _vapid_public()
     priv = _vapid_private()
     if not pub or not priv:

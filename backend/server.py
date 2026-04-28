@@ -30,6 +30,7 @@ from routes_dashboard import router as dashboard_router
 from routes_crm_contactos import router as crm_contactos_router
 from routes_invitaciones import router_gestor as invitaciones_gestor_router, router_portal as invitaciones_portal_router
 from routes_push import router as push_router
+from routes_notif_preferencias import router_gestor as notif_prefs_gestor_router, router_portal as notif_prefs_portal_router
 
 # ==================== App Configuration ====================
 
@@ -84,6 +85,8 @@ app.include_router(crm_contactos_router)  # /api/gestor/contactos/*
 app.include_router(invitaciones_gestor_router)  # /api/gestor/musicos/{id}/invitar
 app.include_router(invitaciones_portal_router)  # /api/portal/activar/*
 app.include_router(push_router)  # /api/push/*
+app.include_router(notif_prefs_gestor_router)  # /api/auth/me/notif-preferencias
+app.include_router(notif_prefs_portal_router)  # /api/portal/perfil/notif-preferencias
 
 # ==================== Health Check ====================
 
