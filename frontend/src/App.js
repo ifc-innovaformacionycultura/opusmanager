@@ -224,7 +224,8 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       path: "/asistencia",
       children: [
         { id: "asistencia-pagos", label: "Gestión económica", path: "/asistencia/pagos" },
-        { id: "analisis-economico", label: "Análisis económico", path: "/asistencia/analisis" }
+        { id: "analisis-economico", label: "Análisis económico", path: "/asistencia/analisis" },
+        { id: "recibos-certificados", label: "Recibos y certificados", path: "/asistencia/recibos-certificados" }
       ]
     },
     { 
@@ -453,6 +454,8 @@ const Layout = ({ children }) => {
       return { page: "Desplazamientos y Alojamientos", section: null };
     } else if (path.startsWith("/asistencia/analisis")) {
       return { page: "Asistencia y pagos", section: "Análisis económico" };
+    } else if (path.startsWith("/asistencia/recibos-certificados")) {
+      return { page: "Asistencia y pagos", section: "Recibos y certificados" };
     } else if (path.startsWith("/informes")) {
       return { page: "Informes", section: null };
     } else if (path.startsWith("/admin/usuarios")) {
@@ -749,6 +752,7 @@ import PlantillasDefinitivas from "./pages/PlantillasDefinitivas";
 import AsistenciaPagos from "./pages/AsistenciaPagos";
 import Logistica from "./pages/Logistica";
 import AnalisisEconomico from "./pages/AnalisisEconomico";
+import RecibosCertificados from "./pages/RecibosCertificados";
 import Informes from "./pages/Informes";
 import GestionUsuarios from "./pages/GestionUsuarios";
 import MiPerfilGestor from "./pages/MiPerfilGestor";
@@ -833,6 +837,7 @@ function App() {
                         <Route path="/asistencia/pagos" element={<AsistenciaPagos />} />
                         <Route path="/asistencia/logistica" element={<Logistica />} />
                         <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
+                        <Route path="/asistencia/recibos-certificados" element={<RecibosCertificados />} />
                         <Route path="/informes" element={<Informes />} />
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
                         <Route path="/admin/mi-perfil" element={<MiPerfilGestor />} />

@@ -137,21 +137,47 @@ const HistorialEventos = () => {
 
 const HistorialPagos = () => {
   const [pagos, setPagos] = useState([]);
+  const [recibos, setRecibos] = useState([]);
   const [cobrado, setCobrado] = useState(0);
   const [pendiente, setPendiente] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [temporada, setTemporada] = useState('');
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await authedFetch('/portal/mi-historial/pagos');
-        const json = await res.json();
-        setPagos(json.pagos || []);
-        setCobrado(json.total_cobrado || 0);
-        setPendiente(json.total_pendiente || 0);
+        const [pres, rres] = await Promise.allSettled([
+          authedFetch('/portal/mi-historial/pagos'),
+          authedFetch(`/portal/mi-historial/recibos${temporada ? `?temporada=${encodeURIComponent(temporada)}` : ''}`),
+        ]);
+        if (pres.status === 'fulfilled' && pres.value.ok) {
+          const json = await pres.value.json();
+          setPagos(json.pagos || []);
+          setCobrado(json.total_cobrado || 0);
+          setPendiente(json.total_pendiente || 0);
+        }
+        if (rres.status === 'fulfilled' && rres.value.ok) {
+          const json = await rres.value.json();
+          setRecibos(json.recibos || []);
+        }
       } finally { setLoading(false); }
     })();
-  }, []);
+  }, [temporada]);
+
+  const temporadas = useMemo(() => {
+    const s = new Set();
+    pagos.forEach(p => p.evento?.temporada && s.add(p.evento.temporada));
+    recibos.forEach(r => r.temporada && s.add(r.temporada));
+    return Array.from(s).sort();
+  }, [pagos, recibos]);
+
+  // Index recibos by asignación (vía evento+usuario): el portal solo sabe pagos = asignaciones,
+  // pero `recibos` está indexado por asignacion_id en backend → recurrimos a evento_id como puente.
+  const recibosByEvento = useMemo(() => {
+    const m = {};
+    recibos.forEach(r => { if (r.evento?.id) m[r.evento.id] = r; });
+    return m;
+  }, [recibos]);
 
   if (loading) return <div className="py-8 text-center text-slate-500">Cargando...</div>;
 
@@ -168,6 +194,18 @@ const HistorialPagos = () => {
         </div>
       </div>
 
+      {temporadas.length > 0 && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-600">Temporada:</label>
+          <select value={temporada} onChange={(e) => setTemporada(e.target.value)}
+                  className="text-sm border border-slate-200 rounded px-2 py-1"
+                  data-testid="select-temporada-pagos">
+            <option value="">Todas</option>
+            {temporadas.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      )}
+
       {pagos.length === 0 ? (
         <div className="text-center py-8 text-slate-500">No hay pagos registrados.</div>
       ) : (
@@ -180,10 +218,15 @@ const HistorialPagos = () => {
                 <th className="px-4 py-3 text-right">Importe</th>
                 <th className="px-4 py-3 text-left">Estado pago</th>
                 <th className="px-4 py-3 text-left">Fecha</th>
+                <th className="px-4 py-3 text-left">Recibo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {pagos.map(p => (
+              {pagos
+                .filter(p => !temporada || p.evento?.temporada === temporada)
+                .map(p => {
+                const recibo = recibosByEvento[p.evento?.id];
+                return (
                 <tr key={p.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-900">{p.evento?.nombre || '—'}</td>
                   <td className="px-4 py-3 text-slate-700">{p.evento?.temporada || '—'}</td>
@@ -196,10 +239,118 @@ const HistorialPagos = () => {
                   <td className="px-4 py-3 text-slate-500 text-xs">
                     {p.updated_at ? new Date(p.updated_at).toLocaleDateString('es-ES') : '—'}
                   </td>
+                  <td className="px-4 py-3">
+                    {recibo?.pdf_url ? (
+                      <a href={recibo.pdf_url} target="_blank" rel="noreferrer"
+                         className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-slate-900 text-white hover:bg-slate-800"
+                         data-testid={`btn-ver-recibo-${recibo.id}`}>
+                        📄 Ver / Descargar
+                      </a>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const HistorialCertificados = () => {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [temporada, setTemporada] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await authedFetch(`/portal/mi-historial/certificados${temporada ? `?temporada=${encodeURIComponent(temporada)}` : ''}`);
+        if (res.ok) {
+          const j = await res.json();
+          setItems(j.certificados || []);
+        }
+      } finally { setLoading(false); }
+    })();
+  }, [temporada]);
+
+  const temporadas = useMemo(() => {
+    const s = new Set();
+    items.forEach(c => c.temporada && s.add(c.temporada));
+    return Array.from(s).sort();
+  }, [items]);
+
+  if (loading) return <div className="py-8 text-center text-slate-500">Cargando...</div>;
+
+  return (
+    <div className="space-y-4" data-testid="hist-certificados">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-600">
+          Certificados oficiales de participación emitidos por la dirección, una vez finalizado cada evento.
+        </p>
+        {temporadas.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-600">Temporada:</label>
+            <select value={temporada} onChange={(e) => setTemporada(e.target.value)}
+                    className="text-sm border border-slate-200 rounded px-2 py-1"
+                    data-testid="select-temporada-certs">
+              <option value="">Todas</option>
+              {temporadas.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-slate-200">
+          <div className="text-4xl mb-3">📜</div>
+          <p className="text-sm text-slate-600 font-medium">Aún no tienes certificados emitidos</p>
+          <p className="text-xs text-slate-400 mt-1">Se generan automáticamente cuando un evento se da por finalizado.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {items.map(c => (
+            <div key={c.id} className="bg-white rounded-lg border border-slate-200 p-4 hover:shadow-md transition-shadow"
+                 data-testid={`cert-item-${c.id}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] uppercase tracking-wider text-amber-700 font-bold mb-1">
+                    Certificado · {c.numero || '—'}
+                  </div>
+                  <div className="font-semibold text-slate-900 truncate">{c.evento?.nombre || '—'}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {c.evento?.lugar || '—'} · {c.evento?.fecha_inicio ? new Date(c.evento.fecha_inicio).toLocaleDateString('es-ES') : ''}
+                  </div>
+                  <div className="text-xs text-slate-600 mt-2">
+                    <strong>{c.horas_totales} h</strong> certificadas · Temporada {c.temporada || '—'}
+                  </div>
+                </div>
+                <div className="text-3xl shrink-0">📜</div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                {c.pdf_url ? (
+                  <>
+                    <a href={c.pdf_url} target="_blank" rel="noreferrer"
+                       className="flex-1 text-center text-xs px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-800"
+                       data-testid={`btn-ver-cert-${c.id}`}>
+                      👁️ Ver
+                    </a>
+                    <a href={c.pdf_url} download
+                       className="flex-1 text-center text-xs px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50"
+                       data-testid={`btn-descargar-cert-${c.id}`}>
+                      ⬇ Descargar PDF
+                    </a>
+                  </>
+                ) : (
+                  <span className="text-xs text-slate-400">PDF no disponible</span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -382,6 +533,7 @@ const MiHistorial = () => {
           {[
             { id: 'eventos', label: '🎵 Eventos y asistencia' },
             { id: 'pagos', label: '💰 Pagos y liquidaciones' },
+            { id: 'certificados', label: '📜 Mis certificados' },
             { id: 'reclamaciones', label: '📨 Reclamaciones' },
           ].map(t => (
             <button key={t.id} onClick={() => setSubtab(t.id)}
@@ -399,6 +551,7 @@ const MiHistorial = () => {
 
       {subtab === 'eventos' && <HistorialEventos />}
       {subtab === 'pagos' && <HistorialPagos />}
+      {subtab === 'certificados' && <HistorialCertificados />}
       {subtab === 'reclamaciones' && <HistorialReclamaciones />}
     </div>
   );

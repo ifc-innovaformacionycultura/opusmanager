@@ -1,5 +1,5 @@
 # Gestor Routes - Admin/Manager endpoints
-from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from supabase_client import supabase, create_user_profile
@@ -233,6 +233,7 @@ async def get_evento(
 async def update_evento(
     evento_id: str,
     data: EventoUpdate,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_gestor)
 ):
     """Update evento"""
@@ -266,6 +267,16 @@ async def update_evento(
                 prev = supabase.table('eventos').select('estado').eq('id', evento_id).limit(1).execute().data or []
                 if prev and prev[0].get('estado') == 'abierto':
                     supabase.table('evento_verificaciones').delete().eq('evento_id', evento_id).execute()
+            except Exception:
+                pass
+
+        # Hook certificados: si pasa a 'finalizado', generar certificados en background
+        if 'estado' in raw and raw['estado'] == 'finalizado':
+            try:
+                prev = supabase.table('eventos').select('estado').eq('id', evento_id).limit(1).execute().data or []
+                if not prev or prev[0].get('estado') != 'finalizado':
+                    from routes_documentos import hook_evento_finalizado
+                    background_tasks.add_task(hook_evento_finalizado, evento_id)
             except Exception:
                 pass
 
@@ -3014,7 +3025,7 @@ async def get_gestion_economica(
 
 
 @router.put("/asignaciones/{asignacion_id}/pago")
-async def marcar_pago(asignacion_id: str, payload: dict, current_user: dict = Depends(get_current_gestor)):
+async def marcar_pago(asignacion_id: str, payload: dict, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_gestor)):
     """Marca estado_pago de una asignación. {estado_pago: 'pagado'|'pendiente'|'anulado'}"""
     try:
         estado = payload.get('estado_pago') or 'pendiente'
@@ -3022,13 +3033,19 @@ async def marcar_pago(asignacion_id: str, payload: dict, current_user: dict = De
             "estado_pago": estado,
             "updated_at": datetime.now().isoformat(),
         }).eq('id', asignacion_id).execute()
+        if estado == 'pagado':
+            try:
+                from routes_documentos import hook_pago_marcado
+                background_tasks.add_task(hook_pago_marcado, asignacion_id)
+            except Exception:
+                pass
         return {"ok": True, "asignacion": r.data[0] if r.data else None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al marcar pago: {str(e)}")
 
 
 @router.post("/eventos/{evento_id}/pagos-bulk")
-async def marcar_pagos_bulk(evento_id: str, payload: dict, current_user: dict = Depends(get_current_gestor)):
+async def marcar_pagos_bulk(evento_id: str, payload: dict, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_gestor)):
     """TAREA 2 — Marca estado_pago en bulk para todas las asignaciones confirmadas de un evento.
     Body: {estado_pago: 'pagado' | 'pendiente' | 'anulado'}
     Devuelve: {ok: True, actualizadas: N, evento_id, estado_pago}
@@ -3041,6 +3058,12 @@ async def marcar_pagos_bulk(evento_id: str, payload: dict, current_user: dict = 
             "estado_pago": estado,
             "updated_at": datetime.now().isoformat(),
         }).eq('evento_id', evento_id).eq('estado', 'confirmado').execute()
+        if estado == 'pagado':
+            try:
+                from routes_documentos import hook_pagos_bulk
+                background_tasks.add_task(hook_pagos_bulk, evento_id)
+            except Exception:
+                pass
         return {"ok": True, "actualizadas": len(r.data or []), "evento_id": evento_id, "estado_pago": estado}
     except HTTPException:
         raise
