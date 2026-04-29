@@ -49,16 +49,19 @@ const ConfiguracionPlantillas = () => {
 
   useEffect(() => { cargarPlantillas(); }, [cargarPlantillas]);
 
-  // ---------- Cargar plantilla activa ----------
+  // ---------- Cargar plantilla activa (con guard anti-race) ----------
   useEffect(() => {
     if (!activaId) { setActiva(null); setSelectedBlockId(null); return; }
+    let cancelled = false;
     api.get(`/api/comunicaciones/plantillas/${activaId}`)
        .then((r) => {
+         if (cancelled) return;
          setActiva(r.data?.plantilla);
          setDirty(false);
          setSelectedBlockId(null);
        })
-       .catch((e) => setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message }));
+       .catch((e) => { if (!cancelled) setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message }); });
+    return () => { cancelled = true; };
   }, [activaId, api]);
 
   // ---------- Crear ----------

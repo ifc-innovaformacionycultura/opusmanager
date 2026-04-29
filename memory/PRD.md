@@ -756,6 +756,48 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - Screenshots end-to-end: lightbox sobre thumbnail, modal con botón Anotar, MarkerArea con toolbar completa, captura subida tras anotación.
 
 
+## Iteración 18 (Feb 2026) — Centro de Comunicaciones · Frontend del constructor visual
+
+### ✅ Reescritura completa de `/app/frontend/src/pages/ConfiguracionPlantillas.js`
+- Antiguo formulario de 3 plantillas hardcodeadas → **constructor visual block-based** del Centro de Comunicaciones.
+- Sidebar y breadcrumb renombrados: "Centro de comunicaciones" (App.js).
+
+### ✅ Componentes nuevos en `/app/frontend/src/components/comunicaciones/`
+- `blockCatalog.js` — catálogo de 12 tipos de bloques + 3 presets + variables disponibles + helpers.
+- `TemplateList.js` — sidebar con plantillas (crear, seleccionar, duplicar, eliminar) con badge de estado.
+- `ThemeSelector.js` — 3 temas (🏛️ IFC Corporate, 📰 Editorial Minimal, 🎉 Festival Warm) con botón "Restaurar tema".
+- `GlobalSettings.js` — logo, fuente custom (woff/woff2), 4 color pickers, ancho máx, padding.
+- `BlockLibrary.js` — paleta con 12 botones para añadir bloques.
+- `Canvas.js` — lienzo con tarjetas de bloques + controles ↑↓⎘✕.
+- `BlockInspector.js` — inspector de propiedades (todos los 12 tipos: cabecera, texto html, imagen, imagen+texto 2col, botón/CTA, cita, lista, galería, vídeo, redes sociales, separador, pie). Helper de variables `{nombre_destinatario}` etc.
+- `PreviewPane.js` — iframe con `contentDocument.write` que llama a POST `/api/comunicaciones/plantillas/{id}/preview`. Panel colapsable de variables de prueba que dispara refresh on blur.
+- `AssetPicker.js` — modal para subir imagen/logo/font (multipart al bucket `comunicaciones`) o registrar URL externa.
+
+### ✅ Funcionalidades verificadas
+- Crear/duplicar/eliminar plantilla.
+- Selección con preselección del primer bloque.
+- Añadir bloque desde la biblioteca (12 tipos).
+- Reordenar (↑↓), duplicar (⎘) y eliminar (✕) bloques.
+- Inspector edita propiedades específicas por tipo de bloque, color pickers nativos.
+- Botón "Restaurar tema" recarga ajustes y bloques desde el preset (truco: crea plantilla `__tmp__` con preset, copia y borra).
+- Vista previa renderiza el HTML real (no mock) con variables sustituidas.
+- Estado borrador/publicada/archivada se persiste con el guardado.
+- Asset picker abre modal con subida de archivos a Supabase Storage.
+
+### ✅ Robustez
+- AbortController-style guard (`cancelled` flag) en `useEffect` de carga de plantilla activa para evitar race conditions cuando se cambia de plantilla rápido.
+
+### Tests
+- `testing_agent_v3_fork iteration_16`: **100% PASS** en frontend (12/12 acceptance criteria).
+- 0 bugs business-blocking. Comentarios menores (debounce en variables preview, srcdoc en lugar de doc.write, validación URL en picker) anotados como mejoras opcionales.
+- Smoke test propio: 1 plantilla cargada → 3 temas, 12 bloques, iframe renderiza HTML real, contador de bloques sube al añadir, botón "Guardar cambios" se activa con dirty=true.
+
+### Próximas tareas
+- P1: Sustituir HTML hardcodeado en flujos automáticos (invitaciones, recordatorios, informes) por las plantillas del Centro de Comunicaciones (motor de render server-side ya existe).
+- P2: Google OAuth para músicos (diferido por el usuario).
+- Backlog code-review (no bloqueantes): debounce variables preview · usar `srcdoc` en lugar de `doc.write` · validar formato URL en AssetPicker · endpoint dedicado `/preset-content` para evitar `__tmp__` plantilla efímera al restaurar tema.
+
+
 ## Iteración 17 (Feb 2026) — Atajo de teclado + backfill incidencias
 
 ### ✅ Atajo de teclado para reportar incidencia
