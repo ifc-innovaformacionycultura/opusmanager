@@ -1,275 +1,377 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-// Accordion Component
-const Accordion = ({ title, isOpen, onToggle, children }) => (
-  <div className="border border-slate-200 rounded-lg mb-3 bg-white">
-    <button
-      onClick={onToggle}
-      className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
-      data-testid={`accordion-${title.replace(/\s+/g, '-').toLowerCase()}`}
-    >
-      <span className="font-medium text-slate-900">{title}</span>
-      <svg
-        className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path d="M19 9l-7 7-7-7" />
-      </svg>
-    </button>
-    {isOpen && <div className="px-4 pb-4 border-t border-slate-100">{children}</div>}
-  </div>
-);
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import TemplateList from "../components/comunicaciones/TemplateList";
+import ThemeSelector from "../components/comunicaciones/ThemeSelector";
+import GlobalSettings from "../components/comunicaciones/GlobalSettings";
+import BlockLibrary from "../components/comunicaciones/BlockLibrary";
+import BlockInspector from "../components/comunicaciones/BlockInspector";
+import Canvas from "../components/comunicaciones/Canvas";
+import PreviewPane from "../components/comunicaciones/PreviewPane";
+import AssetPicker from "../components/comunicaciones/AssetPicker";
+import { BLOCK_TYPES, uid } from "../components/comunicaciones/blockCatalog";
 
 const ConfiguracionPlantillas = () => {
-  const [templates, setTemplates] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [emailMatrix, setEmailMatrix] = useState({});
-  const [openAccordions, setOpenAccordions] = useState({});
+  const { api } = useAuth();
+
+  const [plantillas, setPlantillas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activaId, setActivaId] = useState(null);
+  const [activa, setActiva] = useState(null);  // objeto plantilla cargado
+  const [selectedBlockId, setSelectedBlockId] = useState(null);
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState(null);  // {tipo:'ok'|'err', msg}
+  const [previewVersion, setPreviewVersion] = useState(0);
 
-  const templateTypes = [
-    { id: 'convocatoria_temporada', name: 'Email de convocatoria de temporada' },
-    { id: 'convocatoria_individual', name: 'Email de convocatoria individual' },
-    { id: 'envio_partituras', name: 'Email de envío de partituras' }
-  ];
+  // Asset picker modal
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerTipo, setPickerTipo] = useState("imagen");
+  const [pickerCallback, setPickerCallback] = useState(() => () => {});
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const openAssetPicker = (tipo, cb) => {
+    setPickerTipo(tipo);
+    setPickerCallback(() => cb);
+    setPickerOpen(true);
+  };
 
-  const loadData = async () => {
+  // ---------- Cargar lista ----------
+  const cargarPlantillas = useCallback(async () => {
+    setLoading(true);
     try {
-      const [templatesRes, eventsRes, matrixRes] = await Promise.all([
-        axios.get(`${API}/email-templates`),
-        axios.get(`${API}/events`),
-        axios.get(`${API}/email-matrix`)
-      ]);
-      
-      // Initialize templates with defaults if empty
-      const existingTemplates = templatesRes.data;
-      const templatesMap = {};
-      templateTypes.forEach(type => {
-        const existing = existingTemplates.find(t => t.type === type.id);
-        templatesMap[type.id] = existing || {
-          type: type.id,
-          header_image: '',
-          subject: '',
-          body: '',
-          signature_image: ''
-        };
-      });
-      setTemplates(templatesMap);
-      setEvents(eventsRes.data);
+      const r = await api.get("/api/comunicaciones/plantillas");
+      setPlantillas(r.data?.plantillas || []);
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
 
-      // Parse email matrix
-      const matrix = {};
-      matrixRes.data.forEach(item => {
-        if (!matrix[item.event_id]) matrix[item.event_id] = {};
-        matrix[item.event_id][item.template_type] = item.enabled;
+  useEffect(() => { cargarPlantillas(); }, [cargarPlantillas]);
+
+  // ---------- Cargar plantilla activa ----------
+  useEffect(() => {
+    if (!activaId) { setActiva(null); setSelectedBlockId(null); return; }
+    api.get(`/api/comunicaciones/plantillas/${activaId}`)
+       .then((r) => {
+         setActiva(r.data?.plantilla);
+         setDirty(false);
+         setSelectedBlockId(null);
+       })
+       .catch((e) => setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message }));
+  }, [activaId, api]);
+
+  // ---------- Crear ----------
+  const crearPlantilla = async () => {
+    const nombre = window.prompt("Nombre de la plantilla:");
+    if (!nombre) return;
+    try {
+      const r = await api.post("/api/comunicaciones/plantillas", {
+        nombre,
+        tema_preset: "ifc_corporate",
+        desde_preset: true,
       });
-      setEmailMatrix(matrix);
-    } catch (err) {
-      console.error("Error loading data:", err);
+      const nueva = r.data?.plantilla;
+      if (nueva) {
+        await cargarPlantillas();
+        setActivaId(nueva.id);
+        setFeedback({ tipo: "ok", msg: "Plantilla creada" });
+      }
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
     }
   };
 
-  const toggleAccordion = (id) => {
-    setOpenAccordions(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const updateTemplate = (typeId, field, value) => {
-    setTemplates(prev => ({
-      ...prev,
-      [typeId]: { ...prev[typeId], [field]: value }
-    }));
-  };
-
-  const toggleMatrixCell = (eventId, templateType) => {
-    setEmailMatrix(prev => ({
-      ...prev,
-      [eventId]: {
-        ...(prev[eventId] || {}),
-        [templateType]: !(prev[eventId]?.[templateType])
-      }
-    }));
-  };
-
-  const saveTemplates = async () => {
-    setSaving(true);
+  // ---------- Duplicar ----------
+  const duplicarPlantilla = async (id) => {
+    const orig = plantillas.find((p) => p.id === id);
+    if (!orig) return;
     try {
-      // Save templates
-      for (const typeId of Object.keys(templates)) {
-        const template = templates[typeId];
-        if (template.id) {
-          await axios.put(`${API}/email-templates/${template.id}`, template);
-        } else {
-          const response = await axios.post(`${API}/email-templates`, template);
-          setTemplates(prev => ({ ...prev, [typeId]: response.data }));
-        }
-      }
-
-      // Save matrix
-      const matrixData = [];
-      Object.keys(emailMatrix).forEach(eventId => {
-        Object.keys(emailMatrix[eventId]).forEach(templateType => {
-          matrixData.push({
-            event_id: eventId,
-            template_type: templateType,
-            enabled: emailMatrix[eventId][templateType]
-          });
-        });
+      // Cargar completo + crear copia
+      const full = (await api.get(`/api/comunicaciones/plantillas/${id}`)).data?.plantilla;
+      const r = await api.post("/api/comunicaciones/plantillas", {
+        nombre: `${orig.nombre} (copia)`,
+        descripcion: full.descripcion || "",
+        asunto_default: full.asunto_default || "",
+        tema_preset: full.tema_preset,
+        desde_preset: false,
+        ajustes_globales: full.ajustes_globales,
+        bloques: full.bloques,
       });
-      await axios.post(`${API}/email-matrix`, matrixData);
+      const nueva = r.data?.plantilla;
+      if (nueva) {
+        await cargarPlantillas();
+        setActivaId(nueva.id);
+        setFeedback({ tipo: "ok", msg: "Plantilla duplicada" });
+      }
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
+    }
+  };
 
-      alert('Plantillas guardadas correctamente');
-    } catch (err) {
-      console.error("Error saving templates:", err);
-      alert('Error al guardar las plantillas');
+  // ---------- Eliminar ----------
+  const eliminarPlantilla = async (id) => {
+    if (!window.confirm("¿Eliminar esta plantilla? Esta acción no se puede deshacer.")) return;
+    try {
+      await api.delete(`/api/comunicaciones/plantillas/${id}`);
+      if (activaId === id) setActivaId(null);
+      await cargarPlantillas();
+      setFeedback({ tipo: "ok", msg: "Plantilla eliminada" });
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
+    }
+  };
+
+  // ---------- Guardar ----------
+  const guardar = async () => {
+    if (!activa) return;
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await api.put(`/api/comunicaciones/plantillas/${activa.id}`, {
+        nombre: activa.nombre,
+        descripcion: activa.descripcion,
+        asunto_default: activa.asunto_default,
+        tema_preset: activa.tema_preset,
+        ajustes_globales: activa.ajustes_globales,
+        bloques: activa.bloques,
+        estado: activa.estado,
+      });
+      setDirty(false);
+      setPreviewVersion((v) => v + 1);
+      await cargarPlantillas();
+      setFeedback({ tipo: "ok", msg: "Cambios guardados" });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
     } finally {
       setSaving(false);
     }
   };
 
+  // ---------- Aplicar tema (resetea bloques+ajustes desde preset) ----------
+  const aplicarPresetTema = async () => {
+    if (!activa) return;
+    if (!window.confirm("¿Restaurar los bloques y los ajustes globales al preset elegido? Se perderán los cambios actuales del lienzo.")) return;
+    try {
+      // Crear plantilla efímera vía endpoint preview no nos sirve — pedimos al backend que cree una temporal
+      // Truco simple: POST temporal y leer su contenido.
+      const r = await api.post("/api/comunicaciones/plantillas", {
+        nombre: "__tmp__" + Date.now(),
+        tema_preset: activa.tema_preset,
+        desde_preset: true,
+      });
+      const temp = r.data?.plantilla;
+      if (temp) {
+        setActiva((prev) => ({
+          ...prev,
+          ajustes_globales: temp.ajustes_globales,
+          bloques: temp.bloques,
+        }));
+        setDirty(true);
+        // Borrar la temporal
+        await api.delete(`/api/comunicaciones/plantillas/${temp.id}`);
+      }
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
+    }
+  };
+
+  // ---------- Manipulación de bloques ----------
+  const updateActiva = (patch) => {
+    setActiva((prev) => ({ ...prev, ...patch }));
+    setDirty(true);
+  };
+
+  const updateBloques = (mut) => {
+    setActiva((prev) => {
+      const next = { ...prev, bloques: mut(prev.bloques || []) };
+      return next;
+    });
+    setDirty(true);
+  };
+
+  const addBloque = (tipo) => {
+    const meta = BLOCK_TYPES.find((t) => t.tipo === tipo);
+    const nuevo = { id: uid(), tipo, props: { ...(meta?.defaults || {}) } };
+    updateBloques((bs) => [...bs, nuevo]);
+    setSelectedBlockId(nuevo.id);
+  };
+
+  const moveBloque = (id, delta) => {
+    updateBloques((bs) => {
+      const i = bs.findIndex((b) => b.id === id);
+      if (i < 0) return bs;
+      const j = i + delta;
+      if (j < 0 || j >= bs.length) return bs;
+      const copy = bs.slice();
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+      return copy;
+    });
+  };
+
+  const duplicateBloque = (id) => {
+    updateBloques((bs) => {
+      const i = bs.findIndex((b) => b.id === id);
+      if (i < 0) return bs;
+      const copy = { ...bs[i], id: uid(), props: JSON.parse(JSON.stringify(bs[i].props || {})) };
+      const out = bs.slice();
+      out.splice(i + 1, 0, copy);
+      return out;
+    });
+  };
+
+  const deleteBloque = (id) => {
+    updateBloques((bs) => bs.filter((b) => b.id !== id));
+    if (selectedBlockId === id) setSelectedBlockId(null);
+  };
+
+  const updateBloque = (next) => {
+    updateBloques((bs) => bs.map((b) => (b.id === next.id ? next : b)));
+  };
+
+  const updateAjustes = (next) => updateActiva({ ajustes_globales: next });
+
+  // Bloque seleccionado
+  const selectedBlock = useMemo(
+    () => (activa?.bloques || []).find((b) => b.id === selectedBlockId) || null,
+    [activa, selectedBlockId]
+  );
+
+  // ---------------- Render ----------------
   return (
-    <div className="p-6" data-testid="configuracion-plantillas-page">
-      <header className="mb-6">
-        <h1 className="font-cabinet text-3xl font-bold text-slate-900">Plantillas de Comunicación</h1>
-        <p className="font-ibm text-slate-600 mt-1">Configura los modelos de email y su activación por evento</p>
+    <div className="p-6 h-full flex flex-col" data-testid="centro-comunicaciones-page">
+      <header className="mb-4 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-cabinet text-3xl font-bold text-slate-900">Centro de Comunicaciones</h1>
+          <p className="font-ibm text-slate-600 mt-1 text-sm">
+            Constructor visual de correos por bloques con 3 temas estéticos predefinidos.
+          </p>
+        </div>
+        {activa && (
+          <div className="flex items-center gap-3">
+            {feedback && (
+              <span className={`text-xs px-3 py-1.5 rounded ${feedback.tipo === "ok" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}
+                    data-testid="feedback-msg">
+                {feedback.msg}
+              </span>
+            )}
+            <select
+              value={activa.estado || "borrador"}
+              onChange={(e) => updateActiva({ estado: e.target.value })}
+              className="text-xs px-2 py-1.5 border border-slate-200 rounded bg-white"
+              data-testid="select-estado"
+            >
+              <option value="borrador">Borrador</option>
+              <option value="publicada">Publicada</option>
+              <option value="archivada">Archivada</option>
+            </select>
+            <button
+              onClick={guardar}
+              disabled={saving || !dirty}
+              className="text-sm px-4 py-1.5 rounded-md bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 font-medium"
+              data-testid="btn-guardar-plantilla"
+            >
+              {saving ? "Guardando…" : dirty ? "💾 Guardar cambios" : "✓ Guardado"}
+            </button>
+          </div>
+        )}
       </header>
 
-      <div className="space-y-6">
-        {/* Email Templates */}
-        <div className="space-y-3">
-          {templateTypes.map(type => (
-            <Accordion
-              key={type.id}
-              title={type.name}
-              isOpen={openAccordions[type.id]}
-              onToggle={() => toggleAccordion(type.id)}
-            >
-              <div className="space-y-4 pt-4">
-                {/* Header Image */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Imagen de cabecera</label>
-                  <input
-                    type="url"
-                    value={templates[type.id]?.header_image || ''}
-                    onChange={(e) => updateTemplate(type.id, 'header_image', e.target.value)}
-                    placeholder="https://drive.google.com/..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">Enlace a imagen JPG desde Google Drive</p>
-                </div>
-
-                {/* Subject */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Asunto</label>
-                  <input
-                    type="text"
-                    value={templates[type.id]?.subject || ''}
-                    onChange={(e) => updateTemplate(type.id, 'subject', e.target.value)}
-                    placeholder="Asunto del email..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">Variables disponibles: {'{{nombre}}, {{temporada}}, {{evento}}, {{fecha}}'}</p>
-                </div>
-
-                {/* Body */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Cuerpo del mensaje</label>
-                  <textarea
-                    value={templates[type.id]?.body || ''}
-                    onChange={(e) => updateTemplate(type.id, 'body', e.target.value)}
-                    placeholder="Escribe el contenido del email..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm min-h-[200px]"
-                  />
-                </div>
-
-                {/* Signature */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Imagen de firma</label>
-                  <input
-                    type="url"
-                    value={templates[type.id]?.signature_image || ''}
-                    onChange={(e) => updateTemplate(type.id, 'signature_image', e.target.value)}
-                    placeholder="https://drive.google.com/..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                </div>
-              </div>
-            </Accordion>
-          ))}
+      <div className="flex-1 grid grid-cols-12 gap-4 min-h-0">
+        {/* Columna izquierda: Lista de plantillas */}
+        <div className="col-span-12 lg:col-span-3 xl:col-span-2 min-h-0 flex flex-col">
+          <TemplateList
+            plantillas={plantillas}
+            plantillaActivaId={activaId}
+            onSelect={setActivaId}
+            onCreate={crearPlantilla}
+            onDuplicate={duplicarPlantilla}
+            onDelete={eliminarPlantilla}
+            loading={loading}
+          />
         </div>
 
-        {/* Email Matrix */}
-        <div className="bg-white rounded-lg border border-slate-200 p-6">
-          <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <div className="w-1 h-5 bg-purple-500 rounded"></div>
-            Matriz de Activación de Comunicaciones
-          </h2>
-          <p className="text-sm text-slate-600 mb-4">
-            Selecciona qué tipos de email se enviarán para cada evento.
-          </p>
-
-          {events.length === 0 ? (
-            <p className="text-slate-500 text-sm">No hay eventos configurados</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50">
-                    <th className="px-4 py-3 text-left font-medium text-slate-600 sticky left-0 bg-slate-50">Evento</th>
-                    {templateTypes.map(type => (
-                      <th key={type.id} className="px-4 py-3 text-center font-medium text-slate-600 whitespace-nowrap">
-                        {type.name.replace('Email de ', '')}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {events.map((event, index) => (
-                    <tr key={event.id} className="border-b border-slate-100">
-                      <td className="px-4 py-3 sticky left-0 bg-white">
-                        <span className="font-medium">Evento {index + 1}</span>
-                        <span className="text-slate-500 ml-2">— {event.name}</span>
-                      </td>
-                      {templateTypes.map(type => (
-                        <td key={type.id} className="px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={emailMatrix[event.id]?.[type.id] || false}
-                            onChange={() => toggleMatrixCell(event.id, type.id)}
-                            className="w-5 h-5 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
-                            data-testid={`matrix-${event.id}-${type.id}`}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Columna central: Editor + Canvas */}
+        <div className="col-span-12 lg:col-span-5 xl:col-span-5 min-h-0 overflow-y-auto pr-1 space-y-4">
+          {!activa ? (
+            <div className="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
+              <div className="text-4xl mb-3">📬</div>
+              <p className="text-sm">Selecciona una plantilla a la izquierda o crea una nueva.</p>
             </div>
+          ) : (
+            <>
+              {/* Datos básicos */}
+              <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3" data-testid="datos-basicos">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nombre interno</label>
+                  <input value={activa.nombre || ""} onChange={(e) => updateActiva({ nombre: e.target.value })}
+                         className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                         data-testid="inp-nombre"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Asunto del email</label>
+                  <input value={activa.asunto_default || ""} onChange={(e) => updateActiva({ asunto_default: e.target.value })}
+                         placeholder="Hola {nombre_destinatario}, novedades sobre {evento}"
+                         className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                         data-testid="inp-asunto"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Descripción interna (opcional)</label>
+                  <input value={activa.descripcion || ""} onChange={(e) => updateActiva({ descripcion: e.target.value })}
+                         className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"/>
+                </div>
+              </div>
+
+              {/* Tema */}
+              <ThemeSelector
+                value={activa.tema_preset || "ifc_corporate"}
+                onChange={(v) => updateActiva({ tema_preset: v })}
+                onApplyPreset={aplicarPresetTema}
+              />
+
+              {/* Ajustes globales */}
+              <GlobalSettings
+                ajustes={activa.ajustes_globales || {}}
+                onChange={updateAjustes}
+                onAssetPick={openAssetPicker}
+              />
+
+              {/* Lienzo */}
+              <Canvas
+                bloques={activa.bloques || []}
+                selectedId={selectedBlockId}
+                onSelect={setSelectedBlockId}
+                onMove={moveBloque}
+                onDuplicate={duplicateBloque}
+                onDelete={deleteBloque}
+              />
+
+              {/* Inspector */}
+              <BlockInspector
+                block={selectedBlock}
+                onChange={updateBloque}
+                onAssetPick={openAssetPicker}
+              />
+            </>
           )}
         </div>
 
-        {/* Save Button */}
-        <div className="flex justify-end">
-          <button
-            onClick={saveTemplates}
-            disabled={saving}
-            className="px-6 py-2 bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors font-medium disabled:opacity-50"
-            data-testid="save-templates-btn"
-          >
-            {saving ? 'Guardando...' : 'Guardar plantillas'}
-          </button>
+        {/* Columna derecha: Biblioteca + Preview */}
+        <div className="col-span-12 lg:col-span-4 xl:col-span-5 min-h-0 flex flex-col gap-4">
+          {activa && <BlockLibrary onAdd={addBloque} />}
+          <div className="flex-1 min-h-[400px]">
+            <PreviewPane plantillaId={activa?.id} dirty={dirty} autoRefreshKey={previewVersion} />
+          </div>
         </div>
       </div>
+
+      <AssetPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        tipo={pickerTipo}
+        onSelect={pickerCallback}
+      />
     </div>
   );
 };

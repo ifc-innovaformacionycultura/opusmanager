@@ -196,7 +196,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       children: [
         { id: "eventos", label: "Eventos", path: "/configuracion/eventos" },
         { id: "presupuestos", label: "Presupuestos", path: "/configuracion/presupuestos" },
-        { id: "plantillas", label: "Plantillas de comunicación", path: "/configuracion/plantillas" }
+        { id: "plantillas", label: "Centro de comunicaciones", path: "/configuracion/plantillas" }
       ]
     },
     { 
@@ -442,7 +442,7 @@ const Layout = ({ children }) => {
     } else if (path.startsWith("/configuracion/base-datos")) {
       return { page: "Configuración de temporada", section: "Base de datos de músicos" };
     } else if (path.startsWith("/configuracion/plantillas")) {
-      return { page: "Configuración de temporada", section: "Plantillas Email" };
+      return { page: "Centro de comunicaciones", section: null };
     } else if (path.startsWith("/seguimiento")) {
       return { page: "Seguimiento de convocatorias", section: null };
     } else if (path.startsWith("/plantillas-definitivas")) {

@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend E2E testing of /configuracion/plantillas (Centro de Comunicaciones). All 12 acceptance criteria pass: page renders with title 'Centro de Comunicaciones', template list + create via prompt, 3 theme options, 12 block-library buttons, add/move/duplicate/delete blocks, inspector edits (inp-titulo / inp-btn-label / inp-html), save shows 'Cambios guardados' and toggles to '✓ Guardado', apply-preset restores blocks from theme, preview iframe renders real HTML from /api/comunicaciones/plantillas/{id}/preview (with variable substitution visible: 'Estimado/a María García' / 'Hola TEST' header), asset-picker modal opens, select-estado + save persists, duplicar añade '(copia)'. No business-blocking bugs found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: One 500 console error appeared during initial navigation (not from /api/comunicaciones/* endpoints). It is unrelated to the new Centro de Comunicaciones page and originates from another dashboard call. Consider triaging in a future iteration if it surfaces in logs."
+  ],
+  "critical_code_review_comments": [
+    "ConfiguracionPlantillas.js (380 lines): well-structured for an orchestrator. Good separation into TemplateList/ThemeSelector/GlobalSettings/BlockLibrary/Canvas/BlockInspector/PreviewPane/AssetPicker.",
+    "aplicarPresetTema() uses an ephemeral plantilla creation + delete trick (lines 158-174). This works but is fragile: if the DELETE fails, an '__tmp__' plantilla remains in DB. Consider adding a dedicated backend endpoint POST /api/comunicaciones/plantillas/preset-content that returns ajustes_globales+bloques without persisting.",
+    "PreviewPane refresh logic uses doc.write() inside iframe (lines 41-48). Works in this context, but for stricter CSP / sandbox combinations consider srcdoc or an off-screen Blob URL.",
+    "PreviewPane variables refresh fires on every onBlur of each variable input (line 72). Each onBlur triggers a POST /preview — fine for now but could be debounced.",
+    "AssetPicker registers handlers via window.prompt for external URL (line 47); works but no validation of URL format before POST.",
+    "useEffect on activaId fetches plantilla but does not abort prior requests when user clicks rapidly across plantillas — could race-write `activa` with stale data. Add AbortController or a stale-check via a ref/local id."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only iteration)", "frontend": "100%"},
+  "test_credentials": "admin@convocatorias.com / Admin123! (admin gestor)",
+  "seed_data_creation": "Created via UI: 'TEST_E2E_<ts>' plantilla + its '(copia)'. They remain in DB; harmless (admin can delete via UI later if desired).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Centro de Comunicaciones UI is fully wired to /api/comunicaciones/* endpoints via useAuth().api (axios+JWT). 12 block types + 3 presets verified. Preview iframe injects HTML returned by backend with variable substitution (defaults like 'María García' / 'Concierto de Inauguración' / overrides from 'Variables de prueba' panel). Asset picker opens; upload+external URL flows are wired but only the modal-open path was validated end-to-end (real upload not tested to avoid polluting Supabase bucket). If retesting auth, note that /login uses input[type=email] / input[type=password] / button[type=submit] (no data-testid).",
+  "rca of the issue": "n/a — no failures."
+}
