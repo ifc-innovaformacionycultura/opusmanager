@@ -335,9 +335,18 @@ def init_scheduler():
             run_last_call_jobs, CronTrigger(hour=12, minute=0, timezone=tz),
             id="recordatorios_ultima_llamada", replace_existing=True, max_instances=1,
         )
+        # Email resumen semanal: lunes @ 08:00 Europe/Madrid
+        try:
+            from email_resumen_semanal import send_weekly_summary as _weekly
+            sched.add_job(
+                _weekly, CronTrigger(day_of_week='mon', hour=8, minute=0, timezone=tz),
+                id="resumen_semanal", replace_existing=True, max_instances=1,
+            )
+        except Exception as e:
+            logger.warning(f"No se pudo registrar resumen_semanal: {e}")
         sched.start()
         _scheduler = sched
-        logger.info("APScheduler iniciado: recordatorios diarios @ 09:00 + última llamada @ 12:00 Europe/Madrid")
+        logger.info("APScheduler iniciado: recordatorios diarios @ 09:00 + última llamada @ 12:00 + resumen semanal lunes @ 08:00 (Europe/Madrid)")
     except Exception as e:
         logger.error(f"No se pudo iniciar APScheduler: {e}")
     return _scheduler
@@ -471,3 +480,27 @@ async def errores(current_user: dict = Depends(get_current_gestor)):
     if not _es_admin(current_user):
         raise HTTPException(status_code=403, detail="Solo admin o director_general.")
     return {"errores": get_recent_errors(), "total": len(get_recent_errors())}
+
+
+@router.post("/send-weekly-summary")
+async def send_weekly_summary_now(current_user: dict = Depends(get_current_gestor)):
+    """Dispara manualmente el envío del resumen semanal a todos los admin/director_general."""
+    if not _es_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo admin o director_general.")
+    try:
+        from email_resumen_semanal import send_weekly_summary
+        return send_weekly_summary()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/weekly-stats")
+async def weekly_stats(current_user: dict = Depends(get_current_gestor)):
+    """Devuelve los stats que iría en el email semanal (para preview en UI)."""
+    if not _es_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo admin o director_general.")
+    try:
+        from email_resumen_semanal import compute_stats
+        return {"stats": compute_stats()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

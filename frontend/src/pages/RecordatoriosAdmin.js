@@ -79,6 +79,21 @@ export default function RecordatoriosAdmin() {
     } finally { setRunning(false); }
   };
 
+  const enviarResumenAhora = async () => {
+    setRunning(true); setFeedback(null);
+    try {
+      const r = await api.post('/api/admin/recordatorios/send-weekly-summary', {});
+      const ok = r.data?.enviados?.length || 0;
+      const fail = r.data?.fallidos?.length || 0;
+      setFeedback({
+        kind: fail > 0 ? 'error' : 'ok',
+        msg: `📧 Resumen semanal — ${ok} enviado${ok === 1 ? '' : 's'}${fail ? ` · ${fail} fallido${fail === 1 ? '' : 's'} (revisa banner Resend)` : ''}`,
+      });
+    } catch (e) {
+      setFeedback({ kind: 'error', msg: e?.response?.data?.detail || e.message });
+    } finally { setRunning(false); }
+  };
+
   return (
     <div className="space-y-5 max-w-6xl" data-testid="admin-recordatorios">
       <div className="flex items-center justify-between gap-3">
@@ -91,6 +106,11 @@ export default function RecordatoriosAdmin() {
             data-testid="btn-recordatorios-refresh"
             className="px-3 py-2 text-sm bg-white border border-slate-300 hover:bg-slate-50 rounded-md text-slate-700 disabled:opacity-60">
             {loading ? 'Cargando…' : 'Actualizar'}
+          </button>
+          <button onClick={enviarResumenAhora} disabled={running}
+            data-testid="btn-send-weekly"
+            className="px-3 py-2 text-sm bg-white border border-slate-300 hover:bg-slate-50 rounded-md text-slate-700 font-medium disabled:opacity-60">
+            📧 Enviar resumen semanal
           </button>
           <button onClick={ejecutarAhora} disabled={running}
             data-testid="btn-run-now"

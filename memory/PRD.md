@@ -31,6 +31,42 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 
 ## What's Been Implemented
 
+### Feb 28, 2026 (madrugada — final final) — Email semanal de resumen
+
+**Sin SQL nueva** — todo se calcula desde tablas existentes (`recordatorios_enviados`, `contactos_musico`, `usuarios`, `incidencias`, `tareas`).
+
+**Backend `email_resumen_semanal.py`**:
+- `compute_stats()` calcula 7 KPIs de la semana en curso (lunes 00:00 → ahora):
+  - 🔔 Recordatorios push enviados.
+  - 📞 Nuevos contactos CRM.
+  - 📨 Invitaciones enviadas.
+  - ✅ Cuentas activadas.
+  - 📩 Incidencias abiertas sin resolver.
+  - ⏰ Tareas vencidas sin completar.
+  - ⚠️ Errores push del buffer.
+- `build_html()` genera plantilla HTML corporativa IFC navy/gold (gradiente cabecera + acento `#d4af37` + KPI-rows con alert rojo en pendientes >0).
+- `send_weekly_summary()` despacha a todos los `admin/director_general` activos vía Resend. Helper `_run_send_email_sync` resuelve el cross-thread async con `ThreadPoolExecutor + new_event_loop`.
+
+**APScheduler ampliado**:
+- Nuevo job `resumen_semanal` con `CronTrigger(day_of_week='mon', hour=8, minute=0, timezone=Europe/Madrid)`.
+- Total: 3 jobs activos (`recordatorios_diarios` @ 09:00, `recordatorios_ultima_llamada` @ 12:00, `resumen_semanal` lunes @ 08:00).
+
+**Endpoints REST nuevos** (admin/director_general):
+- `POST /api/admin/recordatorios/send-weekly-summary` — disparo manual.
+- `GET  /api/admin/recordatorios/weekly-stats` — preview de stats sin enviar email.
+
+**UI**:
+- Botón **"📧 Enviar resumen semanal"** en `RecordatoriosAdmin.js` junto a "Actualizar" y "Ejecutar ahora". Feedback inline con conteo enviados/fallidos.
+
+**Pruebas:**
+- ✅ `/status` ahora muestra los 3 jobs con sus próximos disparos.
+- ✅ `/weekly-stats` devuelve {push_semana: 2, contactos_semana: 4, invit_enviadas: 3, invit_activadas: 0, incidencias_abiertas: 30, tareas_vencidas: 1, errores_push: 0}.
+- ✅ `/send-weekly-summary` ejecuta correctamente: identifica 1 destinatario admin, intenta enviar, devuelve fallido con motivo Resend (dominio no verificado — limitación conocida del entorno preview, ya tiene banner en `ConfiguracionEmail.js`).
+- ✅ Lint backend y frontend limpios.
+
+### Feb 28, 2026 (madrugada — fix testing E2E iteración 15) — Mini-widget KPIs Dashboard
+*(ver entrada anterior)*
+
 ### Feb 28, 2026 (madrugada — fix testing E2E iteración 15) — Mini-widget KPIs Dashboard + fix RecordatoriosAdmin
 
 **Mini-widget KPIs Dashboard** (`recordatorios_enviados_hoy` + `errores_recientes`):
