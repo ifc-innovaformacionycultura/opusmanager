@@ -1,7 +1,7 @@
 // Sección "Servicio de comedor" para ConfiguracionEventos.js
 // Carga, edita y guarda evento_comidas + muestra confirmaciones de músicos.
 // Mismo patrón que LogisticaSection.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 const fmtDateES = (iso) => {
   if (!iso) return '—';
@@ -152,20 +152,29 @@ const ComidasSection = ({ eventoId, api }) => {
   const [msg, setMsg] = useState(null);
   const [editingIds, setEditingIds] = useState(new Set());
 
+  // Mantener una ref a 'api' para que el efecto de carga no se reactive en cada render.
+  const apiRef = useRef(api);
+  useEffect(() => { apiRef.current = api; }, [api]);
+
+  // Si el usuario activa manualmente el toggle, ya no permitimos que cargar() lo desactive.
+  const userToggledRef = useRef(false);
+
   const cargar = useCallback(async () => {
     if (!eventoId) return;
     setLoading(true);
     try {
-      const r = await api.get(`/api/gestor/eventos/${eventoId}/comidas`);
+      const r = await apiRef.current.get(`/api/gestor/eventos/${eventoId}/comidas`);
       const list = r.data?.comidas || [];
       setItems(list);
       setEliminarIds([]);
-      setEnabled(list.length > 0);
+      if (!userToggledRef.current) {
+        setEnabled(list.length > 0);
+      }
       setEditingIds(new Set());
     } catch (e) {
       setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
     } finally { setLoading(false); }
-  }, [eventoId, api]);
+  }, [eventoId]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -205,7 +214,7 @@ const ComidasSection = ({ eventoId, api }) => {
         }),
         eliminar_ids: eliminarIds,
       };
-      const r = await api.put(`/api/gestor/eventos/${eventoId}/comidas`, payload);
+      const r = await apiRef.current.put(`/api/gestor/eventos/${eventoId}/comidas`, payload);
       setMsg({ type: 'success', text: `✅ Comedor guardado · +${r.data.creados} / ±${r.data.actualizados} / −${r.data.borrados}` });
       setTimeout(() => setMsg(null), 3500);
       await cargar();
@@ -218,7 +227,8 @@ const ComidasSection = ({ eventoId, api }) => {
     return (
       <div className="mt-4 border-t pt-4" data-testid="comidas-section">
         <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={false} onChange={() => setEnabled(true)}
+          <input type="checkbox" checked={false}
+                 onChange={() => { userToggledRef.current = true; setEnabled(true); }}
                  data-testid="toggle-comidas" className="w-4 h-4 accent-orange-600" />
           <span className="font-medium text-slate-700">Este evento ofrece servicio de comedor</span>
           <span className="text-xs text-slate-500">(activa para configurar menús, precios y café)</span>
@@ -319,7 +329,8 @@ const ComidasSection = ({ eventoId, api }) => {
     <div className="mt-4 border-t pt-4" data-testid="comidas-section">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={enabled} onChange={() => setEnabled(false)}
+          <input type="checkbox" checked={enabled}
+                 onChange={() => { userToggledRef.current = true; setEnabled(false); }}
                  data-testid="toggle-comidas" className="w-4 h-4 accent-orange-600" />
           <span className="font-semibold text-slate-800">🍽️ Servicio de comedor</span>
         </label>

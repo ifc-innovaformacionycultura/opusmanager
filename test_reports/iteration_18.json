@@ -1,0 +1,32 @@
+{
+  "summary": "Re-test Iter 18 servicio de comedor tras fix HIGH del loop ComidasSection (StrictMode + setEnabled pisando el toggle del usuario). Backend 13/13 passing. Frontend gestor: bug HIGH RESUELTO — toggle-comidas ya no queda atascado en 'Cargando comedor...', btn-add-comida aparece, formulario completo funciona, save devuelve '+1 / ±0 / −0', comida-card se renderiza, btn-toggle-confs-comida muestra las 3 columnas de confirmaciones. Dashboard widget-comidas-pendientes renderiza correctamente. Informes K: página carga, pero durante el test UI no se pudo seleccionar tipo 'K' por selector inexistente 'select-tipo-informe' (en la UI, los tipos A-K son filas clicables, no un <select>); PDF se descargó (default A). Backend K validado con test_informe_K_pdf. Portal músico UI no se pudo validar end-to-end porque /api/portal/mis-eventos devolvió lista vacía para jesusalonsodirector@gmail.com (sin asignaciones activas); confirmación músico ya validada al 100% en backend.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Informes K (UI)", "issue": "El test esperaba un selector 'select-tipo-informe', pero la UI usa filas/botones clicables para A–K. No hay data-testid en cada fila de tipo (ej. 'btn-tipo-informe-K'). El flujo funcional es correcto — generación PDF OK —, pero añadir data-testid a las filas de tipo facilitaría la selección programática de K.", "affected_selectors": ["btn-tipo-informe-K", "select-tipo-informe"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_comidas_iter17.py",
+    "/app/test_reports/pytest/iter18_comidas.xml"
+  ],
+  "action_items": [
+    "(LOW) Añadir data-testid a las filas de selección de tipo en /informes (ej. data-testid=\"btn-tipo-informe-K\") para facilitar testing programático. Funcionalmente el informe K funciona (backend test_informe_K_pdf passing).",
+    "(LOW) Opcional: verificar manualmente flujo Portal Músico (login jesusalonsodirector → btn-comida-yes/no + chk-comida-cafe) con un músico que tenga asignaciones activas en eventos con comidas configuradas. Backend endpoint POST /api/portal/comidas/{id}/confirmar ya validado al 100% en pytest."
+  ],
+  "critical_code_review_comments": [
+    "Fix ComidasSection.js verificado: apiRef.current + userToggledRef son el patrón correcto para evitar el loop por identidad inestable de 'api' y bloqueo de setEnabled automático tras click del usuario en StrictMode. Sólida solución.",
+    "ConfirmacionesComidaPanel.js dentro de ComidasSection.js usa la prop 'api' directamente en useCallback([comidaId, api]) (línea 44). Si este panel se renderizase muchas veces y 'api' cambiase de identidad, podría haber re-cargas innecesarias, pero está guardado por 'open && !data', así que es inocuo. No acción.",
+    "Considerar migrar el patrón apiRef a LogisticaSection.js si aún tiene deps=[eventoId, api] (mismo riesgo latente, aunque no reportado como bug activo)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "95% (bug HIGH resuelto; flujo gestor de comidas end-to-end OK; portal músico no validable por falta de asignaciones; Informes K PDF funcional aunque tipo seleccionado fue A por falta de data-testid en las filas de tipo)"},
+  "test_credentials": "admin@convocatorias.com / Admin123!  |  jesusalonsodirector@gmail.com / Musico123!",
+  "seed_data_creation": "Durante el test UI gestor se creó 1 comida TEST_UI_Menu Iter18 (eliminada vía UI + dialog). Se creó 1 comida TEST_UI_Iter18_Portal (eliminada vía API al final). Cleanup completo — 0 TEST_ comidas restantes en BD.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 18 cerrada: bug HIGH del iter 17 (loop infinito en ComidasSection) RESUELTO y verificado end-to-end. Backend comidas sigue 100% (13/13 pytest). Gestor UI (crear/listar/editar/confirmaciones/eliminar) totalmente funcional. Para el próximo agente: (1) agregar data-testid a filas de tipo en Informes si quiere validar tipos concretos por UI, (2) el endpoint /api/portal/mis-eventos devuelve [] para el músico jesusalonsodirector — verificar que tenga asignaciones activas si se quiere probar flujo Portal Músico por UI. Todos los archivos de test reutilizables están en /app/backend/tests/test_comidas_iter17.py.",
+  "rca of the issue": "Bug HIGH del iter17 causado por StrictMode + deps inestables. Fix aplicado por main agent: (1) useRef(api) para evitar reactivar cargar() en cada render; (2) userToggledRef bloquea setEnabled(list.length>0) automático una vez que el usuario clica el toggle manualmente. Verificación end-to-end en iter18: toggle permanece activo, formulario completo aparece, CRUD funciona, card + confirmaciones + cleanup funcionan."
+}
