@@ -200,7 +200,10 @@ const RecibosCertificados = () => {
       ]);
       if (r1.status === "fulfilled") setRecibos(r1.value.data?.recibos || []);
       if (r2.status === "fulfilled") setCertificados(r2.value.data?.certificados || []);
-      if (r3.status === "fulfilled") setEventos(r3.value.data || []);
+      if (r3.status === "fulfilled") {
+        const d = r3.value.data;
+        setEventos(Array.isArray(d) ? d : (d?.eventos || []));
+      }
     } catch (e) {
       setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
     } finally { setLoading(false); }
