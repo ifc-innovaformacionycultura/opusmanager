@@ -1,0 +1,44 @@
+{
+  "summary": "Iter 17 'Servicio de comedor' — backend 13/13 passing tras fix menor del schema de Informes. Frontend gestor BLOQUEADO: tras activar toggle-comidas la sección queda permanentemente en 'Cargando comedor...' y nunca renderiza btn-add-comida, impidiendo crear/editar/eliminar comidas por UI. Portal músico y Dashboard widget no pudieron validarse por UI por falta de datos (el flujo de creación UI está roto). Backend portal endpoints (POST /api/portal/comidas/{id}/confirmar) sí funcionan vía API directa.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/gestor/informes/generar", "issue": "Schema Pydantic rechazaba tipo='K' aunque gen_K estaba en GENERADORES. Corregido añadiendo 'K' a Literal en InformeReq (línea 40) y EnviarInformeReq (línea 1154)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ComidasSection.js", "issue": "Tras activar el checkbox toggle-comidas, la sección queda permanentemente en estado 'Cargando comedor...' y nunca muestra btn-add-comida ni la lista. Afecta a /configuracion/eventos → sección 'Servicio de comedor'. Causa probable: useCallback 'cargar' depende de 'api' (línea 168) y 'api' (de useAuth) se recrea en cada render, provocando un loop en useEffect(() => cargar(), [cargar]) que deja loading=true atascado. LogisticaSection.js seguramente tiene el mismo patrón y funciona si api es estable; hay que verificar que api se memorice en el padre o usar useRef para api dentro del componente (o envolver la lista de deps solo con eventoId).", "selector": "[data-testid=\"comidas-section\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Crear comida por UI (gestor)", "issue": "No se puede completar por el bug anterior: btn-add-comida nunca aparece. El backend está OK (13/13 pytest) pero el gestor no puede usar la feature.", "affected_selectors": ["btn-add-comida","btn-save-comidas","inp-comida-fecha-0"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_comidas_iter17.py",
+    "/app/test_reports/pytest/iter17_comidas.xml"
+  ],
+  "action_items": [
+    "HIGH — Arreglar loop infinito en ComidasSection.js: cambiar useCallback(cargar, [eventoId, api]) → useCallback(cargar, [eventoId]) usando una ref para api, o memoizar 'api' en el consumidor, o limitar el useEffect a [eventoId]. Verificar comportamiento idéntico en LogisticaSection.js (puede tener el mismo fallo latente).",
+    "Verificar que tras el fix: (a) aparece btn-add-comida al activar toggle-comidas en un evento sin comidas, (b) el mensaje 'comidas-msg' muestra '+1 / ±0 / −0' tras guardar, (c) la tarjeta comida-card-{id} se renderiza con botones btn-edit/btn-remove/btn-toggle-confs-comida, (d) el portal del músico (jesusalonsodirector@gmail.com) muestra el panel con btn-comida-yes/no y chk-comida-cafe.",
+    "Re-test flow UI completo en iter 18 tras el fix + validar widget 'widget-comidas-pendientes' e Informe K."
+  ],
+  "critical_code_review_comments": [
+    "ComidasSection.js línea 168: useCallback(cargar, [eventoId, api]) + useEffect(()=>cargar(),[cargar]) es un patrón anti-pattern si 'api' no es estable. Usar useRef(api) o dependencias solo [eventoId] resuelve. Mismo riesgo en LogisticaSection.js.",
+    "routes_informes.py: ambos Literal (InformeReq L40 y EnviarInformeReq L1154) estaban desacoplados del dict GENERADORES (L1103). Considerar derivar tipo desde GENERADORES.keys() usando Literal dinámico o un Enum para evitar este desacoplamiento recurrente en futuras iteraciones.",
+    "Backend comidas (routes_gestor.py L3608-3635): correcto modelo bulk CRUD. Falta validación de datos (precio_menu<0, fecha_limite posterior a fecha). Aceptable en v1.",
+    "confirmaciones_comida upsert (routes_portal.py L611-624): lógica manual select→update/insert funciona pero idealmente usar supabase upsert con on_conflict(comida_id,usuario_id) si existe índice único en la tabla."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_comidas_iter17.py",
+    "/app/backend/routes_informes.py (2 líneas: añadido 'K' en ambos Literal)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "bloqueado — no pude validar flujo UI de creación por el bug de loading"},
+  "test_credentials": "admin@convocatorias.com / Admin123!  |  jesusalonsodirector@gmail.com / Musico123!",
+  "seed_data_creation": "Vía backend tests: 1 comida TEST_ creada + actualizada + borrada en cada ejecución (auto-cleanup). Confirmaciones del músico test creadas y dejadas en BD (inocuas, linkadas a comidas ya borradas).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend comidas 100% OK — endpoints gestor y portal testeados con /app/backend/tests/test_comidas_iter17.py (13/13). Fix aplicado en /app/backend/routes_informes.py (añadido 'K' a dos Literals). El bug frontend en ComidasSection.js (pantalla eterna 'Cargando comedor...') impide validar el flujo UI. Al re-testear tras fix usar: login admin → /configuracion/eventos → click accordion-evento-0 → scroll a section-comidas → click section-toggle-comidas para abrirla → click input toggle-comidas → debería aparecer btn-add-comida + btn-save-comidas y permitir rellenar inp-comida-fecha-0/menu-0/precio-0/cafe-0 y guardar.",
+  "rca of the issue": "ComidasSection.js: useCallback(cargar, [eventoId, api]) se recrea en cada render si 'api' (desde useAuth) cambia identidad. El useEffect(()=>cargar(),[cargar]) dispara cargar() repetidamente → setLoading(true) en loop → loading nunca baja → renderiza 'Cargando comedor...' perpetuamente. Reproducción: activar toggle-comidas y observar Network tab: GET /api/gestor/eventos/{id}/comidas se llama repetidamente. Mitigación: (1) usar useRef para 'api' dentro del componente, o (2) reducir deps a [eventoId] solamente, o (3) memoizar 'api' en el padre (ConfiguracionEventos.js) con useMemo/useCallback."
+}

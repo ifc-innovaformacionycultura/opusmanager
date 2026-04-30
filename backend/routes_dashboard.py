@@ -96,6 +96,23 @@ async def dashboard_resumen(current_user: dict = Depends(get_current_gestor)):
     except Exception:
         pass
 
+    # Servicios de comedor (Iter 19)
+    try:
+        coms = supabase.table('evento_comidas').select('id,evento_id,fecha,hora_inicio,lugar') \
+            .gte('fecha', desde_s).lte('fecha', hasta_s).execute().data or []
+        for c in coms:
+            ev_n = (ev_map.get(c['evento_id']) or {}).get('nombre', '—')
+            proximos.append({
+                'id': f"comida-{c['id']}", 'tipo': 'comida',
+                'titulo': f"🍽️ Servicio de comedor · {ev_n}",
+                'fecha': c.get('fecha'), 'hora': (c.get('hora_inicio') or '')[:5],
+                'lugar': c.get('lugar'),
+                'color': '#f97316', 'icon': '🍽️',
+                'evento_id': c['evento_id'],
+            })
+    except Exception:
+        pass
+
     # Desplazamientos material
     try:
         tm = supabase.table('transporte_material').select('id,evento_id,fecha_carga,hora_carga,fecha_descarga,empresa') \
@@ -190,6 +207,50 @@ async def dashboard_resumen(current_user: dict = Depends(get_current_gestor)):
     except Exception:
         pass
 
+    # ============ COMIDAS PENDIENTES DE CONFIRMAR POR MÚSICOS (Iter 19) ============
+    comidas_pendientes = []
+    try:
+        # Comidas activas: con fecha_limite >= hoy o sin fecha_limite, evento no finalizado
+        com_rows = supabase.table('evento_comidas').select(
+            'id,evento_id,fecha,hora_inicio,lugar,fecha_limite_confirmacion,precio_menu,incluye_cafe'
+        ).gte('fecha', desde_s).execute().data or []
+        if com_rows:
+            com_ids = [c['id'] for c in com_rows]
+            ev_ids_com = list({c['evento_id'] for c in com_rows})
+            # Asignaciones publicadas por evento
+            asigs_all = supabase.table('asignaciones').select('evento_id,usuario_id,publicado_musico') \
+                .in_('evento_id', ev_ids_com).eq('publicado_musico', True).execute().data or []
+            asigs_by_ev: Dict[str, set] = {}
+            for a in asigs_all:
+                asigs_by_ev.setdefault(a['evento_id'], set()).add(a['usuario_id'])
+            # Confirmaciones existentes
+            confs = supabase.table('confirmaciones_comida').select('comida_id,usuario_id,confirmado') \
+                .in_('comida_id', com_ids).execute().data or []
+            confs_by_cid: Dict[str, set] = {}
+            for cf in confs:
+                if cf.get('confirmado') is not None:
+                    confs_by_cid.setdefault(cf['comida_id'], set()).add(cf['usuario_id'])
+            for c in com_rows:
+                ev_n = (ev_map.get(c['evento_id']) or {}).get('nombre', '—')
+                asignados_ids = asigs_by_ev.get(c['evento_id'], set())
+                respondieron = confs_by_cid.get(c['id'], set())
+                pendientes = asignados_ids - respondieron
+                if pendientes:
+                    comidas_pendientes.append({
+                        'id': c['id'],
+                        'evento_id': c['evento_id'],
+                        'evento_nombre': ev_n,
+                        'fecha': c.get('fecha'),
+                        'hora': (c.get('hora_inicio') or '')[:5],
+                        'lugar': c.get('lugar'),
+                        'fecha_limite_confirmacion': c.get('fecha_limite_confirmacion'),
+                        'pendientes': len(pendientes),
+                        'total': len(asignados_ids),
+                    })
+        comidas_pendientes.sort(key=lambda x: x.get('fecha_limite_confirmacion') or x.get('fecha') or '9999')
+    except Exception:
+        pass
+
     # ============ KPIs ============
     # Bloque 2: contar músicos con cuenta sin activar
     musicos_sin_activar = 0
@@ -230,6 +291,7 @@ async def dashboard_resumen(current_user: dict = Depends(get_current_gestor)):
         'musicos_sin_activar': musicos_sin_activar,
         'recordatorios_enviados_hoy': recordatorios_enviados_hoy,
         'errores_recientes': errores_recientes,
+        'comidas_pendientes_confirmar': sum(c['pendientes'] for c in comidas_pendientes),
     }
 
     return {
@@ -237,5 +299,6 @@ async def dashboard_resumen(current_user: dict = Depends(get_current_gestor)):
         'proximos_15_dias': proximos[:50],
         'pendientes_equipo': pendientes_equipo[:30],
         'pendientes_verificacion': pendientes_verif,
+        'comidas_pendientes': comidas_pendientes[:20],
         'rango': {'desde': desde_s, 'hasta': hasta_s},
     }

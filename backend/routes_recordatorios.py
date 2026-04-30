@@ -39,6 +39,13 @@ def _dias_logistica() -> int:
         return 2
 
 
+def _dias_comidas() -> int:
+    try:
+        return int(os.environ.get("DIAS_ANTES_COMIDAS", "2"))
+    except Exception:
+        return 2
+
+
 def _dias_tareas() -> int:
     try:
         return int(os.environ.get("DIAS_ANTES_TAREAS", "1"))
@@ -245,13 +252,60 @@ def run_all_jobs() -> Dict:
     started_at = datetime.now(timezone.utc).isoformat()
     rj = job_disponibilidad()
     rl = job_logistica()
+    rc = job_comidas()
     rt = job_tareas()
     return {
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
-        "results": [rj, rl, rt],
-        "total_enviados": rj.get('enviados', 0) + rl.get('enviados', 0) + rt.get('enviados', 0),
+        "results": [rj, rl, rc, rt],
+        "total_enviados": rj.get('enviados', 0) + rl.get('enviados', 0) + rc.get('enviados', 0) + rt.get('enviados', 0),
     }
+
+
+# ============ Job: servicio de comedor (Iter 19) ============
+
+def job_comidas(force_dias_antes: Optional[int] = None) -> Dict:
+    """Recordatorio: a X días del fecha_limite_confirmacion de cada servicio de comedor."""
+    dias = force_dias_antes if force_dias_antes is not None else _dias_comidas()
+    today = date.today()
+    target_iso = (today + timedelta(days=dias)).isoformat()
+    enviados = 0
+    revisados = 0
+    try:
+        items = supabase.table('evento_comidas').select(
+            'id,evento_id,fecha,fecha_limite_confirmacion'
+        ).eq('fecha_limite_confirmacion', target_iso).execute().data or []
+        for it in items:
+            ev_id = it.get('evento_id')
+            ev_row = None
+            try:
+                er = supabase.table('eventos').select('nombre').eq('id', ev_id).limit(1).execute().data or []
+                ev_row = er[0] if er else None
+            except Exception:
+                pass
+            ev_nombre = (ev_row or {}).get('nombre', 'evento')
+            # Solo músicos asignados Y publicados que aún no han respondido este servicio
+            asigs = supabase.table('asignaciones').select(
+                'usuario_id,publicado_musico'
+            ).eq('evento_id', ev_id).eq('publicado_musico', True).execute().data or []
+            existing_confs = supabase.table('confirmaciones_comida').select('usuario_id,confirmado') \
+                .eq('comida_id', it['id']).execute().data or []
+            ya_respondidos = {c['usuario_id'] for c in existing_confs if c.get('confirmado') is not None}
+            for a in asigs:
+                revisados += 1
+                uid = a.get('usuario_id')
+                if not uid or uid in ya_respondidos:
+                    continue
+                if _ya_enviado(uid, 'comida', it['id'], dias):
+                    continue
+                titulo = f"🍽️ Confirma servicio de comedor: {ev_nombre}"
+                body = f"Quedan {dias} día{'s' if dias != 1 else ''} para confirmar si asistirás a la comida en {ev_nombre}."
+                _push(uid, titulo, body, url='/portal')
+                _marcar_enviado(uid, 'comida', it['id'], dias, target_iso)
+                enviados += 1
+    except Exception as e:
+        logger.error(f"Job comidas error: {e}")
+    return {"job": "comidas", "enviados": enviados, "revisados": revisados, "dias_antes": dias}
 
 
 def run_last_call_jobs() -> Dict:
@@ -263,11 +317,12 @@ def run_last_call_jobs() -> Dict:
     started_at = datetime.now(timezone.utc).isoformat()
     rj = job_disponibilidad(force_dias_antes=0)
     rl = job_logistica(force_dias_antes=0)
+    rc = job_comidas(force_dias_antes=0)
     return {
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
-        "results": [rj, rl],
-        "total_enviados": rj.get('enviados', 0) + rl.get('enviados', 0),
+        "results": [rj, rl, rc],
+        "total_enviados": rj.get('enviados', 0) + rl.get('enviados', 0) + rc.get('enviados', 0),
         "tipo": "ultima_llamada",
     }
 

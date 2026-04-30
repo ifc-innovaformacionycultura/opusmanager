@@ -12,6 +12,7 @@ const KPI_CFG = [
   { k: 'musicos_sin_activar',        label: 'músicos pendientes de activación', icon: '📨', color: 'violet', link: '/admin/musicos?invitacion=pendiente' },
   { k: 'recordatorios_enviados_hoy', label: 'recordatorios push enviados hoy', icon: '🔔', color: 'teal',   link: '/admin/recordatorios' },
   { k: 'errores_recientes',          label: 'errores de envío recientes',     icon: '⚠️', color: 'rose',   link: '/admin/recordatorios', alertWhenPositive: true },
+  { k: 'comidas_pendientes_confirmar', label: 'músicos pendientes de confirmar comedor', icon: '🍽️', color: 'orange', link: '/configuracion/eventos' },
 ];
 
 const COLOR_CFG = {
@@ -22,6 +23,7 @@ const COLOR_CFG = {
   violet:  { bg: 'bg-violet-50',  text: 'text-violet-800',  border: 'border-violet-300',  dot: 'bg-violet-500' },
   teal:    { bg: 'bg-teal-50',    text: 'text-teal-800',    border: 'border-teal-300',    dot: 'bg-teal-500' },
   rose:    { bg: 'bg-rose-50',    text: 'text-rose-800',    border: 'border-rose-300',    dot: 'bg-rose-500' },
+  orange:  { bg: 'bg-orange-50',  text: 'text-orange-800',  border: 'border-orange-300',  dot: 'bg-orange-500' },
 };
 
 export default function ActividadPendiente() {
@@ -114,6 +116,33 @@ export default function ActividadPendiente() {
                   </div>
                 </div>
                 <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded font-bold">{p.pendientes}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Comidas pendientes de confirmar (Iter 19) */}
+      {(data.comidas_pendientes || []).length > 0 && (
+        <div className="bg-orange-50 rounded-xl border border-orange-300 p-4" data-testid="widget-comidas-pendientes">
+          <h3 className="font-semibold text-orange-900 mb-2 flex items-center gap-1.5">🍽️ Comidas pendientes de confirmar por los músicos</h3>
+          <div className="space-y-1.5">
+            {data.comidas_pendientes.map(c => (
+              <button key={c.id}
+                      onClick={() => navigate('/configuracion/eventos')}
+                      data-testid={`comida-pend-${c.id}`}
+                      className="w-full text-left flex items-center gap-2 px-2.5 py-1.5 bg-white rounded border border-orange-200 hover:bg-orange-100/40">
+                <span className="text-base">🍽️</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-slate-800 truncate">{c.evento_nombre}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {c.fecha} {c.hora && `· ${c.hora}`}{c.lugar ? ` · ${c.lugar}` : ''}
+                    {c.fecha_limite_confirmacion && <> · <strong className="text-amber-700">Límite: {c.fecha_limite_confirmacion}</strong></>}
+                  </div>
+                </div>
+                <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded font-bold">
+                  {c.pendientes}/{c.total}
+                </span>
               </button>
             ))}
           </div>

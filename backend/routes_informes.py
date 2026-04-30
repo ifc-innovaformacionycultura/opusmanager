@@ -37,7 +37,7 @@ LIGHT = colors.HexColor("#F1F5F9")
 
 
 class InformeReq(BaseModel):
-    tipo: Literal['A','B','C','D','E','F','G','H','I','J']
+    tipo: Literal['A','B','C','D','E','F','G','H','I','J','K']
     evento_ids: List[str]
     ensayo_id: Optional[str] = None
     opciones: Optional[dict] = {}
@@ -1151,7 +1151,7 @@ async def preview_informe(tipo: str, evento_id: str, current_user: dict = Depend
 # Envío por email (Resend con adjunto PDF)
 # ============================================================
 class EnviarInformeReq(BaseModel):
-    tipo: Literal['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    tipo: Literal['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']
     evento_ids: List[str]
     destinatarios: List[str]  # lista de emails
     asunto: str
