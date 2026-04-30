@@ -3568,3 +3568,174 @@ async def listar_logistica_global(current_user: dict = Depends(get_current_gesto
         return {"eventos": out}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en logística global: {str(e)}")
+
+
+# ==================================================================
+# COMIDAS / Servicio de comedor del evento (Iter 19)
+# ==================================================================
+
+class ComidaItem(BaseModel):
+    id: Optional[str] = None
+    orden: Optional[int] = 1
+    fecha: Optional[str] = None
+    hora_inicio: Optional[str] = None
+    hora_fin: Optional[str] = None
+    lugar: Optional[str] = None
+    menu: Optional[str] = None
+    precio_menu: Optional[float] = 0
+    incluye_cafe: Optional[bool] = False
+    precio_cafe: Optional[float] = 0
+    fecha_limite_confirmacion: Optional[str] = None
+    notas: Optional[str] = None
+
+
+class ComidasBulkRequest(BaseModel):
+    items: List[ComidaItem] = []
+    eliminar_ids: List[str] = []
+
+
+@router.get("/eventos/{evento_id}/comidas")
+async def get_comidas_evento(evento_id: str, current_user: dict = Depends(get_current_gestor)):
+    try:
+        r = supabase.table('evento_comidas').select('*') \
+            .eq('evento_id', evento_id) \
+            .order('fecha', desc=False).order('orden', desc=False).execute()
+        return {"comidas": r.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al listar comidas: {str(e)}")
+
+
+@router.put("/eventos/{evento_id}/comidas")
+async def put_comidas_evento(evento_id: str, data: ComidasBulkRequest, current_user: dict = Depends(get_current_gestor)):
+    """Guardado masivo del servicio de comedor de un evento."""
+    try:
+        now = datetime.now().isoformat()
+        creados = 0
+        actualizados = 0
+        for it in data.items:
+            base = it.model_dump(exclude_none=True)
+            base.pop('id', None)
+            base['evento_id'] = evento_id
+            base['updated_at'] = now
+            for k in ('fecha', 'hora_inicio', 'hora_fin', 'fecha_limite_confirmacion'):
+                if base.get(k) == '':
+                    base[k] = None
+            if it.id:
+                supabase.table('evento_comidas').update(base).eq('id', it.id).execute()
+                actualizados += 1
+            else:
+                supabase.table('evento_comidas').insert(base).execute()
+                creados += 1
+        borrados = 0
+        for cid in (data.eliminar_ids or []):
+            supabase.table('evento_comidas').delete().eq('id', cid).execute()
+            borrados += 1
+        return {"ok": True, "creados": creados, "actualizados": actualizados, "borrados": borrados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar comidas: {str(e)}")
+
+
+@router.delete("/comidas/{comida_id}")
+async def delete_comida(comida_id: str, current_user: dict = Depends(get_current_gestor)):
+    try:
+        supabase.table('evento_comidas').delete().eq('id', comida_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar comida: {str(e)}")
+
+
+@router.get("/comidas/{comida_id}/confirmaciones")
+async def get_confirmaciones_comida(comida_id: str, current_user: dict = Depends(get_current_gestor)):
+    """Para un servicio de comedor, devuelve músicos confirmados, rechazados y sin respuesta."""
+    try:
+        cr = supabase.table('evento_comidas').select('evento_id,incluye_cafe,precio_menu,precio_cafe') \
+            .eq('id', comida_id).limit(1).execute().data
+        if not cr:
+            raise HTTPException(status_code=404, detail="Comida no encontrada")
+        com = cr[0]
+        evento_id = com['evento_id']
+
+        asigs = supabase.table('asignaciones').select('usuario_id') \
+            .eq('evento_id', evento_id).execute().data or []
+        usuario_ids = list({a['usuario_id'] for a in asigs})
+
+        confs = supabase.table('confirmaciones_comida').select('*') \
+            .eq('comida_id', comida_id).execute().data or []
+        conf_by_user = {c['usuario_id']: c for c in confs}
+
+        users = supabase.table('usuarios') \
+            .select('id,nombre,apellidos,instrumento,email') \
+            .in_('id', usuario_ids).execute().data if usuario_ids else []
+
+        confirmados = []; rechazados = []; sin_respuesta = []
+        total_recaudado = 0.0
+        for u in users:
+            c = conf_by_user.get(u['id'])
+            entry = {
+                **u,
+                "respuesta_at": (c or {}).get('updated_at'),
+                "toma_cafe": (c or {}).get('toma_cafe'),
+                "notas": (c or {}).get('notas'),
+            }
+            if c is None or c.get('confirmado') is None:
+                sin_respuesta.append(entry)
+            elif c.get('confirmado') is True:
+                confirmados.append(entry)
+                total_recaudado += float(com.get('precio_menu') or 0)
+                if com.get('incluye_cafe') and c.get('toma_cafe'):
+                    total_recaudado += float(com.get('precio_cafe') or 0)
+            else:
+                rechazados.append(entry)
+        return {
+            "confirmados": confirmados,
+            "rechazados": rechazados,
+            "sin_respuesta": sin_respuesta,
+            "total_recaudado": round(total_recaudado, 2),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener confirmaciones de comida: {str(e)}")
+
+
+@router.get("/comidas")
+async def get_comidas_globales(current_user: dict = Depends(get_current_gestor)):
+    """Vista global de comidas (consumida por LogisticaPage o similares)."""
+    try:
+        com_rows = supabase.table('evento_comidas') \
+            .select('*, evento:eventos(id,nombre,fecha_inicio,temporada,estado,lugar)') \
+            .order('fecha', desc=False).execute().data or []
+        # Agrupar por evento
+        eventos: Dict[str, Any] = {}
+        for c in com_rows:
+            ev = c.pop('evento', None) or {}
+            eid = ev.get('id') or c.get('evento_id')
+            if not eid:
+                continue
+            if eid not in eventos:
+                eventos[eid] = {**ev, "comidas": [], "evento_id": eid}
+            eventos[eid]["comidas"].append(c)
+        # Adjuntar confirmaciones por comida
+        com_ids = [c['id'] for ev in eventos.values() for c in ev["comidas"]]
+        confs_by_comida: Dict[str, List[Dict]] = {}
+        if com_ids:
+            confs = supabase.table('confirmaciones_comida').select('*') \
+                .in_('comida_id', com_ids).execute().data or []
+            for cf in confs:
+                confs_by_comida.setdefault(cf['comida_id'], []).append(cf)
+        out = []
+        for ev in eventos.values():
+            tot_ok = 0
+            tot_no = 0
+            for c in ev["comidas"]:
+                cs = confs_by_comida.get(c['id'], [])
+                c["confirmados_n"] = sum(1 for x in cs if x.get('confirmado') is True)
+                c["rechazados_n"] = sum(1 for x in cs if x.get('confirmado') is False)
+                tot_ok += c["confirmados_n"]
+                tot_no += c["rechazados_n"]
+            ev["totales"] = {"confirmados": tot_ok, "rechazados": tot_no, "n_servicios": len(ev["comidas"])}
+            out.append(ev)
+        out.sort(key=lambda e: (e.get('fecha_inicio') or '9999-99-99'))
+        return {"eventos": out}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en comidas globales: {str(e)}")

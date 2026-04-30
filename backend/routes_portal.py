@@ -558,6 +558,80 @@ async def confirmar_logistica(
         )
 
 
+@router.get("/evento/{evento_id}/comidas")
+async def get_comidas_musico(
+    evento_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Devuelve las comidas configuradas para el evento + estado de confirmación del músico."""
+    try:
+        usuario_id = current_user.get("id") or (current_user.get("profile") or {}).get("id")
+        com_res = supabase.table('evento_comidas').select('*') \
+            .eq('evento_id', evento_id) \
+            .order('fecha', desc=False).order('orden', desc=False).execute()
+        items = com_res.data or []
+        if not items:
+            return {"comidas": []}
+
+        ids = [it['id'] for it in items]
+        confs = supabase.table('confirmaciones_comida').select('*') \
+            .eq('usuario_id', usuario_id) \
+            .in_('comida_id', ids).execute().data or []
+        conf_by_cid = {c['comida_id']: c for c in confs}
+
+        for it in items:
+            c = conf_by_cid.get(it['id'])
+            it['mi_confirmacion'] = c.get('confirmado') if c else None
+            it['mi_toma_cafe'] = c.get('toma_cafe') if c else None
+            it['mi_confirmacion_at'] = c.get('updated_at') if c else None
+        return {"comidas": items}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al cargar comidas: {str(e)}"
+        )
+
+
+class ConfirmacionComidaPayload(BaseModel):
+    confirmado: Optional[bool] = None
+    toma_cafe: Optional[bool] = None
+
+
+@router.post("/comidas/{comida_id}/confirmar")
+async def confirmar_comida(
+    comida_id: str,
+    payload: ConfirmacionComidaPayload,
+    current_user: dict = Depends(get_current_user)
+):
+    """El músico confirma o rechaza un servicio de comedor (y opcionalmente si tomará café)."""
+    try:
+        usuario_id = current_user.get("id") or (current_user.get("profile") or {}).get("id")
+        if not usuario_id:
+            raise HTTPException(status_code=400, detail="Usuario no identificado")
+        existing = supabase.table('confirmaciones_comida').select('id') \
+            .eq('comida_id', comida_id) \
+            .eq('usuario_id', usuario_id).limit(1).execute().data or []
+        body = {
+            "comida_id": comida_id,
+            "usuario_id": usuario_id,
+            "confirmado": payload.confirmado,
+            "toma_cafe": payload.toma_cafe,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if existing:
+            r = supabase.table('confirmaciones_comida').update(body).eq('id', existing[0]['id']).execute()
+        else:
+            r = supabase.table('confirmaciones_comida').insert(body).execute()
+        return {"confirmacion": r.data[0] if r.data else None}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al confirmar comida: {str(e)}"
+        )
+
+
 @router.get("/evento/{evento_id}/materiales")
 async def get_materiales_evento(
     evento_id: str,

@@ -18,6 +18,7 @@ const TIPOS = [
   { k: 'H', l: 'Informe completo (A+B+C+D)', icon: '📚', desc: 'Combina los 4 informes principales en un único PDF.' },
   { k: 'I', l: 'Hoja de trabajo · Equipo de montaje', icon: '🛠️', desc: 'Documento técnico para el equipo de montaje: sesiones, material, plano y firmas.' },
   { k: 'J', l: 'Hoja de trabajo · Equipo de archivo', icon: '📜', desc: 'Documento para archiveros: programa, estado del material y préstamos activos.' },
+  { k: 'K', l: 'Comidas por evento', icon: '🍽️', desc: 'Servicio de comedor por evento: menús, asistentes confirmados, café y recaudación total.' },
 ];
 
 // ============================================================

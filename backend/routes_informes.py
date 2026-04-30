@@ -961,9 +961,146 @@ def gen_J(evento_ids, opciones=None) -> bytes:
 
 
 # ============================================================
+# Iter 19 — Informe K: Comidas por evento
+# ============================================================
+def gen_K(evento_ids, opciones=None) -> bytes:
+    buf = BytesIO()
+    doc, first, later = _build_doc(buf, "Servicio de comedor por evento")
+    S = _styles()
+    el = []
+    for evid in evento_ids:
+        ev = _evento(evid) or {}
+        el.append(Paragraph(f"<b>{ev.get('nombre','—')}</b>", S['h1']))
+        el.append(Paragraph(
+            f"Fecha evento: {(ev.get('fecha_inicio') or '')[:10]}  &nbsp;·&nbsp; Lugar: {ev.get('lugar') or '—'}",
+            S['p']
+        ))
+        el.append(Spacer(1, 3*mm))
+
+        # Comidas configuradas
+        try:
+            comidas = supabase.table('evento_comidas').select('*') \
+                .eq('evento_id', evid).order('fecha', desc=False).order('orden', desc=False).execute().data or []
+        except Exception:
+            comidas = []
+
+        if not comidas:
+            el.append(Paragraph("<i>Este evento no tiene servicio de comedor configurado.</i>", S['p']))
+            if evid != evento_ids[-1]:
+                el.append(PageBreak())
+            continue
+
+        # Resumen totales
+        total_servicios = len(comidas)
+        # Confirmaciones por servicio
+        com_ids = [c['id'] for c in comidas]
+        try:
+            confs = supabase.table('confirmaciones_comida').select('*, usuario:usuarios(id,nombre,apellidos,instrumento,email)') \
+                .in_('comida_id', com_ids).execute().data or []
+        except Exception:
+            confs = []
+        confs_by_cid = {}
+        for c in confs:
+            confs_by_cid.setdefault(c['comida_id'], []).append(c)
+
+        total_recaudacion = 0.0
+        total_asistentes_n = 0
+        rows_resumen = [['Fecha', 'Hora', 'Lugar', 'Asistirán', 'Café', 'Recaudación']]
+        for com in comidas:
+            cs = confs_by_cid.get(com['id'], [])
+            confirmados_n = sum(1 for x in cs if x.get('confirmado') is True)
+            cafe_n = sum(1 for x in cs if x.get('confirmado') is True and x.get('toma_cafe'))
+            rec = confirmados_n * float(com.get('precio_menu') or 0)
+            if com.get('incluye_cafe'):
+                rec += cafe_n * float(com.get('precio_cafe') or 0)
+            total_recaudacion += rec
+            total_asistentes_n += confirmados_n
+            rows_resumen.append([
+                (com.get('fecha') or '')[:10] or '—',
+                (com.get('hora_inicio') or '')[:5] or '—',
+                com.get('lugar') or '—',
+                str(confirmados_n),
+                str(cafe_n) if com.get('incluye_cafe') else '—',
+                f"{rec:.2f} €",
+            ])
+        rows_resumen.append(['', '', 'TOTAL', str(total_asistentes_n), '', f"{total_recaudacion:.2f} €"])
+
+        el.append(Paragraph("<b>Resumen del evento</b>", S['h2']))
+        t = Table(rows_resumen, repeatRows=1, colWidths=[2.5*cm, 2*cm, 6*cm, 2.2*cm, 2*cm, 2.5*cm])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1A3A5C')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#FEF3C7')),
+            ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
+            ('GRID', (0,0), (-1,-1), 0.3, colors.HexColor('#cbd5e1')),
+            ('ALIGN', (3,1), (-1,-1), 'CENTER'),
+            ('ALIGN', (-1,1), (-1,-1), 'RIGHT'),
+        ]))
+        el.append(t)
+        el.append(Spacer(1, 5*mm))
+
+        # Detalle por servicio: lista de músicos
+        for com in comidas:
+            el.append(Paragraph(
+                f"<b>🍽️ {(com.get('fecha') or '')[:10]} · {(com.get('hora_inicio') or '')[:5]}{'-' + (com.get('hora_fin') or '')[:5] if com.get('hora_fin') else ''} · {com.get('lugar') or '—'}</b>",
+                S['h2']
+            ))
+            if com.get('menu'):
+                el.append(Paragraph(f"<b>Menú:</b> {com.get('menu','').replace(chr(10),' · ')}", S['p']))
+            precio_str = f"{float(com.get('precio_menu') or 0):.2f} €"
+            if com.get('incluye_cafe'):
+                precio_str += f"  ·  ☕ Café: {float(com.get('precio_cafe') or 0):.2f} €"
+            el.append(Paragraph(f"<b>Precio:</b> {precio_str}", S['p']))
+            el.append(Spacer(1, 2*mm))
+
+            cs = confs_by_cid.get(com['id'], [])
+            confirmados = [c for c in cs if c.get('confirmado') is True]
+            rechazados  = [c for c in cs if c.get('confirmado') is False]
+            sin_resp    = [c for c in cs if c.get('confirmado') is None]
+
+            if confirmados:
+                rows = [['Músico', 'Instrumento', 'Café', 'Notas']]
+                for c in confirmados:
+                    u = c.get('usuario') or {}
+                    rows.append([
+                        f"{u.get('apellidos','')}, {u.get('nombre','')}".strip(', '),
+                        u.get('instrumento') or '—',
+                        '☕ Sí' if (com.get('incluye_cafe') and c.get('toma_cafe')) else '—',
+                        (c.get('notas') or '')[:60],
+                    ])
+                tt = Table(rows, repeatRows=1, colWidths=[6*cm, 4*cm, 1.8*cm, 5*cm])
+                tt.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#10B981')),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('FONTSIZE', (0,0), (-1,-1), 8),
+                    ('GRID', (0,0), (-1,-1), 0.3, colors.HexColor('#cbd5e1')),
+                ]))
+                el.append(Paragraph(f"<font color='#059669'>✅ Asistirán ({len(confirmados)})</font>", S['p']))
+                el.append(tt)
+                el.append(Spacer(1, 2*mm))
+
+            if rechazados:
+                names = ', '.join(f"{(c.get('usuario') or {}).get('apellidos','')}, {(c.get('usuario') or {}).get('nombre','')}".strip(', ') for c in rechazados)
+                el.append(Paragraph(f"<font color='#dc2626'>❌ No asistirán ({len(rechazados)}):</font> {names}", S['p']))
+            if sin_resp:
+                names = ', '.join(f"{(c.get('usuario') or {}).get('apellidos','')}, {(c.get('usuario') or {}).get('nombre','')}".strip(', ') for c in sin_resp)
+                el.append(Paragraph(f"<font color='#64748b'>⏳ Sin respuesta ({len(sin_resp)}):</font> {names}", S['p']))
+
+            el.append(Spacer(1, 4*mm))
+
+        if evid != evento_ids[-1]:
+            el.append(PageBreak())
+
+    el += _pie_firma()
+    doc.build(el, onFirstPage=first, onLaterPages=later)
+    return buf.getvalue()
+
+
+# ============================================================
 # Endpoint
 # ============================================================
-GENERADORES = {'A': gen_A, 'B': gen_B, 'C': gen_C, 'D': gen_D, 'E': gen_E, 'F': gen_F, 'G': gen_G, 'H': gen_H, 'I': gen_I, 'J': gen_J}
+GENERADORES = {'A': gen_A, 'B': gen_B, 'C': gen_C, 'D': gen_D, 'E': gen_E, 'F': gen_F, 'G': gen_G, 'H': gen_H, 'I': gen_I, 'J': gen_J, 'K': gen_K}
 
 
 @router.post("/generar")

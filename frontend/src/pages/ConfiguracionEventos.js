@@ -3,6 +3,7 @@ import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 import ComentariosPanel from "../components/ComentariosPanel";
 import ConvocatoriaInstrumentosPanel from "../components/ConvocatoriaInstrumentosPanel";
 import LogisticaSection from "../components/LogisticaSection";
+import ComidasSection from "../components/ComidasSection";
 import ComentariosEquipoInline from "../components/ComentariosEquipoInline";
 import MontajeRiderSection from "../components/MontajeRiderSection";
 
@@ -179,7 +180,7 @@ const SectionTitle = ({ children, color }) => {
 const ICONOS_SECCION = {
   datos_generales: '📋', ensayos: '🎼', logistica_musicos: '🚌',
   logistica_material: '🚚', programa_musical: '🎵', presupuesto: '💰',
-  montaje: '🛠️', partituras: '📜',
+  montaje: '🛠️', partituras: '📜', comidas: '🍽️',
 };
 const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion, eventoId, api }) => {
   const [open, setOpen] = useState(false);
@@ -842,6 +843,14 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
                  color="yellow" sectionKey="logistica_musicos"
                  badge={renderBadge('logistica_musicos')}>
           <LogisticaSection eventoId={event.id} api={api} />
+        </Section>
+      )}
+
+      {/* Servicio de comedor (Iter 19) */}
+      {event.id && (
+        <Section titulo="Servicio de comedor" icono={ICONOS_SECCION.comidas}
+                 color="orange" sectionKey="comidas">
+          <ComidasSection eventoId={event.id} api={api} />
         </Section>
       )}
 

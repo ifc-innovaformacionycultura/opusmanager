@@ -26,6 +26,7 @@ const PortalDashboard = () => {
   const [eventoSeleccionado, setEventoSeleccionado] = useState(null);
   const [ensayos, setEnsayos] = useState([]);
   const [logistica, setLogistica] = useState([]);
+  const [comidas, setComidas] = useState([]);
   const [materiales, setMateriales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -117,6 +118,17 @@ const PortalDashboard = () => {
         setLogistica(logData.logistica || []);
       } catch (e) {
         setLogistica([]);
+      }
+
+      // Cargar comidas (Iter 19)
+      try {
+        const comRes = await fetch(`${API_URL}/portal/evento/${eventoId}/comidas`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const comData = await comRes.json();
+        setComidas(comData.comidas || []);
+      } catch (e) {
+        setComidas([]);
       }
     } catch (err) {
       console.error('Error cargando detalles:', err);
@@ -508,6 +520,15 @@ const PortalDashboard = () => {
                   {logistica.length > 0 && (
                     <LogisticaMusicoPanel
                       logistica={logistica}
+                      apiUrl={API_URL}
+                      onRefresh={() => cargarDetallesEvento(asignacion.evento.id)}
+                    />
+                  )}
+
+                  {/* Servicio de comedor (Iter 19) */}
+                  {comidas.length > 0 && (
+                    <ComidasMusicoPanel
+                      comidas={comidas}
                       apiUrl={API_URL}
                       onRefresh={() => cargarDetallesEvento(asignacion.evento.id)}
                     />
