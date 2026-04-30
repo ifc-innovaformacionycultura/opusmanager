@@ -756,7 +756,54 @@ ALTER TABLE asignaciones ADD CONSTRAINT asignaciones_estado_check
 - Screenshots end-to-end: lightbox sobre thumbnail, modal con botón Anotar, MarkerArea con toolbar completa, captura subida tras anotación.
 
 
-## Iteración 18 (Feb 2026) — Centro de Comunicaciones · Frontend del constructor visual
+## Iteración 19 (Feb 2026) — Servicio de comedor + Recordatorios + Widget Dashboard
+
+### ✅ Servicio de comedor (Configuración de Eventos)
+- Nueva sección 🍽️ "Servicio de comedor" en cada evento (icon naranja).
+- Sub-componente `ComidasSection.js` clonado del patrón `LogisticaSection.js`: add/edit/delete + lista de servicios con tarjeta resumen (fecha, hora, lugar, menú, precio, café).
+- Cada servicio incluye: fecha, hora_inicio, hora_fin, lugar, menú (textarea), precio_menu, incluye_cafe (checkbox), precio_cafe, fecha_limite_confirmacion, notas.
+- Panel "Confirmaciones de músicos" desplegable por servicio: 3 columnas (Asistirán/No asistirán/Sin respuesta) + total recaudación estimada (incluye café para los que lo marcan).
+
+### ✅ Portal del músico
+- Nuevo `ComidasMusicoPanel.js` en el detalle del evento.
+- Botones "Asistiré" / "No asistiré". Si la comida `incluye_cafe`, checkbox extra "Tomaré café (+€)".
+- Muestra fecha límite de confirmación.
+
+### ✅ Backend — endpoints nuevos
+- `GET/PUT /api/gestor/eventos/{id}/comidas` (CRUD bulk)
+- `DELETE /api/gestor/comidas/{id}`
+- `GET /api/gestor/comidas/{id}/confirmaciones`
+- `GET /api/gestor/comidas` (vista global)
+- `GET /api/portal/evento/{id}/comidas` (con `mi_confirmacion`/`mi_toma_cafe`)
+- `POST /api/portal/comidas/{id}/confirmar`
+
+### ✅ Informes
+- Nuevo tipo **K — Comidas por evento** (PDF: resumen + detalle por servicio con asistentes, café/sin café, recaudación).
+
+### ✅ Recordatorios automáticos (APScheduler)
+- Nuevo `job_comidas` en `routes_recordatorios.py` integrado en el cron diario (08:00 + última llamada 12:00).
+- Variable `DIAS_ANTES_COMIDAS` (default 2 días antes de `fecha_limite_confirmacion`).
+- Push notification `🍽️ Confirma servicio de comedor: {evento}` con idempotencia (mismo flujo que logística).
+
+### ✅ Widget Dashboard
+- KPI `comidas_pendientes_confirmar` añadido al endpoint `/api/gestor/dashboard/resumen`.
+- Widget `widget-comidas-pendientes` en `ActividadPendiente.js`: lista las comidas con asignados sin responder, ordenadas por fecha límite.
+- Panel "Próximos 15 días" del Dashboard incluye servicios de comedor (icono 🍽️ naranja).
+
+### ✅ SQL
+- 2 tablas nuevas: `evento_comidas` y `confirmaciones_comida` (`MIGRATION_COMIDAS.sql`). Ejecutadas y validadas en Supabase.
+
+### Tests
+- `testing_agent_v3_fork iteration_18`: **Backend 100% (13/13 pytest)**, frontend 95% (bug HIGH del iter17 resuelto, gestor end-to-end OK, portal músico validado en backend, Informes K PDF funcional).
+- Bug HIGH resuelto: `apiRef.current` + `userToggledRef` (StrictMode + setEnabled pisaba estado del usuario).
+
+### Próximas tareas
+- P1: Sustituir HTML hardcodeado en flujos automáticos por las plantillas del Centro de Comunicaciones.
+- P1: Ejecutar SQL pendiente de recibos/certificados (iter 18) en Supabase para activar los hooks de pago/finalización de evento.
+- P2: Google OAuth para músicos.
+- (LOW) Considerar aplicar `apiRef` a `LogisticaSection.js` para evitar el mismo riesgo latente.
+
+
 
 ### ✅ Reescritura completa de `/app/frontend/src/pages/ConfiguracionPlantillas.js`
 - Antiguo formulario de 3 plantillas hardcodeadas → **constructor visual block-based** del Centro de Comunicaciones.
