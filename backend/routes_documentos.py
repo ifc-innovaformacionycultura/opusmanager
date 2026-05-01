@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from supabase_client import supabase
 from auth_utils import get_current_gestor, get_current_musico
+import config_app as _cfg
 
 from pdf_renderer import html_to_pdf_bytes, upload_pdf, remove_pdf, merge_pdfs, fetch_pdf_bytes
 from routes_comunicaciones_plantillas import render_plantilla, _replace_vars
@@ -37,33 +38,27 @@ router = APIRouter(prefix="/api", tags=["documentos"])
 # Helpers de configuración
 # ============================================================================
 
-def _env(k: str, default: str = "") -> str:
-    return (os.environ.get(k) or default).strip()
-
 def _config() -> Dict[str, str]:
     return {
-        "director_nombre": _env("DIRECTOR_NOMBRE", "Director/a de la orquesta"),
-        "director_firma_url": _env("DIRECTOR_FIRMA_URL", ""),
-        "org_nombre": _env("ORG_NOMBRE", "IFC OPUS Manager"),
-        "org_cif": _env("ORG_CIF", ""),
-        "org_direccion": _env("ORG_DIRECCION", ""),
+        "director_nombre": _cfg.director_nombre(),
+        "director_firma_url": _cfg.director_firma_url(),
+        "org_nombre": _cfg.org_nombre(),
+        "org_cif": _cfg.org_cif(),
+        "org_direccion": _cfg.org_direccion(),
     }
 
 def _irpf_default() -> float:
-    try:
-        return float(_env("IRPF_PORCENTAJE", "15"))
-    except Exception:
-        return 15.0
+    return _cfg.irpf_porcentaje()
 
 def _horas_ensayo_default() -> float:
     try:
-        return float(_env("HORAS_ENSAYO_DEFAULT", "3"))
+        return float(os.environ.get("HORAS_ENSAYO_DEFAULT", "3"))
     except Exception:
         return 3.0
 
 def _horas_funcion_default() -> float:
     try:
-        return float(_env("HORAS_FUNCION_DEFAULT", "2"))
+        return float(os.environ.get("HORAS_FUNCION_DEFAULT", "2"))
     except Exception:
         return 2.0
 

@@ -72,7 +72,7 @@ const PctInput = ({ value, onChange, dataTestId }) => (
 // ==========================================================================
 // Tabla de una sección de un evento
 // ==========================================================================
-const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust }) => {
+const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajesByUser, mostrarQR }) => {
   const ensayos = evento.ensayos || [];
   return (
     <div className="overflow-x-auto border-t border-slate-200" data-testid={`seccion-${evento.id}-${seccion.key}`}>
@@ -220,6 +220,30 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust }) => {
                           onChange={(v) => onChange(m, evento.id, { asistenciaEnsayoId: e.id, asistenciaValor: v })}
                           dataTestId={`asist-${m.usuario_id}-${e.id}`}
                         />
+                        {mostrarQR && (() => {
+                          const f = (fichajesByUser || {})[m.usuario_id]?.[e.id];
+                          if (!f) return <div className="text-[9px] text-slate-300 mt-0.5" data-testid={`qr-empty-${m.usuario_id}-${e.id}`}>❌ sin fichaje</div>;
+                          const pctQR = f.porcentaje_asistencia;
+                          const manual = typeof asistActual === 'number' ? asistActual : parseFloat(asistActual) || 0;
+                          let color = 'text-slate-500';
+                          if (pctQR != null && manual > 0) {
+                            const ratio = pctQR / manual;
+                            if (pctQR >= manual) color = 'text-emerald-600';
+                            else if (ratio >= 0.8) color = 'text-amber-600';
+                            else color = 'text-rose-600';
+                          }
+                          const dur = f.minutos_totales != null ? `${Math.floor(f.minutos_totales/60)}:${String(f.minutos_totales%60).padStart(2,'0')}` : '—';
+                          const ent = f.hora_entrada_computada ? new Date(f.hora_entrada_computada).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) : '—';
+                          const sal = f.hora_salida_computada ? new Date(f.hora_salida_computada).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) : '—';
+                          return (
+                            <div className="text-[9px] mt-0.5 leading-tight" data-testid={`qr-data-${m.usuario_id}-${e.id}`}>
+                              <div className={`font-bold ${color}`}>📊 {pctQR != null ? `${pctQR}%` : '—'}</div>
+                              <div className="text-slate-500">⏱ {ent}–{sal} ({dur})</div>
+                              {f.alerta_retraso && <div className="text-amber-600">🕐 Tarde</div>}
+                              {f.alerta_salida_pendiente && <div className="text-rose-600">⚠️ Salida pendiente</div>}
+                            </div>
+                          );
+                        })()}
                       </td>
                     </React.Fragment>
                   );
@@ -359,6 +383,8 @@ const PlantillasDefinitivas = () => {
   const [openEvents, setOpenEvents] = useState({}); // {evento_id: bool}
   const [openSections, setOpenSections] = useState({}); // {evento_id_seckey: bool}
   const [saving, setSaving] = useState(false);
+  const [mostrarQR, setMostrarQR] = useState(false);
+  const [fichajesPorEvento, setFichajesPorEvento] = useState({});
 
   const showFeedback = (type, text) => {
     setFeedback({ type, text });
@@ -538,6 +564,27 @@ const PlantillasDefinitivas = () => {
           <p className="text-xs text-slate-600">Confirmados por evento, con asistencia real, cachés y gastos adicionales.</p>
         </div>
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer px-2 py-1 border border-slate-200 rounded hover:bg-slate-50">
+            <input type="checkbox" checked={mostrarQR}
+                   onChange={async (e) => {
+                     const on = e.target.checked;
+                     setMostrarQR(on);
+                     if (on) {
+                       const evIds = (data.eventos || []).map(ev => ev.id).filter(id => !fichajesPorEvento[id]);
+                       const news = {};
+                       for (const id of evIds) {
+                         try {
+                           const r = await api.get(`/api/gestor/fichajes-evento/${id}`);
+                           news[id] = r.data?.fichajes || {};
+                         } catch { news[id] = {}; }
+                       }
+                       setFichajesPorEvento(prev => ({ ...prev, ...news }));
+                     }
+                   }}
+                   data-testid="toggle-mostrar-qr"
+                   className="w-3.5 h-3.5 accent-emerald-600"/>
+            📊 Mostrar datos QR
+          </label>
           {dirty && <span className="text-xs text-amber-700 font-medium">● Cambios sin guardar</span>}
           <button
             onClick={guardar}
@@ -573,6 +620,7 @@ const PlantillasDefinitivas = () => {
           {data.eventos.map(ev => {
             const totEv = totalesEvento[ev.id] || { musicos: 0 };
             const open = !!openEvents[ev.id];
+            const fichajesByUser = fichajesPorEvento[ev.id] || {};
             return (
               <div key={ev.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid={`evento-acordeon-${ev.id}`}
                    {...(open ? {
@@ -640,6 +688,8 @@ const PlantillasDefinitivas = () => {
                             state={state}
                             onChange={onChange}
                             onUploadJust={onUploadJust}
+                            fichajesByUser={fichajesByUser}
+                            mostrarQR={mostrarQR}
                           />
                           {/* Fila de totales por sección */}
                           <div className="bg-slate-100 border-t border-slate-300 px-4 py-2 flex items-center justify-end gap-6 flex-wrap text-xs">

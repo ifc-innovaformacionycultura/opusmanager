@@ -34,6 +34,8 @@ from routes_notif_preferencias import router_gestor as notif_prefs_gestor_router
 from routes_recordatorios import router as recordatorios_router, init_scheduler, shutdown_scheduler
 from routes_comunicaciones_plantillas import router as comunicaciones_plantillas_router
 from routes_documentos import router as documentos_router
+from routes_configuracion import router as configuracion_router
+from routes_fichaje import router as fichaje_router
 
 # ==================== App Configuration ====================
 
@@ -93,6 +95,8 @@ app.include_router(notif_prefs_portal_router)  # /api/portal/perfil/notif-prefer
 app.include_router(recordatorios_router)  # /api/admin/recordatorios/*
 app.include_router(comunicaciones_plantillas_router)  # /api/comunicaciones/*
 app.include_router(documentos_router)  # /api/gestor/documentos/* + /api/portal/mi-historial/(certificados|recibos)
+app.include_router(configuracion_router)  # /api/admin/configuracion + /api/admin/fichaje-reglas
+app.include_router(fichaje_router)  # /api/fichaje/* + /api/gestor/registro-asistencia
 
 # ==================== Health Check ====================
 

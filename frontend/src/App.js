@@ -13,6 +13,7 @@ import LoginUnificado from "./pages/LoginUnificado";
 import PortalDashboard from "./pages/portal/PortalDashboard";
 import ResetPassword from "./pages/ResetPassword";
 import ActivarCuenta from "./pages/ActivarCuenta";
+import FicharPublico from "./pages/FicharPublico";
 
 // Protected Route for Gestores (uses AuthContext)
 const ProtectedGestorRoute = ({ children }) => {
@@ -224,6 +225,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       path: "/asistencia",
       children: [
         { id: "asistencia-pagos", label: "Gestión económica", path: "/asistencia/pagos" },
+        { id: "registro-asistencia", label: "Registro de Asistencia", path: "/asistencia/registro" },
         { id: "analisis-economico", label: "Análisis económico", path: "/asistencia/analisis" },
         { id: "recibos-certificados", label: "Recibos y certificados", path: "/asistencia/recibos-certificados" }
       ]
@@ -242,6 +244,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       children: [
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
         { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
+        { id: "configuracion-app", label: "⚙️ Configuración", path: "/admin/configuracion" },
         { id: "tareas", label: "Planificador de tareas", path: "/admin/tareas" },
         { id: "incidencias", label: "Feedback e incidencias", path: "/admin/incidencias" },
         { id: "mensajes", label: "💬 Mensajes", path: "/admin/mensajes" },
@@ -454,6 +457,8 @@ const Layout = ({ children }) => {
       return { page: "Desplazamientos y Alojamientos", section: null };
     } else if (path.startsWith("/asistencia/analisis")) {
       return { page: "Asistencia y pagos", section: "Análisis económico" };
+    } else if (path.startsWith("/asistencia/registro")) {
+      return { page: "Asistencia y pagos", section: "Registro de Asistencia" };
     } else if (path.startsWith("/asistencia/recibos-certificados")) {
       return { page: "Asistencia y pagos", section: "Recibos y certificados" };
     } else if (path.startsWith("/informes")) {
@@ -462,6 +467,8 @@ const Layout = ({ children }) => {
       return { page: "Administración", section: "Gestión de usuarios" };
     } else if (path.startsWith("/admin/musicos")) {
       return { page: "Administración", section: "Base de datos músicos" };
+    } else if (path.startsWith("/admin/configuracion")) {
+      return { page: "Administración", section: "⚙️ Configuración" };
     } else if (path.startsWith("/admin/recordatorios")) {
       return { page: "Administración", section: "Recordatorios automáticos" };
     } else if (path.startsWith("/admin/emails/configuracion")) {
@@ -753,6 +760,8 @@ import AsistenciaPagos from "./pages/AsistenciaPagos";
 import Logistica from "./pages/Logistica";
 import AnalisisEconomico from "./pages/AnalisisEconomico";
 import RecibosCertificados from "./pages/RecibosCertificados";
+import ConfiguracionApp from "./pages/ConfiguracionApp";
+import RegistroAsistencia from "./pages/RegistroAsistencia";
 import Informes from "./pages/Informes";
 import GestionUsuarios from "./pages/GestionUsuarios";
 import MiPerfilGestor from "./pages/MiPerfilGestor";
@@ -807,6 +816,7 @@ function App() {
 
               {/* Activación de invitación - pública, sin login */}
               <Route path="/activar/:token" element={<ActivarCuenta />} />
+              <Route path="/fichar/:token" element={<FicharPublico />} />
               
               {/* Portal de Músicos - usa SupabaseAuthContext */}
               <Route 
@@ -838,6 +848,8 @@ function App() {
                         <Route path="/asistencia/logistica" element={<Logistica />} />
                         <Route path="/asistencia/analisis" element={<AnalisisEconomico />} />
                         <Route path="/asistencia/recibos-certificados" element={<RecibosCertificados />} />
+                        <Route path="/asistencia/registro" element={<RegistroAsistencia />} />
+                        <Route path="/admin/configuracion" element={<ConfiguracionApp />} />
                         <Route path="/informes" element={<Informes />} />
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
                         <Route path="/admin/mi-perfil" element={<MiPerfilGestor />} />

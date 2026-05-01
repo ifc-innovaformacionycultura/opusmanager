@@ -9,6 +9,8 @@ import MiPerfil from './MiPerfil';
 import MiHistorial from './MiHistorial';
 import MiDisponibilidadPanel from './MiDisponibilidadPanel';
 import LogisticaMusicoPanel from './LogisticaMusicoPanel';
+import ComidasMusicoPanel from './ComidasMusicoPanel';
+import FichajeMusicoPanel from './FichajeMusicoPanel';
 import FeedbackButton from '../../components/FeedbackButton';
 import PushPermissionPrompt from '../../components/PushPermissionPrompt';
 import { computeProfileCompleteness } from '../../lib/profileCompleteness';
@@ -453,6 +455,15 @@ const PortalDashboard = () => {
                     <MiDisponibilidadPanel
                       ensayos={eventoSeleccionado.ensayos || []}
                       onSaved={() => cargarMisEventos(true)}
+                    />
+                  )}
+
+                  {/* Fichaje QR (Bloque 2E) */}
+                  {(eventoSeleccionado.ensayos || []).length > 0 && user && (
+                    <FichajeMusicoPanel
+                      ensayos={eventoSeleccionado.ensayos || []}
+                      apiUrl={API_URL}
+                      usuarioId={user.profile?.id || user.id}
                     />
                   )}
 

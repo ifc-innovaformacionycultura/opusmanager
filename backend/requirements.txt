@@ -113,6 +113,7 @@ pytokens==0.4.1
 pytz==2026.1.post1
 pywebpush==2.3.0
 PyYAML==6.0.3
+qrcode==8.2
 realtime==2.28.3
 referencing==0.37.0
 regex==2026.2.28
