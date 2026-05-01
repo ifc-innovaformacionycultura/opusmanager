@@ -1,0 +1,54 @@
+{
+  "summary": "E2E testing of Bloque 1 (Configuración Organización /admin/configuracion) y Bloque 2 (Fichaje QR). Backend: 14/15 tests pasaron. Frontend: /admin/configuracion OK, /plantillas-definitivas OK con toggle QR, pero /admin/registro-asistencia y /portal/fichaje renderizan pantalla en blanco. Descubierto bug crítico en regenerar_qr por constraint único.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/gestor/ensayo-qr/{ensayo_id}/regenerar", "issue": "Devuelve 500 'duplicate key value violates unique constraint ensayo_qr_ensayo_id_key'. El handler hace UPDATE activo=false + INSERT nuevo, pero la tabla tiene UNIQUE(ensayo_id). Nunca puede regenerar un QR existente. Fix: hacer UPDATE {token, updated_at} sobre la fila existente en lugar de INSERT, o cambiar la constraint a UNIQUE(ensayo_id, activo) (parcial).", "priority": "CRITICAL"},
+      {"endpoint": "PUT /api/admin/configuracion", "issue": "El usuario admin@convocatorias.com tiene rol='gestor' en la tabla usuarios (no 'admin'), por lo que el check _is_admin_or_director lo rechaza con 403. Solo director_general (jalonso@p.csmb.es) puede editar. O se actualiza el rol del usuario admin en BD a 'admin', o se extiende _is_admin_or_director para aceptar 'gestor'.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/admin/configuracion", "issue": "Llama get_config(force=True) en cada request → anula el TTL del caché. Aceptable pero desaprovecha caché."},
+      {"endpoint": "_ensure_qr_token", "issue": "Mismo problema que regenerar_qr: si hay una fila con activo=False para ese ensayo_id, el INSERT fallará por unique constraint."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "RegistroAsistencia.js (/admin/registro-asistencia)", "issue": "La página renderiza en blanco (solo sidebar visible). Heading único 'OPUS MANAGER', contenido principal vacío. Sin errores de consola específicos reportados para la ruta pero no se monta el contenido.", "selector": "main", "priority": "HIGH"},
+      {"component": "FichajeMusicoPanel.js (/portal/fichaje)", "issue": "La página queda con loader indefinido; no se muestra contenido con botones entrada/salida ni ensayos. Además, tras login como músico, la redirección va a '/' (dashboard admin) en vez de '/portal'. Múltiples errores 403 en consola al intentar cargar datos del dashboard admin.", "selector": "/portal/fichaje", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Login músico → portal", "issue": "Musico logueado es redirigido a '/' (dashboard gestor) en lugar de '/portal'. Origen del 403 loop al cargar dashboard admin.", "affected_selectors": ["post-login redirect"]}
+    ],
+    "design_issues": [
+      {"screen": "/admin/configuracion", "issues": ["Renderiza correctamente todas las secciones: Datos de la organización, Dirección artística, Parámetros económicos (IRPF %), Identidad visual (Logo principal/secundario + Firma), Reglas de fichaje globales."]},
+      {"screen": "/plantillas-definitivas", "issues": ["Toggle 'Mostrar datos QR' visible en la cabecera. Cálculos de cachés intactos (Prev/Real/Extras/Transp/Aloj/Otros). Sin regresión observada."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_config_fichaje.py",
+    "/app/test_reports/pytest/iter19_results.xml"
+  ],
+  "action_items": [
+    "1 (CRITICAL) Arreglar POST /api/gestor/ensayo-qr/{id}/regenerar: la tabla ensayo_qr tiene UNIQUE(ensayo_id) → cambiar INSERT por UPDATE {token, activo=true, updated_at}, o eliminar primero la fila. Mismo patrón en _ensure_qr_token.",
+    "2 (HIGH) El usuario admin@convocatorias.com tiene rol='gestor' en BD. Decidir: (a) actualizar su rol a 'admin', o (b) añadir 'gestor' al check _is_admin_or_director en routes_configuracion.py. Docs/credenciales lo llaman 'admin' pero su rol real es 'gestor'.",
+    "3 (HIGH) /admin/registro-asistencia renderiza pantalla en blanco. Revisar RegistroAsistencia.js: posible error al hacer fetch (mismo 403?) o layout roto. Al menos mostrar estado vacío.",
+    "4 (HIGH) /portal/fichaje queda con loader eterno. Debugear FichajeMusicoPanel.js — probablemente llamada fallida o useEffect mal configurado.",
+    "5 (HIGH) Login de músico redirige a '/' (dashboard gestor) en vez de '/portal'. Revisar lógica de redirección post-login en LoginUnificado / AuthContext.",
+    "6 Warning React en consola: 'Encountered two children with the same key' (3 ocurrencias) durante carga de plantillas — añadir keys únicas.",
+    "7 (medio) Limpiar get_config(force=True) en endpoint GET — se pierde el beneficio de caché de 5 min."
+  ],
+  "critical_code_review_comments": [
+    "routes_fichaje.py:148 — INSERT sobre tabla con UNIQUE(ensayo_id) siempre falla si ya hay un registro. Lógica rota.",
+    "routes_configuracion.py:60 — el filtro `v is not None or k in {director_firma_url, logo_url, logo_secundario_url}` permite enviar null solo para esos 3 campos, lo cual es correcto pero poco obvio. Añadir comentario.",
+    "routes_configuracion.py:45-50 — GET /api/admin/configuracion es accesible a cualquier usuario autenticado (correcto por diseño para logos/colores) pero expone org_cif que puede ser dato sensible. Considerar filtrar campos para no-admins."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter19_config_fichaje.py"
+  ],
+  "success_rate": {"backend": "93% (14/15)", "frontend": "40% (2/5 flujos OK)"},
+  "test_credentials": "admin@convocatorias.com (rol=gestor en BD), jalonso@p.csmb.es Director2026! (rol=director_general — único con acceso a PUT /api/admin/configuracion), jesusalonsodirector@gmail.com Musico123!",
+  "seed_data_creation": "Ninguno. Solo se tocó la fila existente de configuracion_app (se restauró IRPF, quedó org_nombre='IFC OPUS Test' — el main agent puede restaurarlo si lo desea).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter19 cubrió Bloque 1 (config) y Bloque 2 (fichaje QR). Tests pytest en test_iter19_config_fichaje.py — usar DirectorGeneral como admin_token porque admin@convocatorias.com tiene rol='gestor'. Bug crítico en regenerar_qr (unique constraint). Frontend /admin/registro-asistencia y /portal/fichaje renderizan en blanco. Fichaje entrada/salida no pudo probarse porque depende de regenerar_qr funcional.",
+  "rca of the issue": "1) regenerar_qr 500: la tabla ensayo_qr tiene constraint UNIQUE(ensayo_id). El handler intenta UPDATE activo=false + INSERT nuevo token → siempre viola la constraint. Reproducción: POST /api/gestor/ensayo-qr/{cualquier_ensayo_id_con_QR_previo}/regenerar con token director_general. Fix propuesto: supabase.table('ensayo_qr').update({'token': nuevo_token, 'activo': True, 'updated_at': ...}).eq('ensayo_id', ensayo_id).execute(). 2) Admin no puede editar config: rol en BD es 'gestor' no 'admin'. Fix SQL: UPDATE usuarios SET rol='admin' WHERE email='admin@convocatorias.com'; OR extender whitelist en routes_configuracion.py::_is_admin_or_director."
+}
