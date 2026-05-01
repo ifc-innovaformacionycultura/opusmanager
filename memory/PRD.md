@@ -35,6 +35,10 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 - [x] **Iter 20 — Visualizador Portal Músico** (`/admin/preview-musico` + iPhone frame + /portal-preview/:token público)
 - [x] **Iter 20 — Resumen mensual al músico** (APScheduler día 1 @ 08:00 Madrid)
 - [x] **Iter 20 — Catálogo plantillas email** (4 plantillas predefinidas)
+- [x] **Iter 21 — Auto-registro de músicos** (página pública + gestión solicitudes + alertas datos bancarios + modal primer login)
+- [x] **Iter 21 — CRM neutro** (contactos sin evento + auto-registro de emails y WhatsApp)
+- [x] **Iter 21 — Página Historial y CRM** (timeline + gantt + exportar CSV)
+- [x] **Iter 21 — 5ª plantilla email** (acceso al portal — perfil creado por gestor)
 
 > Ver `/app/memory/CHANGELOG.md` para el detalle del sprint Iter 20.
 

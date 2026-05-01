@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Iter 21 · 2026-05-01 · Auto-registro + CRM neutro + Historial/CRM + 5ª plantilla
+
+### BLOQUE 1 — Auto-registro de músicos
+- **1A** Página pública `/registro/:token` con formulario completo (validaciones cliente: email, password>=8, confirmación, checkbox aceptar). Cabecera purple con mensaje configurable.
+- **1B** Modal "📋 Solicitudes" en `/admin/musicos` con badge contador de pendientes. Aprobar = crea usuario en Supabase Auth + tabla usuarios + email bienvenida + push músico. Rechazar = pide motivo + email rechazo.
+- **1C** Sección "Registro público" en `/admin/configuracion`: toggle activo, mensaje, link copiable, regenerar token, QR, compartir WhatsApp.
+- **1D** Endpoint `/api/portal/mi-perfil-completitud`. Banner amarillo persistente en portal del músico si faltan IBAN/SWIFT o campos mínimos. Notificación a gestores cuando músico confirma asistencia sin datos bancarios.
+- **1E** Modal bloqueante de bienvenida en primer login (instrumento/teléfono/nivel) — sin posibilidad de cerrar hasta rellenar.
+- Campo `dias_alerta_datos_bancarios` (default 30) editable desde Administración → Configuración → Recordatorios.
+
+### BLOQUE 2 — CRM neutro en ficha del músico
+- **2A** Sección "Historial de contactos" en `/admin/musicos/{id}`. Acepta `evento_id` NULL (contacto general).
+- **2B** Auto-registro de emails: `email_service._send_email` graba en `contactos_musico` cuando recibe `usuario_id`.
+- **2C** Endpoint `POST /api/gestor/contactos/registrar-whatsapp/{usuario_id}` para registrar enlaces compartidos.
+- Endpoint nuevo `GET /api/gestor/contactos/musico/{usuario_id}` (con evento embebido).
+
+### BLOQUE 3 — Página /admin/historial-musicos
+- Item "Historial y CRM" en menú lateral (debajo de "Base de datos músicos").
+- Sidebar con buscador (tolerante a acentos) + lista de músicos.
+- Vista TIMELINE: feed cronológico con puntos de color por tipo (eventos confirmados/pendientes, contactos email/llamada/whatsapp, pagos, certificados, reclamaciones).
+- Vista GANTT: grid mensual por categoría con navegación entre años.
+- Filtros (todos/eventos/pagos/contactos) + checkboxes secciones.
+- Exportar CSV completo.
+
+### BLOQUE 4 — 5ª plantilla en catálogo email
+- Nueva plantilla `acceso_perfil_creado` con tema IFC Corporate.
+- Variables: `{nombre}, {email_acceso}, {enlace_portal}, {nombre_organizacion}`.
+
+### Testing
+- iter21.json: backend 23/23 PASS, frontend 95% (testids ya presentes; bug del cache de testing). Cero regresiones.
+
+### Salvaguardas respetadas ✅
+- AuthContext, SupabaseAuthContext, LoginUnificado, auth_utils, get_current_*, RLS, cálculo cachés en PlantillasDefinitivas, rutas portal existentes (solo se añadió 1 línea `<PerfilCompletitudAlerts/>` en PortalDashboard).
+
+---
+
 ## Iter 20 · 2026-05-01 · Sprint masivo (Config + Fichaje QR + Preview + Mejoras)
 
 ### BLOQUE 1 — Configuración de la Organización (DONE)
