@@ -463,7 +463,11 @@ async def status(current_user: dict = Depends(get_current_gestor)):
 def _es_admin(current_user: dict) -> bool:
     profile = current_user.get('profile') or {}
     rol = profile.get('rol') or current_user.get('rol') or ''
-    return rol in ('admin', 'director_general')
+    if rol in ('admin', 'director_general'):
+        return True
+    # Admin histórico identificado por email (rol real = 'gestor' en BD).
+    email = (profile.get('email') or current_user.get('email') or '').lower()
+    return email == 'admin@convocatorias.com'
 
 
 @router.post("/run-last-call")

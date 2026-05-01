@@ -28,6 +28,15 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 - [x] **Bloque 2 — Mi Historial** (eventos, pagos, reclamaciones)
 - [x] **Bloque 3 — Recordatorios automáticos por evento** (10 predefinidos) + Historial de emails + Reclamaciones (gestor)
 - [x] **Bloque 4 — Resend activo** (API key configurada)
+- [x] **Iter 19/20 — Recibos & Certificados PDF (WeasyPrint)**
+- [x] **Iter 19/20 — Servicio de Comedor + opciones_menu (D1)**
+- [x] **Iter 19/20 — Configuración global organización (`/admin/configuracion`)**
+- [x] **Iter 19/20 — Sistema Fichaje QR** (reglas globales + por ensayo, QR público, portal músico, toggle Plantillas Definitivas)
+- [x] **Iter 20 — Visualizador Portal Músico** (`/admin/preview-musico` + iPhone frame + /portal-preview/:token público)
+- [x] **Iter 20 — Resumen mensual al músico** (APScheduler día 1 @ 08:00 Madrid)
+- [x] **Iter 20 — Catálogo plantillas email** (4 plantillas predefinidas)
+
+> Ver `/app/memory/CHANGELOG.md` para el detalle del sprint Iter 20.
 
 ## What's Been Implemented
 

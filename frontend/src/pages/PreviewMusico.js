@@ -74,12 +74,13 @@ const PreviewMusico = () => {
   }, [tokenInfo]);
 
   const filtrados = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
+    const norm = (s) => (s || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const q = norm(busqueda.trim());
     if (!q) return musicos;
     return musicos.filter((m) => (
-      (m.nombre || "").toLowerCase().includes(q) ||
-      (m.apellidos || "").toLowerCase().includes(q) ||
-      (m.instrumento || "").toLowerCase().includes(q)
+      norm(m.nombre).includes(q) ||
+      norm(m.apellidos).includes(q) ||
+      norm(m.instrumento).includes(q)
     ));
   }, [musicos, busqueda]);
 
