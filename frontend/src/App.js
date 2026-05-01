@@ -151,7 +151,7 @@ const LoginPage = () => {
 };
 
 // Sidebar Navigation
-const Sidebar = ({ isCollapsed, onToggle }) => {
+const Sidebar = ({ isCollapsed, onToggle, onOpenCommandPalette }) => {
   const { logout, user, api } = useGestorAuth(); // Use AuthContext for gestores
   const navigate = useNavigate();
   const location = useLocation();
@@ -308,6 +308,22 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
         >
           {getIcon("Menu")}
         </button>
+        {onOpenCommandPalette && (
+          <button
+            onClick={onOpenCommandPalette}
+            title="Buscar (Ctrl+K / Cmd+K)"
+            data-testid="sidebar-command-k"
+            className={`mt-2 w-full p-2 hover:bg-slate-800 rounded-md transition-colors flex items-center ${isCollapsed ? 'justify-center' : 'gap-2 px-3 text-sm text-slate-300'}`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            {!isCollapsed && (
+              <>
+                <span className="flex-1 text-left">Buscar…</span>
+                <kbd className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded border border-slate-700">⌘K</kbd>
+              </>
+            )}
+          </button>
+        )}
       </div>
       
       {/* Navigation */}
@@ -414,10 +430,70 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
 };
 
 // Layout
+// Definición estática de navegación (para CommandPalette — Sidebar tiene la suya con badges)
+const PALETTE_NAV_ITEMS = [
+  { id: "dashboard", label: "Dashboard", path: "/" },
+  { id: "temporada", label: "Temporada", children: [
+    { id: "eventos", label: "Configuración de Eventos", path: "/configuracion/eventos" },
+    { id: "presupuestos", label: "Presupuestos", path: "/configuracion/presupuestos" },
+    { id: "seguimiento", label: "Seguimiento de Convocatorias", path: "/seguimiento" },
+    { id: "plantillas-definitivas", label: "Plantillas Definitivas", path: "/plantillas-definitivas" },
+  ]},
+  { id: "logistica-servicios", label: "Logística y Servicios", children: [
+    { id: "logistica", label: "Logística y Servicios", path: "/asistencia/logistica" },
+    { id: "registro-asistencia", label: "Registro de Asistencia", path: "/asistencia/registro" },
+  ]},
+  { id: "economia", label: "Economía", children: [
+    { id: "asistencia-pagos", label: "Gestión Económica", path: "/asistencia/pagos" },
+    { id: "analisis-economico", label: "Análisis Económico", path: "/asistencia/analisis" },
+    { id: "recibos-certificados", label: "Recibos y Certificados", path: "/asistencia/recibos-certificados" },
+    { id: "informes", label: "Informes", path: "/informes" },
+  ]},
+  { id: "musicos-grupo", label: "Músicos", children: [
+    { id: "musicos", label: "Base de Datos de Músicos", path: "/admin/musicos" },
+    { id: "historial-musicos", label: "Historial y CRM", path: "/admin/historial-musicos" },
+    { id: "preview-musico", label: "Vista Músico", path: "/admin/preview-musico" },
+  ]},
+  { id: "repertorio", label: "Repertorio y Material", children: [
+    { id: "archivo", label: "Archivo Musical", path: "/admin/archivo" },
+    { id: "inventario", label: "Inventario Material", path: "/admin/inventario" },
+  ]},
+  { id: "comunicaciones", label: "Comunicaciones", children: [
+    { id: "mensajes", label: "Mensajes", path: "/admin/mensajes" },
+    { id: "plantillas", label: "Centro de Comunicaciones", path: "/configuracion/plantillas" },
+  ]},
+  { id: "administracion", label: "Administración", children: [
+    { id: "tareas", label: "Planificador de Tareas", path: "/admin/tareas" },
+    { id: "incidencias", label: "Incidencias", path: "/admin/incidencias" },
+    { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
+    { id: "recordatorios", label: "Recordatorios Push", path: "/admin/recordatorios" },
+    { id: "emails", label: "Historial de Emails", path: "/admin/emails" },
+    { id: "actividad", label: "Registro de Actividad", path: "/admin/actividad" },
+    { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
+    { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
+    { id: "configuracion-app", label: "Configuración", path: "/admin/configuracion" },
+  ]},
+  { id: "ayuda", label: "Manual de Usuario", path: "/ayuda" },
+];
+
 const Layout = ({ children }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const location = useLocation();
   const { api } = useGestorAuth();
+
+  // Atajo Cmd/Ctrl+K global
+  useEffect(() => {
+    const onKey = (e) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Detectar página y sección actual basándose en la ruta
   const getCurrentPageInfo = () => {
@@ -482,7 +558,7 @@ const Layout = ({ children }) => {
 
   return (
     <div className="min-h-screen flex bg-slate-100">
-      <Sidebar isCollapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      <Sidebar isCollapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} onOpenCommandPalette={() => setPaletteOpen(true)} />
       <main className="flex-1 overflow-auto relative">
         <NotificacionesBell />
         {children}
@@ -493,6 +569,11 @@ const Layout = ({ children }) => {
         <HilosPendientesAuto />
         <PushPermissionPrompt clientOrToken={api} />
       </main>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        navItems={PALETTE_NAV_ITEMS}
+      />
     </div>
   );
 };
@@ -750,6 +831,7 @@ import HistorialMusicos from "./pages/HistorialMusicos";
 import RegistroAsistencia from "./pages/RegistroAsistencia";
 import PreviewMusico from "./pages/PreviewMusico";
 import PortalPreviewFrame from "./pages/PortalPreviewFrame";
+import CommandPalette from "./components/CommandPalette";
 import Informes from "./pages/Informes";
 import GestionUsuarios from "./pages/GestionUsuarios";
 import MiPerfilGestor from "./pages/MiPerfilGestor";

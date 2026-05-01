@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## Iter 23 · 2026-05-01 · Command Palette ⌘K
+
+### BLOQUE 1 — Buscador rápido estilo Notion/Linear
+- **Atajo global Cmd/Ctrl+K** (toggle open/close).
+- Modal centrado con buscador tolerante a acentos (filtra label, grupo y ruta).
+- **Navegación con flechas ↑↓ + Enter** para abrir; ESC para cerrar.
+- Auto-scroll al item seleccionado; hover también selecciona.
+- Footer con hints de teclas + contador de resultados.
+- Botón **🔍 Buscar… ⌘K** en cabecera del sidebar como alternativa al atajo.
+- Visible **solo para gestores** (no se monta en `/portal/*` — el Layout del gestor es quien integra `CommandPalette`).
+- Lista estática `PALETTE_NAV_ITEMS` en App.js (paralela a Sidebar; desacoplada para no depender de badges/pendientes). 28 rutas totales.
+
+### Salvaguardas respetadas ✅
+- Nuevo componente `CommandPalette.js` + 1 listener keyboard + 1 import en App.js. NO se modificó AuthContext, SupabaseAuthContext, LoginUnificado, auth_utils, guards, RLS, cálculo cachés ni rutas existentes.
+
+---
+
 ## Iter 22 · 2026-05-01 · Reorganización menú lateral + unificación de guards
 
 ### BLOQUE 1 — Reorganización del menú lateral (solo visual)
