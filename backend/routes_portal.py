@@ -92,6 +92,32 @@ class NuevaReclamacionRequest(BaseModel):
 
 # ==================== Endpoints ====================
 
+@router.get("/mi-perfil-completitud")
+async def mi_perfil_completitud(current_user: dict = Depends(get_current_user)):
+    """Bloque 1D/1E — Devuelve qué campos faltan en el perfil del músico
+    para mostrar banner persistente y modal de bienvenida en primer login."""
+    p = current_user.get("profile") or {}
+    minimos = {
+        "instrumento": bool((p.get("instrumento") or "").strip()),
+        "telefono": bool((p.get("telefono") or "").strip()),
+        "nivel_estudios": bool((p.get("nivel_estudios") or "").strip()),
+    }
+    bancarios = {
+        "iban": bool((p.get("iban") or "").strip()),
+        "swift": bool((p.get("swift") or "").strip()),
+    }
+    minimos_ok = all(minimos.values())
+    bancarios_ok = all(bancarios.values())
+    return {
+        "ok": True,
+        "minimos": minimos,
+        "bancarios": bancarios,
+        "minimos_ok": minimos_ok,
+        "bancarios_ok": bancarios_ok,
+        "primer_login_completar": not minimos_ok,
+        "banner_persistente": not (minimos_ok and bancarios_ok),
+    }
+
 @router.post("/cambiar-password-primera-vez")
 async def cambiar_password_primera_vez(current_user: dict = Depends(get_current_user)):
     """
@@ -727,6 +753,28 @@ async def confirmar_asistencia(
                     'entidad_tipo': 'evento',
                     'entidad_id': evento_id
                 }).execute()
+            # Bloque 1D — Alerta datos bancarios incompletos cuando músico confirma asistencia
+            if data.estado == "confirmado":
+                try:
+                    perfil_full = supabase.table('usuarios').select('iban,swift,nombre,apellidos') \
+                        .eq('id', usuario_id).limit(1).execute().data or []
+                    p = perfil_full[0] if perfil_full else {}
+                    if not (p.get('iban') and p.get('swift')):
+                        ev = supabase.table('eventos').select('nombre,fecha_inicio') \
+                            .eq('id', evento_id).limit(1).execute().data or []
+                        ev_nom = (ev[0].get('nombre') if ev else 'evento')
+                        ev_fch = (ev[0].get('fecha_inicio') if ev else '')[:10]
+                        for g in gs:
+                            supabase.table('notificaciones_gestor').insert({
+                                'gestor_id': g['id'],
+                                'tipo': 'datos_bancarios_incompletos',
+                                'titulo': "⚠️ Datos bancarios incompletos",
+                                'mensaje': f"{p.get('nombre','')} {p.get('apellidos','')} no tiene IBAN/SWIFT. Evento: {ev_nom} el {ev_fch}.",
+                                'entidad_tipo': 'usuario',
+                                'entidad_id': usuario_id
+                            }).execute()
+                except Exception:
+                    pass
         except Exception:
             pass
         

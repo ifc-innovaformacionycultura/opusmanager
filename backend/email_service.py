@@ -139,6 +139,19 @@ async def _send_email(
         result = await asyncio.to_thread(resend.Emails.send, params)
         email_id = result.get("id") if isinstance(result, dict) else None
         _log_email({**log_entry, "estado": "enviado", "resend_id": email_id})
+        # Bloque 2B — Registro automático en CRM si tenemos usuario_id
+        if usuario_id:
+            try:
+                from routes_crm_contactos import log_contacto_auto
+                log_contacto_auto(
+                    usuario_id=usuario_id,
+                    tipo='email',
+                    evento_id=evento_id,
+                    estado_respuesta='sin_respuesta',
+                    notas=subject,
+                )
+            except Exception as ce:
+                logger.warning(f"CRM auto-log email: {ce}")
         return {"sent": True, "email_id": email_id}
     except Exception as e:
         logger.error(f"Resend email failed: {e}")

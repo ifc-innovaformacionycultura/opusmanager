@@ -43,6 +43,7 @@ class ConfigUpdate(BaseModel):
     logo_secundario_url: Optional[str] = None
     color_primario: Optional[str] = None
     color_secundario: Optional[str] = None
+    dias_alerta_datos_bancarios: Optional[int] = None
 
 
 @router.get("/admin/configuracion")

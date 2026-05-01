@@ -229,6 +229,19 @@ CATALOGO_PLANTILLAS = {
             _bloque_pie(),
         ],
     },
+    "acceso_perfil_creado": {
+        "nombre": "🎼 Acceso al portal — perfil creado por el gestor",
+        "descripcion": "Notifica al músico que el gestor ha creado su perfil y ya puede acceder al portal.",
+        "asunto_default": "Tu acceso al portal de {nombre_organizacion}",
+        "variables": ["nombre", "email_acceso", "enlace_portal", "nombre_organizacion"],
+        "build_bloques": lambda: [
+            _bloque_cabecera("Tu acceso al portal", "{nombre_organizacion}"),
+            _bloque_texto("<p>Hola <strong>{nombre}</strong>,</p><p>Tu perfil ha sido creado en la plataforma de <strong>{nombre_organizacion}</strong>. Puedes acceder con tu email <strong>{email_acceso}</strong> y cambiar tu contraseña en el primer acceso.</p>"),
+            _bloque_cta("Acceder al portal", "{enlace_portal}"),
+            _bloque_texto("<p style=\"color:#475569;font-size:13px\">Si tienes cualquier duda, puedes responder directamente a este correo.</p>"),
+            _bloque_pie(),
+        ],
+    },
 }
 
 

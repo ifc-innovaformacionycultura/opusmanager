@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import InvitacionMusicoModal from '../components/InvitacionMusicoModal';
+import SolicitudesRegistroPanel from '../components/SolicitudesRegistroPanel';
 
 const CrearMusicoModal = ({ isOpen, onClose, onCreated, api }) => {
   const [form, setForm] = useState({ nombre: '', apellidos: '', email: '', instrumento: '', telefono: '' });
@@ -374,6 +375,17 @@ const GestorMusicos = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [invitarMusico, setInvitarMusico] = useState(null);  // músico al que invitar
+  const [solicitudesOpen, setSolicitudesOpen] = useState(false);
+  const [solicitudesPendientes, setSolicitudesPendientes] = useState(0);
+
+  const cargarPendientesSolicitudes = useCallback(async () => {
+    try {
+      const r = await api.get('/api/gestor/solicitudes-registro?estado=pendiente');
+      setSolicitudesPendientes((r.data?.solicitudes || []).length);
+    } catch { /* ignore */ }
+  }, [api]);
+
+  useEffect(() => { cargarPendientesSolicitudes(); }, [cargarPendientesSolicitudes]);
 
   const cargarMusicos = useCallback(async () => {
     try {
@@ -476,6 +488,17 @@ const GestorMusicos = () => {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setSolicitudesOpen(true)}
+            data-testid="btn-solicitudes-registro"
+            className="relative inline-flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-300 hover:bg-amber-100 text-amber-800 rounded-md font-medium shadow-sm">
+            📋 Solicitudes
+            {solicitudesPendientes > 0 && (
+              <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center">
+                {solicitudesPendientes}
+              </span>
+            )}
+          </button>
           <button
             onClick={descargarPlantilla}
             data-testid="btn-descargar-plantilla"
@@ -720,6 +743,13 @@ const GestorMusicos = () => {
         musico={invitarMusico}
         api={api}
         onInvited={cargarMusicos}
+      />
+
+      <SolicitudesRegistroPanel
+        open={solicitudesOpen}
+        onClose={() => setSolicitudesOpen(false)}
+        api={api}
+        onChange={() => { cargarMusicos(); cargarPendientesSolicitudes(); }}
       />
     </div>
   );

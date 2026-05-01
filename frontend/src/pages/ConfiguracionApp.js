@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { Settings, Building2, UserCheck, Coins, Palette, Clock, Upload, Save, RotateCcw } from "lucide-react";
+import { Settings, Building2, UserCheck, Coins, Palette, Clock, Upload, Save, RotateCcw, UserPlus, Bell, Copy, RefreshCw, Power } from "lucide-react";
 
 const Section = ({ icon: Icon, title, children, color = "slate" }) => (
   <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
@@ -75,16 +75,20 @@ const ConfiguracionApp = () => {
   const [savingReglas, setSavingReglas] = useState(false);
   const [precargando, setPrecargando] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [registroCfg, setRegistroCfg] = useState(null);
+  const [savingRegistro, setSavingRegistro] = useState(false);
 
   const load = async () => {
     try {
-      const [c, r] = await Promise.all([
+      const [c, r, rp] = await Promise.all([
         api.get("/api/admin/configuracion"),
         api.get("/api/admin/fichaje-reglas"),
+        api.get("/api/admin/registro-publico/config"),
       ]);
       setCfg(c.data?.configuracion || {});
       setEditable(!!c.data?.editable);
       setReglas(r.data?.reglas || {});
+      setRegistroCfg(rp.data?.config || null);
     } catch (e) {
       setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
     }
@@ -103,6 +107,7 @@ const ConfiguracionApp = () => {
         director_nombre: cfg.director_nombre, director_cargo: cfg.director_cargo,
         irpf_porcentaje: parseFloat(cfg.irpf_porcentaje) || 0,
         color_primario: cfg.color_primario, color_secundario: cfg.color_secundario,
+        dias_alerta_datos_bancarios: parseInt(cfg.dias_alerta_datos_bancarios) || 30,
       });
       setFeedback({ tipo: "ok", msg: "✅ Configuración guardada" });
       setTimeout(() => setFeedback(null), 3000);
@@ -155,6 +160,44 @@ const ConfiguracionApp = () => {
       setTimeout(() => setFeedback(null), 2500);
     }
   };
+
+  // Registro público
+  const guardarRegistro = async (extra = {}) => {
+    setSavingRegistro(true);
+    try {
+      const body = {
+        activo: registroCfg?.activo,
+        mensaje_bienvenida: registroCfg?.mensaje_bienvenida,
+        ...extra,
+      };
+      const r = await api.put("/api/admin/registro-publico/config", body);
+      setRegistroCfg(r.data?.config || registroCfg);
+      setFeedback({ tipo: "ok", msg: "✅ Registro público actualizado" });
+      setTimeout(() => setFeedback(null), 2500);
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
+    } finally { setSavingRegistro(false); }
+  };
+
+  const enlaceRegistro = registroCfg?.token
+    ? `${window.location.origin}/registro/${registroCfg.token}`
+    : "";
+
+  const copiarEnlace = async () => {
+    try {
+      await navigator.clipboard.writeText(enlaceRegistro);
+      setFeedback({ tipo: "ok", msg: "Enlace copiado al portapapeles" });
+      setTimeout(() => setFeedback(null), 2500);
+    } catch {
+      window.prompt("Copia el enlace:", enlaceRegistro);
+    }
+  };
+  const qrUrl = enlaceRegistro
+    ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(enlaceRegistro)}&size=240x240`
+    : "";
+  const whatsappUrl = enlaceRegistro
+    ? `https://wa.me/?text=${encodeURIComponent(`¡Únete a la plataforma de ${cfg?.org_nombre || "IFC"}! Regístrate aquí: ${enlaceRegistro}`)}`
+    : "";
 
   if (!cfg) return <div className="p-6 text-slate-500">Cargando configuración…</div>;
 
@@ -280,6 +323,83 @@ const ConfiguracionApp = () => {
           )}
         </Section>
       )}
+
+      {/* Bloque 1C — Registro público */}
+      {registroCfg && (
+        <Section icon={UserPlus} title="Registro público de músicos" color="purple">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="Estado" hint="Activa o desactiva el formulario público de auto-registro.">
+              <button type="button" disabled={!editable || savingRegistro}
+                      onClick={() => guardarRegistro({ activo: !registroCfg.activo })}
+                      data-testid="btn-toggle-registro"
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium border ${registroCfg.activo ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-slate-100 text-slate-700 border-slate-300"} disabled:opacity-50`}>
+                <Power className="w-3.5 h-3.5"/> {registroCfg.activo ? "Activo" : "Inactivo"}
+              </button>
+            </Field>
+            <Field label="Enlace público" hint="Comparte este enlace con personas externas para que se registren.">
+              <div className="flex items-center gap-2">
+                <input readOnly value={enlaceRegistro} data-testid="registro-link"
+                       className="flex-1 px-2 py-1.5 border border-slate-200 rounded text-xs bg-slate-50 font-mono"/>
+                <button onClick={copiarEnlace} type="button"
+                        data-testid="btn-copiar-link"
+                        className="px-2 py-1 text-xs bg-slate-900 text-white rounded hover:bg-slate-800 inline-flex items-center gap-1">
+                  <Copy className="w-3 h-3"/> Copiar
+                </button>
+                {whatsappUrl && (
+                  <a href={whatsappUrl} target="_blank" rel="noreferrer"
+                     data-testid="btn-whatsapp-link"
+                     className="px-2 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700">📱 WhatsApp</a>
+                )}
+              </div>
+            </Field>
+          </div>
+          <Field label="Mensaje de bienvenida" hint="Aparece en la cabecera de la página pública de registro.">
+            <textarea rows={3} disabled={!editable}
+                      value={registroCfg.mensaje_bienvenida || ""}
+                      onChange={(e) => setRegistroCfg((p) => ({ ...p, mensaje_bienvenida: e.target.value }))}
+                      data-testid="registro-mensaje"
+                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"/>
+          </Field>
+          <div className="flex items-center gap-3 flex-wrap">
+            {qrUrl && (
+              <details>
+                <summary className="cursor-pointer text-xs text-slate-700 hover:text-slate-900">📱 Ver QR</summary>
+                <img src={qrUrl} alt="QR registro" data-testid="registro-qr"
+                     className="mt-2 border border-slate-200 rounded p-2 bg-white"/>
+              </details>
+            )}
+            {editable && (
+              <>
+                <button onClick={() => guardarRegistro()}
+                        disabled={savingRegistro}
+                        data-testid="btn-guardar-registro"
+                        className="px-4 py-1.5 text-xs bg-purple-700 hover:bg-purple-800 text-white rounded font-medium inline-flex items-center gap-1.5 disabled:opacity-50">
+                  <Save className="w-3.5 h-3.5"/> Guardar
+                </button>
+                <button onClick={() => {
+                  if (window.confirm("Esto invalidará el enlace actual y generará uno nuevo. ¿Continuar?")) guardarRegistro({ regenerar_token: true });
+                }} type="button" disabled={savingRegistro}
+                        data-testid="btn-regenerar-token"
+                        className="px-3 py-1.5 text-xs border border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded inline-flex items-center gap-1.5 disabled:opacity-50">
+                  <RefreshCw className="w-3.5 h-3.5"/> Regenerar token
+                </button>
+              </>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* Recordatorios automáticos (alerta datos bancarios) */}
+      <Section icon={Bell} title="Recordatorios automáticos" color="amber">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Field label="Días antes para alerta de datos bancarios" hint="Avisar al gestor X días antes del primer evento confirmado si el músico no tiene IBAN/SWIFT.">
+            <Input type="number" min={1} max={120} readOnly={!editable}
+                   data-testid="dias-alerta-bancarios"
+                   value={cfg.dias_alerta_datos_bancarios ?? 30}
+                   onChange={(e) => set("dias_alerta_datos_bancarios", e.target.value)}/>
+          </Field>
+        </div>
+      </Section>
     </div>
   );
 };

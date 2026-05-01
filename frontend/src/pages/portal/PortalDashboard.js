@@ -13,6 +13,7 @@ import ComidasMusicoPanel from './ComidasMusicoPanel';
 import FichajeMusicoPanel from './FichajeMusicoPanel';
 import FeedbackButton from '../../components/FeedbackButton';
 import PushPermissionPrompt from '../../components/PushPermissionPrompt';
+import PerfilCompletitudAlerts from '../../components/PerfilCompletitudAlerts';
 import { computeProfileCompleteness } from '../../lib/profileCompleteness';
 
 const PortalDashboard = () => {
@@ -276,6 +277,8 @@ const PortalDashboard = () => {
           </nav>
         </div>
       </header>
+
+      <PerfilCompletitudAlerts onPerfilTab={() => setVista('perfil')} />
 
       {/* Banner inteligente: sólo se muestra si faltan datos obligatorios */}
       {showBanner && (() => {

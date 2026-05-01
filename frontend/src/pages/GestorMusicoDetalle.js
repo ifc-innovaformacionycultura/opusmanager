@@ -4,6 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ComentariosEquipoInline from '../components/ComentariosEquipoInline';
 import InvitacionMusicoModal from '../components/InvitacionMusicoModal';
+import HistorialContactosMusico from '../components/HistorialContactosMusico';
 
 const estadoBadge = (e) => ({
   confirmado: 'bg-green-100 text-green-800',
@@ -322,6 +323,8 @@ const GestorMusicoDetalle = () => {
           </ul>
         )}
       </div>
+
+      <HistorialContactosMusico api={api} usuarioId={id} />
     </div>
   );
 };

@@ -1,0 +1,37 @@
+{
+  "summary": "Iter21 E2E Bloques 1, 2, 3, 4: Backend 23/23 pytest PASS (config admin/DG, info 200/404/410, validaciones registro, listar/aprobar/rechazar solicitudes, perfil-completitud, CRM neutro + WhatsApp, catálogo 5 plantillas + crear, regresión login admin/DG/músico). Frontend: /registro/{token} renderiza con cabecera purple, formulario completo, validaciones cliente y muestra confirmación tras submit (creación de solicitud verificada). En /admin/musicos botón 📋 Solicitudes 3 con badge funciona, abre modal con tabla de 5 solicitudes y botones Aprobar/Rechazar. /admin/configuracion expone todos los data-testids esperados (toggle, link, copiar, whatsapp, mensaje, guardar, regenerar, dias-alerta-bancarios). /admin/historial-musicos lista 15 músicos, búsqueda, perfil + timeline + gantt + Exportar CSV — todos los botones VISIBLES y funcionales pero les FALTAN los data-testids vista-timeline / vista-gantt / btn-export-historial requeridos por el PRD.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "HistorialMusicos toolbar", "issue": "Faltan data-testids en los botones de cabecera del detalle: vista-timeline, vista-gantt, btn-export-historial. Los botones existen visualmente y funcionan (cambiar vista timeline/gantt y export CSV), pero la automatización de tests no los puede localizar por testid. Añadir data-testid=\"vista-timeline\", data-testid=\"vista-gantt\" y data-testid=\"btn-export-historial\" en HistorialMusicos.js (línea aprox 200-260, sección de cabecera junto a 'Ver ficha completa').", "selector": "[data-testid=\"vista-timeline|vista-gantt|btn-export-historial\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard admin / GestorMusicos", "issues": ["Console warnings 'Encountered two children with the same key' (pre-existente desde iter19/20, no introducido en este sprint)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_bloques.py",
+    "/app/test_reports/pytest/iter21_results.xml"
+  ],
+  "action_items": [
+    "(MEDIUM) Añadir 3 data-testids en /app/frontend/src/pages/HistorialMusicos.js: vista-timeline en el botón Timeline, vista-gantt en el botón Gantt, btn-export-historial en el botón 'Exportar CSV'. El PRD del Bloque 3 los exigía explícitamente.",
+    "(LOW) Limpieza pendiente: en BD quedaron 3+ solicitudes de prueba con email TEST_iter21_*@example.com / test_iter21_*@example.com (estado pendiente y rechazado). Eliminar o ignorar; no afectan funcionalidad.",
+    "(PRE-EXISTENTE) Resolver warnings de keys duplicadas en render dashboard/musicos (no introducidos en este sprint)."
+  ],
+  "critical_code_review_comments": [
+    "routes_registro.py — implementación correcta y robusta: _is_admin admite admin@convocatorias.com, validaciones email/password, 404 en token inválido, 410 en activo=false, 409 en email duplicado, password_hash se borra al aprobar/rechazar, rollback Auth si falla insert en tabla usuarios, push best-effort sin bloquear. Bridge sync→async para email vía ThreadPoolExecutor (correcto).",
+    "routes_crm_contactos.py — endpoint /musico/{usuario_id} embebe evento via select 'evento:eventos(id,nombre)' (Supabase nested), permite evento_id NULL para contactos neutros. log_contacto_auto exportado para reuso desde email_service.",
+    "routes_portal.py:95-119 — /mi-perfil-completitud devuelve estructura clara: minimos / bancarios / minimos_ok / bancarios_ok / primer_login_completar / banner_persistente. Frontend puede usar banner_persistente para banner amarillo y primer_login_completar para modal bloqueante.",
+    "routes_comunicaciones_plantillas.py — 5ª plantilla 'acceso_perfil_creado' añadida correctamente al CATALOGO_PLANTILLAS (línea 232). GET /catalogo devuelve las 5 keys, POST /catalogo/acceso_perfil_creado/crear funciona.",
+    "HistorialMusicos.js — falta asignar data-testids vista-timeline/vista-gantt/btn-export-historial a los 3 botones de toolbar; el resto de testids (historial-musicos-page, hist-search-input, hist-musicos-list, hist-musico-{id}, hist-cabecera, hist-timeline, hist-gantt) sí están presentes."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter21_bloques.py"],
+  "success_rate": {"backend": "100% (23/23 pytest pass)", "frontend": "95% (todos los flujos funcionan; faltan 3 data-testids en cabecera de HistorialMusicos)"},
+  "test_credentials": "admin@convocatorias.com/Admin123! (rol=gestor BD pero admin por email), jalonso@p.csmb.es/Director2026! (DG), jesusalonsodirector@gmail.com/Musico123! (id 8bf521fa-dc27-4c5b-8069-d36d3d4eaad3).",
+  "seed_data_creation": "Solicitudes de registro de prueba creadas (6 en total, mezcla de pendientes/rechazadas) con prefijo test_iter21_*. Se pueden borrar desde /admin/musicos > Solicitudes o vía SQL DELETE FROM solicitudes_registro WHERE email LIKE 'test_iter21_%'. Tampoco crean usuarios en Auth porque no se aprobaron.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter21 validó Bloques 1 (auto-registro completo: config admin/DG, página pública /registro/:token con form purple y submit, modal solicitudes en /admin/musicos con badge contador, aprobar/rechazar, validaciones email único 409, password>=8, info 404/410), 1D/1E (endpoint /api/portal/mi-perfil-completitud OK con estructura minimos/bancarios), 2 (CRM neutro: GET /api/gestor/contactos/musico/{id} devuelve histórico con evento embebido, POST sin evento_id OK, registrar-whatsapp OK), 4 (catálogo 5 plantillas con acceso_perfil_creado). NO se ejecutó test E2E del banner amarillo en portal del músico (requiere que el músico jesusalonsodirector tenga IBAN/SWIFT vacío en BD y abrir /portal con su sesión). NO se probó el endpoint POST /api/portal/asignacion/{id}/confirmar de Bloque 1D (creación notificación datos_bancarios_incompletos) porque requiere asignación existente sin confirmar. Bloque 3 (Gantt + Timeline + Export CSV en /admin/historial-musicos): UI funciona, falta solo testids en toolbar. Backend regresión OK (login admin/DG/músico todos 200).",
+  "rca of the issue": "Los 3 data-testids faltantes en HistorialMusicos.js no son un bug funcional sino una omisión del fix-up de data-testid attributes. La página renderiza correctamente y los botones reaccionan al click; solo el agente de testing automatizado no puede ubicarlos por selector estable. Fix esperado: agregar data-testid='vista-timeline'/'vista-gantt' a los <button> de cambio de vista (línea aprox del JSX donde el componente alterna entre 'timeline' y 'gantt') y data-testid='btn-export-historial' al botón 'Exportar CSV'."
+}

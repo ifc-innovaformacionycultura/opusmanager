@@ -244,6 +244,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       children: [
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
         { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
+        { id: "historial-musicos", label: "Historial y CRM", path: "/admin/historial-musicos" },
         { id: "configuracion-app", label: "⚙️ Configuración", path: "/admin/configuracion" },
         { id: "preview-musico", label: "👁 Vista músico", path: "/admin/preview-musico" },
         { id: "tareas", label: "Planificador de tareas", path: "/admin/tareas" },
@@ -762,6 +763,8 @@ import Logistica from "./pages/Logistica";
 import AnalisisEconomico from "./pages/AnalisisEconomico";
 import RecibosCertificados from "./pages/RecibosCertificados";
 import ConfiguracionApp from "./pages/ConfiguracionApp";
+import RegistroPublico from "./pages/RegistroPublico";
+import HistorialMusicos from "./pages/HistorialMusicos";
 import RegistroAsistencia from "./pages/RegistroAsistencia";
 import PreviewMusico from "./pages/PreviewMusico";
 import PortalPreviewFrame from "./pages/PortalPreviewFrame";
@@ -821,6 +824,8 @@ function App() {
               <Route path="/activar/:token" element={<ActivarCuenta />} />
               <Route path="/fichar/:token" element={<FicharPublico />} />
               <Route path="/portal-preview/:token" element={<PortalPreviewFrame />} />
+              <Route path="/registro/:token" element={<RegistroPublico />} />
+              <Route path="/registro" element={<RegistroPublico />} />
               
               {/* Portal de Músicos - usa SupabaseAuthContext */}
               <Route 
@@ -855,6 +860,7 @@ function App() {
                         <Route path="/asistencia/registro" element={<RegistroAsistencia />} />
                         <Route path="/admin/configuracion" element={<ConfiguracionApp />} />
                         <Route path="/admin/preview-musico" element={<PreviewMusico />} />
+                        <Route path="/admin/historial-musicos" element={<HistorialMusicos />} />
                         <Route path="/informes" element={<Informes />} />
                         <Route path="/admin" element={<Navigate to="/admin/usuarios" replace />} />
                         <Route path="/admin/mi-perfil" element={<MiPerfilGestor />} />

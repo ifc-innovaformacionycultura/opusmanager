@@ -37,6 +37,7 @@ from routes_documentos import router as documentos_router
 from routes_configuracion import router as configuracion_router
 from routes_fichaje import router as fichaje_router
 from routes_preview import router as preview_router
+from routes_registro import router as registro_router
 
 # ==================== App Configuration ====================
 
@@ -99,6 +100,7 @@ app.include_router(documentos_router)  # /api/gestor/documentos/* + /api/portal/
 app.include_router(configuracion_router)  # /api/admin/configuracion + /api/admin/fichaje-reglas
 app.include_router(fichaje_router)  # /api/fichaje/* + /api/gestor/registro-asistencia
 app.include_router(preview_router)  # /api/gestor/preview/* + /api/preview/{token}
+app.include_router(registro_router)  # /api/registro-publico/* + /api/gestor/solicitudes-registro/*
 
 # ==================== Health Check ====================
 
