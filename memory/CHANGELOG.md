@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## Iter 22 · 2026-05-01 · Reorganización menú lateral + unificación de guards
+
+### BLOQUE 1 — Reorganización del menú lateral (solo visual)
+- 7 grupos colapsables con iconos lucide-react SVG (no emojis):
+  - **Temporada** (Calendar): Configuración de Eventos · Presupuestos · Seguimiento · Plantillas Definitivas
+  - **Logística y Servicios** (Truck): Logística y Servicios · Registro de Asistencia
+  - **Economía** (CreditCard): Gestión Económica · Análisis Económico · Recibos y Certificados · Informes
+  - **Músicos** (Users): Base de Datos de Músicos *(badge solicitudes pendientes)* · Historial y CRM · Vista Músico
+  - **Repertorio y Material** (BookOpen): Archivo Musical · Inventario Material
+  - **Comunicaciones** (MessageSquare): Mensajes · Centro de Comunicaciones
+  - **Administración** (Settings): Tareas · Incidencias · Reclamaciones · Push · Emails · Actividad · Usuarios · Permisos · Configuración
+- Título H1 de `/asistencia/logistica` cambiado a "Logística y Servicios".
+- Rutas IDÉNTICAS a iter21 (zero cambios funcionales).
+
+### BLOQUE 2 — Refactor y mejoras
+- **2A** `auth_utils.is_super_admin()` unificado considera `profile.rol` además de `user.rol` y email. `routes_configuracion`, `routes_preview`, `routes_registro`, `routes_recordatorios` ahora delegan en él (helpers locales son wrappers).
+- **2B** Sustitución masiva de `navItems` eliminó duplicados pre-existentes (key `recordatorios` aparecía 2 veces en el grupo administración).
+- **2C** Comedor en portal del músico: ya integrado junto a logística (verificado).
+- **2D** Endpoint `/api/gestor/pendientes` añade `solicitudes_pendientes` (count de `solicitudes_registro` con estado='pendiente'). Badge rojo en item "Base de Datos de Músicos" del menú.
+
+### Testing — iter22.json
+- **Backend: 18/18 PASS** (pytest unificación guards + endpoint pendientes)
+- **Frontend: 100%** (menú reorganizado, iconos lucide, H1, navegación, badges)
+- **Sin regresiones**
+
+### Salvaguardas respetadas ✅
+- AuthContext, SupabaseAuthContext, LoginUnificado, guards (mejorados pero compatibles), cálculo cachés, rutas existentes — todo intacto.
+
+---
+
 ## Iter 21 · 2026-05-01 · Auto-registro + CRM neutro + Historial/CRM + 5ª plantilla
 
 ### BLOQUE 1 — Auto-registro de músicos

@@ -39,6 +39,9 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 - [x] **Iter 21 — CRM neutro** (contactos sin evento + auto-registro de emails y WhatsApp)
 - [x] **Iter 21 — Página Historial y CRM** (timeline + gantt + exportar CSV)
 - [x] **Iter 21 — 5ª plantilla email** (acceso al portal — perfil creado por gestor)
+- [x] **Iter 22 — Reorganización menú lateral** (7 grupos lucide-react, sin tocar rutas)
+- [x] **Iter 22 — Unificación de guards admin** (auth_utils.is_super_admin)
+- [x] **Iter 22 — Badge solicitudes pendientes** en "Base de Datos de Músicos"
 
 > Ver `/app/memory/CHANGELOG.md` para el detalle del sprint Iter 20.
 
