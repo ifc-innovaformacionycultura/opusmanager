@@ -18,7 +18,11 @@ BUCKET = "configuracion"
 
 def _is_admin_or_director(user: dict) -> bool:
     rol = (user or {}).get("rol") or ((user or {}).get("profile") or {}).get("rol")
-    return rol in ("admin", "director_general")
+    if rol in ("admin", "director_general"):
+        return True
+    # El admin histórico de la plataforma se identifica por email (rol real = 'gestor' en BD).
+    email = ((user or {}).get("email") or ((user or {}).get("profile") or {}).get("email") or "").lower()
+    return email == "admin@convocatorias.com"
 
 
 # =============================================================================

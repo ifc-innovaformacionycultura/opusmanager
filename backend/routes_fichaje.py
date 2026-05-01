@@ -39,11 +39,19 @@ def _now_utc() -> datetime:
 
 
 def _ensure_qr_token(ensayo_id: str) -> Dict[str, Any]:
-    """Devuelve el token QR activo del ensayo, creándolo si no existe."""
-    rows = supabase.table("ensayo_qr").select("*").eq("ensayo_id", ensayo_id).eq("activo", True).order("created_at", desc=True).limit(1).execute().data or []
-    if rows:
+    """Devuelve el token QR activo del ensayo, creándolo o reactivándolo si no existe."""
+    # Busca primero cualquier fila para ese ensayo (activa o no) — la tabla tiene UNIQUE(ensayo_id).
+    rows = supabase.table("ensayo_qr").select("*").eq("ensayo_id", ensayo_id).limit(1).execute().data or []
+    if rows and rows[0].get("activo"):
         return rows[0]
     token = secrets.token_urlsafe(20)
+    if rows:
+        # Existe fila pero inactiva → reactivar con nuevo token (respeta UNIQUE constraint).
+        upd = supabase.table("ensayo_qr").update({
+            "token": token, "activo": True
+        }).eq("id", rows[0]["id"]).execute()
+        return (upd.data or [None])[0] or {"ensayo_id": ensayo_id, "token": token, "activo": True}
+    # No existe fila → insertar.
     r = supabase.table("ensayo_qr").insert({"ensayo_id": ensayo_id, "token": token, "activo": True}).execute()
     return (r.data or [None])[0] or {"ensayo_id": ensayo_id, "token": token, "activo": True}
 
@@ -142,9 +150,14 @@ async def registro_asistencia(temporada: Optional[str] = None, current_user: dic
 
 @router.post("/gestor/ensayo-qr/{ensayo_id}/regenerar")
 async def regenerar_qr(ensayo_id: str, current_user: dict = Depends(get_current_gestor)):
-    # Desactivar anteriores
-    supabase.table("ensayo_qr").update({"activo": False}).eq("ensayo_id", ensayo_id).execute()
+    # La tabla ensayo_qr tiene UNIQUE(ensayo_id): siempre hacemos UPDATE sobre la fila existente.
     token = secrets.token_urlsafe(20)
+    existing = supabase.table("ensayo_qr").select("id").eq("ensayo_id", ensayo_id).limit(1).execute().data or []
+    if existing:
+        r = supabase.table("ensayo_qr").update({
+            "token": token, "activo": True
+        }).eq("id", existing[0]["id"]).execute()
+        return {"ok": True, "qr": (r.data or [None])[0]}
     r = supabase.table("ensayo_qr").insert({"ensayo_id": ensayo_id, "token": token, "activo": True}).execute()
     return {"ok": True, "qr": (r.data or [None])[0]}
 
