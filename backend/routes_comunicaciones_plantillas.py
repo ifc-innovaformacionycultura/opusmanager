@@ -153,6 +153,122 @@ PRESETS = {
 }
 
 
+# ============ D3 — Catálogo de plantillas predefinidas listas para usar ============
+
+def _bloque_cta(label: str, url: str) -> Dict[str, Any]:
+    return {"id": f"b-cta-{_uuid.uuid4().hex[:6]}", "tipo": "boton", "props": {
+        "label": label, "url": url,
+        "color": "#1e293b", "texto_color": "#ffffff",
+    }}
+
+
+def _bloque_texto(html: str) -> Dict[str, Any]:
+    return {"id": f"b-t-{_uuid.uuid4().hex[:6]}", "tipo": "texto", "props": {"html": html}}
+
+
+def _bloque_pie() -> Dict[str, Any]:
+    return {"id": f"b-p-{_uuid.uuid4().hex[:6]}", "tipo": "pie", "props": {
+        "texto": "IFC OPUS MANAGER · Sistema de gestión orquestal",
+        "estilo": "navy_gold",
+    }}
+
+
+def _bloque_cabecera(titulo: str, subtitulo: str) -> Dict[str, Any]:
+    return {"id": f"b-h-{_uuid.uuid4().hex[:6]}", "tipo": "cabecera", "props": {
+        "titulo": titulo, "subtitulo": subtitulo,
+        "alineacion": "left", "estilo": "navy_gold",
+    }}
+
+
+CATALOGO_PLANTILLAS = {
+    "convocatoria_temporada": {
+        "nombre": "📨 Convocatoria de temporada",
+        "descripcion": "Comunicación oficial de apertura de una nueva temporada con enlace al portal.",
+        "asunto_default": "Convocatoria de la temporada {temporada}",
+        "variables": ["nombre", "temporada", "fecha_inicio", "enlace_portal"],
+        "build_bloques": lambda: [
+            _bloque_cabecera("Convocatoria de temporada", "Temporada {temporada}"),
+            _bloque_texto("<p>Estimado/a <strong>{nombre}</strong>,</p><p>Tenemos el placer de comunicarte la apertura de la <strong>temporada {temporada}</strong>, que dará comienzo el <strong>{fecha_inicio}</strong>.</p><p>Puedes consultar todos los detalles y confirmar tu disponibilidad desde tu portal personal.</p>"),
+            _bloque_cta("Acceder al portal", "{enlace_portal}"),
+            _bloque_pie(),
+        ],
+    },
+    "recordatorio_disponibilidad": {
+        "nombre": "🎻 Recordatorio disponibilidad",
+        "descripcion": "Recordar al músico que indique su disponibilidad antes de la fecha límite.",
+        "asunto_default": "Recuerda confirmar tu disponibilidad para {evento}",
+        "variables": ["nombre", "evento", "fecha_limite", "enlace_portal"],
+        "build_bloques": lambda: [
+            _bloque_cabecera("Recordatorio de disponibilidad", "Acción requerida"),
+            _bloque_texto("<p>Hola <strong>{nombre}</strong>,</p><p>Te recordamos que aún no hemos recibido tu disponibilidad para <strong>{evento}</strong>. La fecha límite es el <strong>{fecha_limite}</strong>.</p><p>Tu respuesta es fundamental para poder organizar la plantilla.</p>"),
+            _bloque_cta("Confirmar disponibilidad", "{enlace_portal}"),
+            _bloque_pie(),
+        ],
+    },
+    "bienvenida_musico": {
+        "nombre": "💌 Bienvenida nuevo músico",
+        "descripcion": "Email de bienvenida cuando se invita a un nuevo músico a unirse.",
+        "asunto_default": "Te damos la bienvenida a la IFC OPUS",
+        "variables": ["nombre", "enlace_activacion"],
+        "build_bloques": lambda: [
+            _bloque_cabecera("Bienvenido/a a IFC OPUS", "Tu cuenta está lista"),
+            _bloque_texto("<p>¡Hola <strong>{nombre}</strong>!</p><p>Nos complace darte la bienvenida al sistema de gestión de la orquesta. Para activar tu cuenta y acceder al portal pulsa el siguiente botón:</p>"),
+            _bloque_cta("Activar mi cuenta", "{enlace_activacion}"),
+            _bloque_texto("<p style=\"color:#475569;font-size:13px\">Si tienes cualquier pregunta, puedes responder directamente a este correo.</p>"),
+            _bloque_pie(),
+        ],
+    },
+    "convocatoria_especifica": {
+        "nombre": "🎟️ Convocatoria específica",
+        "descripcion": "Convocatoria detallada para un evento concreto con fecha, lugar, hora y notas.",
+        "asunto_default": "Convocatoria · {evento} ({fecha})",
+        "variables": ["nombre", "evento", "fecha", "lugar", "hora", "notas"],
+        "build_bloques": lambda: [
+            _bloque_cabecera("{evento}", "Convocatoria"),
+            _bloque_texto("<p>Estimado/a <strong>{nombre}</strong>,</p><p>Quedas convocado/a al siguiente servicio:</p><ul><li><strong>Fecha:</strong> {fecha}</li><li><strong>Lugar:</strong> {lugar}</li><li><strong>Hora:</strong> {hora}</li></ul><p><em>{notas}</em></p>"),
+            _bloque_pie(),
+        ],
+    },
+}
+
+
+@router.get("/catalogo")
+async def listar_catalogo(current_user: dict = Depends(get_current_gestor)):
+    return {"catalogo": [
+        {"key": k, "nombre": v["nombre"], "descripcion": v["descripcion"],
+         "asunto_default": v["asunto_default"], "variables": v["variables"]}
+        for k, v in CATALOGO_PLANTILLAS.items()
+    ]}
+
+
+@router.post("/catalogo/{key}/crear")
+async def crear_desde_catalogo(key: str, current_user: dict = Depends(get_current_gestor)):
+    if key not in CATALOGO_PLANTILLAS:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada en catálogo")
+    catalog_entry = CATALOGO_PLANTILLAS[key]
+    preset = _preset_ifc_corporate()
+    gestor_id, gestor_nombre = _gestor_nombre(current_user)
+    fila = {
+        "id": str(_uuid.uuid4()),
+        "nombre": catalog_entry["nombre"],
+        "descripcion": catalog_entry["descripcion"],
+        "tema_preset": "ifc_corporate",
+        "asunto_default": catalog_entry["asunto_default"],
+        "ajustes_globales": preset["ajustes_globales"],
+        "bloques": catalog_entry["build_bloques"](),
+        "estado": "borrador",
+        "creado_por": gestor_id,
+        "creado_por_nombre": gestor_nombre,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        r = supabase.table('comunicaciones_plantillas').insert(fila).execute()
+        return {"plantilla": (r.data or [fila])[0]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/presets")
 async def listar_presets(current_user: dict = Depends(get_current_gestor)):
     return {"presets": [{"key": k, "nombre": v["nombre"]} for k, v in PRESETS.items()]}

@@ -15,15 +15,17 @@ const ComidaItem = ({ item, apiUrl, onRefresh }) => {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
 
-  const enviar = async ({ confirmado, toma_cafe }) => {
+  const enviar = async ({ confirmado, toma_cafe, opcion_menu_seleccionada }) => {
     setSaving(true); setErr(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
+      const body = { confirmado, toma_cafe };
+      if (opcion_menu_seleccionada !== undefined) body.opcion_menu_seleccionada = opcion_menu_seleccionada;
       const res = await fetch(`${apiUrl}/portal/comidas/${item.id}/confirmar`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmado, toma_cafe }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -37,6 +39,8 @@ const ComidaItem = ({ item, apiUrl, onRefresh }) => {
 
   const estado = item.mi_confirmacion;          // true / false / null
   const tomaCafe = item.mi_toma_cafe;            // true / false / null
+  const miOpcion = item.mi_opcion_menu || null;
+  const opciones = Array.isArray(item.opciones_menu) ? item.opciones_menu : [];
 
   return (
     <div className="border border-orange-200 rounded-lg p-3 bg-orange-50/40" data-testid={`comida-item-${item.id}`}>
@@ -70,6 +74,26 @@ const ComidaItem = ({ item, apiUrl, onRefresh }) => {
       </div>
 
       {item.notas && <div className="text-xs text-slate-600 italic mb-2">📝 {item.notas}</div>}
+
+      {/* Selector de opción de menú (D1) */}
+      {opciones.length > 0 && estado === true && (
+        <div className="mb-2 bg-white border border-orange-200 rounded p-2">
+          <div className="text-xs font-semibold text-orange-800 mb-1">Elige tu opción de menú:</div>
+          <div className="space-y-1">
+            {opciones.map((op) => (
+              <label key={op.id} className="flex items-center gap-2 cursor-pointer text-sm">
+                <input type="radio" name={`opc-${item.id}`}
+                       checked={miOpcion === op.id}
+                       disabled={saving}
+                       onChange={() => enviar({ confirmado: true, toma_cafe: tomaCafe, opcion_menu_seleccionada: op.id })}
+                       data-testid={`radio-opcion-${item.id}-${op.id}`}
+                       className="w-4 h-4 accent-orange-600"/>
+                <span>{op.nombre || op.id}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <button type="button" onClick={() => enviar({ confirmado: true, toma_cafe: tomaCafe })} disabled={saving}

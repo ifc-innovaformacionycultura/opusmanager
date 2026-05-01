@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from supabase_client import supabase, create_user_profile
 from auth_utils import get_current_user, get_current_gestor
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 from datetime import datetime
 from io import BytesIO, StringIO
 from openpyxl import Workbook, load_workbook
@@ -3587,6 +3587,7 @@ class ComidaItem(BaseModel):
     precio_cafe: Optional[float] = 0
     fecha_limite_confirmacion: Optional[str] = None
     notas: Optional[str] = None
+    opciones_menu: Optional[List[Dict[str, Any]]] = None  # [{id, nombre}]
 
 
 class ComidasBulkRequest(BaseModel):
@@ -3648,7 +3649,7 @@ async def delete_comida(comida_id: str, current_user: dict = Depends(get_current
 async def get_confirmaciones_comida(comida_id: str, current_user: dict = Depends(get_current_gestor)):
     """Para un servicio de comedor, devuelve músicos confirmados, rechazados y sin respuesta."""
     try:
-        cr = supabase.table('evento_comidas').select('evento_id,incluye_cafe,precio_menu,precio_cafe') \
+        cr = supabase.table('evento_comidas').select('evento_id,incluye_cafe,precio_menu,precio_cafe,opciones_menu') \
             .eq('id', comida_id).limit(1).execute().data
         if not cr:
             raise HTTPException(status_code=404, detail="Comida no encontrada")
@@ -3669,12 +3670,14 @@ async def get_confirmaciones_comida(comida_id: str, current_user: dict = Depends
 
         confirmados = []; rechazados = []; sin_respuesta = []
         total_recaudado = 0.0
+        desglose_opciones: Dict[str, int] = {}  # id opcion -> nº confirmados
         for u in users:
             c = conf_by_user.get(u['id'])
             entry = {
                 **u,
                 "respuesta_at": (c or {}).get('updated_at'),
                 "toma_cafe": (c or {}).get('toma_cafe'),
+                "opcion_menu": (c or {}).get('opcion_menu_seleccionada'),
                 "notas": (c or {}).get('notas'),
             }
             if c is None or c.get('confirmado') is None:
@@ -3684,13 +3687,24 @@ async def get_confirmaciones_comida(comida_id: str, current_user: dict = Depends
                 total_recaudado += float(com.get('precio_menu') or 0)
                 if com.get('incluye_cafe') and c.get('toma_cafe'):
                     total_recaudado += float(com.get('precio_cafe') or 0)
+                op = c.get('opcion_menu_seleccionada')
+                if op:
+                    desglose_opciones[op] = desglose_opciones.get(op, 0) + 1
             else:
                 rechazados.append(entry)
+        # Resolver nombres de las opciones
+        opciones_defs = {o.get('id'): o.get('nombre', o.get('id')) for o in (com.get('opciones_menu') or []) if isinstance(o, dict)}
+        desglose_por_opcion = [
+            {"id": oid, "nombre": opciones_defs.get(oid, oid), "cantidad": n}
+            for oid, n in sorted(desglose_opciones.items(), key=lambda x: -x[1])
+        ]
         return {
             "confirmados": confirmados,
             "rechazados": rechazados,
             "sin_respuesta": sin_respuesta,
             "total_recaudado": round(total_recaudado, 2),
+            "desglose_por_opcion": desglose_por_opcion,
+            "opciones_menu": com.get('opciones_menu') or [],
         }
     except HTTPException:
         raise

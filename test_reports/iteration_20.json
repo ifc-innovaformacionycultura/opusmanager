@@ -1,0 +1,42 @@
+{
+  "summary": "Iter20 E2E: Bloques 1, 2, B, D1-D4 + regresión. Backend 16/18 pytest (Bloque1 GET/PUT admin y DG OK, regenerar QR idempotente OK, preview generar/leer/expirar/404 OK, catálogo plantillas 4 items + crear OK, calendario-eventos OK, resumen mensual DG OK). Frontend: /admin/preview-musico carga con iPhone frame, modal catálogo con 4 plantillas y /portal-preview/{token} renderiza banner amarillo + 4 pestañas navegación + datos músico. Bug único detectado: endpoint D2 rechaza admin@convocatorias.com por rol=gestor en BD (mismo patrón ya resuelto en routes_configuracion.py, falta replicar en routes_recordatorios.py::_es_admin).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/recordatorios/send-monthly-summary-musicians", "issue": "Rechaza admin@convocatorias.com con 403 'Solo admin o director_general'. El check _es_admin (linea 463 routes_recordatorios.py) solo mira rol, no email. Funciona con director_general (DG). Fix: replicar la lógica de routes_configuracion.py::_is_admin_or_director para aceptar email admin@convocatorias.com cuando rol=gestor."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/preview-musico", "issues": ["Search con 'jesus' (minúsculas sin acento) no encuentra 'Jesús Alonso' — la normalización case/acento debería ser tolerante. Con 'Jesús' o 'Alonso' funciona."]},
+      {"screen": "Dashboard admin al login", "issues": ["3 warnings 'Encountered two children with the same key' en consola (pre-existente iter19; no introducido en este sprint)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter20_bloques_bd.py",
+    "/app/test_reports/pytest/iter20_results.xml"
+  ],
+  "action_items": [
+    "(MENOR) Extender routes_recordatorios.py::_es_admin para aceptar email=admin@convocatorias.com (mismo patrón que routes_configuracion.py::_is_admin_or_director). Afecta a todos los endpoints /api/admin/recordatorios/* (run-now, run-last-call, send-weekly-summary, send-monthly-summary-musicians, status, historial, suscriptores, errores, weekly-stats). Sin este fix, el usuario 'admin' no puede disparar los recordatorios manualmente aunque es el admin funcional.",
+    "(UX) Normalizar búsqueda en PreviewMusico.js para ignorar acentos (usar string.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'')).",
+    "(PRE-EXISTENTE) Corregir keys duplicadas en render del dashboard admin (warning React)."
+  ],
+  "critical_code_review_comments": [
+    "routes_recordatorios.py:463 — _es_admin no considera email de admin, a diferencia del resto de guards del sistema. Inconsistente: causa 403 falso para el usuario admin funcional. Deberían centralizarse todos los checks admin/director en un único auth_utils helper.",
+    "routes_preview.py — correcto: _is_admin sí contempla email admin@convocatorias.com. Tokens anteriores correctamente desactivados (test test_generar_token_desactiva_anteriores PASS).",
+    "routes_fichaje.py:151-162 — regenerar_qr ahora hace UPDATE sobre fila existente (bug iter19 corregido). Idempotencia verificada (regenerar 2 veces OK). Tabla ensayo_qr con UNIQUE(ensayo_id) ya no es problema.",
+    "routes_comunicaciones_plantillas.py — endpoint /catalogo y /catalogo/{key}/crear funcionan correctamente, devuelve 4 plantillas predefinidas y aplica tema IFC Corporate al crearlas."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter20_bloques_bd.py"
+  ],
+  "success_rate": {"backend": "94% (16/17 no-skip pasan; 1 skipped por falta de comidas con opciones_menu en BD)", "frontend": "100% (preview-musico, portal-preview/{token}, catálogo modal y admin/configuracion todos OK)"},
+  "test_credentials": "admin@convocatorias.com/Admin123! (rol=gestor en BD pero admin por email), jalonso@p.csmb.es/Director2026! (director_general), jesusalonsodirector@gmail.com/Musico123! (id 8bf521fa-dc27-4c5b-8069-d36d3d4eaad3).",
+  "seed_data_creation": "Ninguno. Se crearon plantillas desde catálogo (nombres con prefijo del catálogo, no TEST_) y tokens de preview (auto-expiran en 30min).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter20 validó Bloques 1 (config admin/DG), 2 (QR regenerar idempotente), B (preview token + iframe portal), D1 (estructura desglose_por_opcion presente pero sin datos de prueba en BD), D2 (endpoint /api/admin/recordatorios/send-monthly-summary-musicians funciona con DG, falla con admin por bug _es_admin), D3 (catálogo con 4 plantillas, crear OK), D4 (/api/gestor/calendario-eventos OK). Para probar D1 end-to-end necesita seed: crear evento con comida con opciones_menu jsonb rellenado y al menos una confirmación. Los bugs críticos de iter19 (regenerar_qr unique constraint, PUT admin config 403, /admin/registro-asistencia pantalla blanca, /portal redirect) están resueltos.",
+  "rca of the issue": "D2 endpoint 403 con admin: routes_recordatorios.py::_es_admin (linea 463) comprueba únicamente rol in ('admin','director_general'). El usuario admin@convocatorias.com tiene rol='gestor' en BD. routes_configuracion.py::_is_admin_or_director ya fue parcheado para aceptar ese email; mismo patrón debe aplicarse a routes_recordatorios. Reproducción: login admin → POST /api/admin/recordatorios/send-monthly-summary-musicians → 403. Con DG funciona. Fix (~4 líneas): `email=(profile.get('email') or current_user.get('email') or '').lower(); return rol in ('admin','director_general') or email == 'admin@convocatorias.com'`."
+}

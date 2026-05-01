@@ -24,6 +24,7 @@ const newComida = () => ({
   precio_cafe: 0,
   fecha_limite_confirmacion: '',
   notas: '',
+  opciones_menu: [],
 });
 
 // ---- Panel de confirmaciones de músicos -----------------------------------
@@ -87,6 +88,20 @@ const ConfirmacionesComidaPanel = ({ comidaId, api }) => {
                 <span className="text-slate-500">Total recaudación estimada: </span>
                 <strong className="text-emerald-700">{fmtMoney(data.total_recaudado)}</strong>
               </div>
+
+              {Array.isArray(data.desglose_por_opcion) && data.desglose_por_opcion.length > 0 && (
+                <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-2">
+                  <div className="font-semibold text-amber-800 mb-1">Desglose por opción de menú</div>
+                  <ul className="grid grid-cols-2 gap-1 text-amber-900">
+                    {data.desglose_por_opcion.map((d) => (
+                      <li key={d.id} data-testid={`desglose-op-${d.id}`} className="flex justify-between">
+                        <span>{d.nombre}</span>
+                        <strong>{d.cantidad}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -321,6 +336,49 @@ const ComidasSection = ({ eventoId, api }) => {
                     placeholder="Avisar de alergias, opciones vegetarianas, etc."
                     className="border border-slate-300 rounded px-2 py-1" />
         </label>
+
+        {/* Opciones de menú — hasta 4 variantes (D1) */}
+        <div className="md:col-span-3 border-t border-amber-200 pt-2 mt-1">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-amber-800">Opciones de menú (máx. 4)</span>
+            <button type="button"
+                    disabled={(it.opciones_menu || []).length >= 4}
+                    onClick={() => {
+                      const ops = [...(it.opciones_menu || [])];
+                      ops.push({ id: `op-${Date.now()}`, nombre: '' });
+                      updateField(idx, 'opciones_menu', ops);
+                    }}
+                    data-testid={`btn-add-opcion-menu-${idx}`}
+                    className="px-2 py-0.5 text-xs border border-amber-400 bg-amber-100 text-amber-800 rounded disabled:opacity-40">
+              + Añadir opción
+            </button>
+          </div>
+          {(it.opciones_menu || []).length === 0 && (
+            <p className="text-xs text-slate-500 italic">Sin opciones configuradas. Si añades opciones, los músicos deberán elegir una al confirmar su comida.</p>
+          )}
+          <div className="space-y-1">
+            {(it.opciones_menu || []).map((op, oi) => (
+              <div key={op.id || oi} className="flex items-center gap-2">
+                <input type="text" value={op.nombre || ''}
+                       onChange={(e) => {
+                         const ops = [...(it.opciones_menu || [])];
+                         ops[oi] = { ...ops[oi], nombre: e.target.value, id: ops[oi].id || `op-${Date.now()}-${oi}` };
+                         updateField(idx, 'opciones_menu', ops);
+                       }}
+                       placeholder={`Opción ${oi + 1} (ej: Menú clásico, Vegetariano, Sin gluten, Infantil)`}
+                       data-testid={`inp-opcion-menu-${idx}-${oi}`}
+                       className="flex-1 border border-amber-300 rounded px-2 py-0.5 text-xs"/>
+                <button type="button"
+                        onClick={() => {
+                          const ops = [...(it.opciones_menu || [])];
+                          ops.splice(oi, 1);
+                          updateField(idx, 'opciones_menu', ops);
+                        }}
+                        className="text-xs text-red-600 hover:text-red-800">🗑</button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

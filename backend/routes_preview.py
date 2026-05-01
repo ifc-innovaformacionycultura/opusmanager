@@ -265,7 +265,7 @@ async def obtener_preview(token: str):
     comidas: List[Dict] = []
     try:
         if evento_ids:
-            comidas = supabase.table("comida_asistencias").select("*, comida:evento_comidas(*)") \
+            comidas = supabase.table("confirmaciones_comida").select("*, comida:evento_comidas(*)") \
                 .eq("usuario_id", musico_id).execute().data or []
     except Exception:
         comidas = []

@@ -584,6 +584,7 @@ async def get_comidas_musico(
             it['mi_confirmacion'] = c.get('confirmado') if c else None
             it['mi_toma_cafe'] = c.get('toma_cafe') if c else None
             it['mi_confirmacion_at'] = c.get('updated_at') if c else None
+            it['mi_opcion_menu'] = c.get('opcion_menu_seleccionada') if c else None
         return {"comidas": items}
     except Exception as e:
         raise HTTPException(
@@ -595,6 +596,7 @@ async def get_comidas_musico(
 class ConfirmacionComidaPayload(BaseModel):
     confirmado: Optional[bool] = None
     toma_cafe: Optional[bool] = None
+    opcion_menu_seleccionada: Optional[str] = None
 
 
 @router.post("/comidas/{comida_id}/confirmar")
@@ -603,7 +605,7 @@ async def confirmar_comida(
     payload: ConfirmacionComidaPayload,
     current_user: dict = Depends(get_current_user)
 ):
-    """El músico confirma o rechaza un servicio de comedor (y opcionalmente si tomará café)."""
+    """El músico confirma o rechaza un servicio de comedor (y opcionalmente si tomará café / opción de menú)."""
     try:
         usuario_id = current_user.get("id") or (current_user.get("profile") or {}).get("id")
         if not usuario_id:
@@ -618,6 +620,8 @@ async def confirmar_comida(
             "toma_cafe": payload.toma_cafe,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+        if payload.opcion_menu_seleccionada is not None:
+            body["opcion_menu_seleccionada"] = payload.opcion_menu_seleccionada
         if existing:
             r = supabase.table('confirmaciones_comida').update(body).eq('id', existing[0]['id']).execute()
         else:

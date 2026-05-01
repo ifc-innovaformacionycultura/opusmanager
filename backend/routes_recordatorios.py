@@ -399,6 +399,15 @@ def init_scheduler():
             )
         except Exception as e:
             logger.warning(f"No se pudo registrar resumen_semanal: {e}")
+        # Email resumen mensual al músico: día 1 @ 08:00 Europe/Madrid (D2)
+        try:
+            from email_resumen_mensual import send_monthly_summary_to_musicians as _monthly
+            sched.add_job(
+                _monthly, CronTrigger(day=1, hour=8, minute=0, timezone=tz),
+                id="resumen_mensual_musicos", replace_existing=True, max_instances=1,
+            )
+        except Exception as e:
+            logger.warning(f"No se pudo registrar resumen_mensual_musicos: {e}")
         sched.start()
         _scheduler = sched
         logger.info("APScheduler iniciado: recordatorios diarios @ 09:00 + última llamada @ 12:00 + resumen semanal lunes @ 08:00 (Europe/Madrid)")
@@ -559,3 +568,16 @@ async def weekly_stats(current_user: dict = Depends(get_current_gestor)):
         return {"stats": compute_stats()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/send-monthly-summary-musicians")
+async def send_monthly_summary_musicians_now(current_user: dict = Depends(get_current_gestor)):
+    """Dispara manualmente el resumen mensual a los músicos activos (D2)."""
+    if not _es_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo admin o director_general.")
+    try:
+        from email_resumen_mensual import send_monthly_summary_to_musicians
+        return send_monthly_summary_to_musicians()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

@@ -85,6 +85,33 @@ const ConfiguracionPlantillas = () => {
     }
   };
 
+  // ---------- D3: Catálogo de plantillas predefinidas ----------
+  const [catalogoOpen, setCatalogoOpen] = useState(false);
+  const [catalogo, setCatalogo] = useState([]);
+  const abrirCatalogo = async () => {
+    try {
+      const r = await api.get("/api/comunicaciones/catalogo");
+      setCatalogo(r.data?.catalogo || []);
+      setCatalogoOpen(true);
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
+    }
+  };
+  const crearDesdeCatalogo = async (key) => {
+    try {
+      const r = await api.post(`/api/comunicaciones/catalogo/${key}/crear`);
+      const nueva = r.data?.plantilla;
+      setCatalogoOpen(false);
+      if (nueva) {
+        await cargarPlantillas();
+        setActivaId(nueva.id);
+        setFeedback({ tipo: "ok", msg: "Plantilla creada desde catálogo" });
+      }
+    } catch (e) {
+      setFeedback({ tipo: "err", msg: e?.response?.data?.detail || e.message });
+    }
+  };
+
   // ---------- Duplicar ----------
   const duplicarPlantilla = async (id) => {
     const orig = plantillas.find((p) => p.id === id);
@@ -251,6 +278,13 @@ const ConfiguracionPlantillas = () => {
             Constructor visual de correos por bloques con 3 temas estéticos predefinidos.
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <button onClick={abrirCatalogo}
+                  data-testid="btn-abrir-catalogo"
+                  className="text-xs px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 font-medium">
+            ✨ Del catálogo
+          </button>
+        </div>
         {activa && (
           <div className="flex items-center gap-3">
             {feedback && (
@@ -375,6 +409,32 @@ const ConfiguracionPlantillas = () => {
         tipo={pickerTipo}
         onSelect={pickerCallback}
       />
+
+      {/* D3 — Modal catálogo de plantillas predefinidas */}
+      {catalogoOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="catalogo-modal">
+          <div className="bg-white rounded-lg max-w-2xl w-full p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900">Elige una plantilla predefinida</h3>
+              <button onClick={() => setCatalogoOpen(false)} className="text-slate-500 hover:text-slate-800 text-xl">×</button>
+            </div>
+            <p className="text-xs text-slate-600 mb-3">Cada plantilla se crea ya aplicada al tema <strong>IFC Corporate</strong> y con las variables necesarias. Podrás editarla después libremente.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {catalogo.map((c) => (
+                <button key={c.key} onClick={() => crearDesdeCatalogo(c.key)}
+                        data-testid={`btn-catalogo-${c.key}`}
+                        className="text-left p-3 border border-slate-200 rounded hover:border-slate-900 hover:bg-slate-50 transition">
+                  <div className="font-semibold text-sm text-slate-900">{c.nombre}</div>
+                  <div className="text-xs text-slate-600 mt-1">{c.descripcion}</div>
+                  <div className="text-[11px] text-slate-500 mt-2">
+                    Variables: {(c.variables || []).map((v) => `{${v}}`).join(" · ")}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
