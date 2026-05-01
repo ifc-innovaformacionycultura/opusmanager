@@ -461,13 +461,8 @@ async def status(current_user: dict = Depends(get_current_gestor)):
 # ============ Endpoints admin: historial, suscripciones, errores ============
 
 def _es_admin(current_user: dict) -> bool:
-    profile = current_user.get('profile') or {}
-    rol = profile.get('rol') or current_user.get('rol') or ''
-    if rol in ('admin', 'director_general'):
-        return True
-    # Admin histórico identificado por email (rol real = 'gestor' en BD).
-    email = (profile.get('email') or current_user.get('email') or '').lower()
-    return email == 'admin@convocatorias.com'
+    from auth_utils import is_super_admin
+    return is_super_admin(current_user)
 
 
 @router.post("/run-last-call")

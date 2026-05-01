@@ -1,0 +1,41 @@
+{
+  "summary": "Iter22 E2E: Backend 18/18 pytest PASS (unificación is_super_admin para admin@convocatorias.com, registro-publico, preview, recordatorios, solicitudes_pendientes en /api/gestor/pendientes, director_general OK, músico denegado). Frontend: menú lateral reorganizado con 7 grupos (Temporada, Logística y Servicios, Economía, Músicos, Repertorio y Material, Comunicaciones, Administración) — los 26 children navegables con data-testid=sidebar-nav-{id}. Iconos lucide SVG (no emojis) en todos los grupos. H1 '/asistencia/logistica' = 'Logística y Servicios' ✓. Badge de 'musicos' no se renderiza con count=0 (comportamiento correcto; count es leído de pendientes.solicitudes_pendientes). Navegación hacia /configuracion/eventos, /asistencia/recibos-certificados, /admin/musicos, /admin/archivo, /admin/mensajes, /admin/configuracion OK. Login admin/DG/músico todos 200.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_guards_unified.py",
+    "/app/test_reports/pytest/iter22_results.xml"
+  ],
+  "action_items": [
+    "(PRE-EXISTENTE, no introducido en iter22) Console warnings en dashboard sobre keys duplicadas — ignorado; ya reportado desde iter19/20/21 sin afectar funcionalidad."
+  ],
+  "critical_code_review_comments": [
+    "auth_utils.is_super_admin (líneas 63-73) correcto: considera profile.rol (admin/director_general) y email admin@convocatorias.com lower-case. Devuelve False si user es None. Bien unificado.",
+    "routes_configuracion.py: alias _is_admin_or_director = is_super_admin mantiene retro-compat. GET /admin/configuracion es abierto a cualquier autenticado (devuelve editable=False para non-admins), PUT y POST protegidos. Correcto y testeado.",
+    "routes_registro.py y routes_preview.py: _is_admin local wrapper alrededor de is_super_admin. Correctamente usan una única fuente de verdad.",
+    "routes_recordatorios.py: _es_admin wrapper local, 7 endpoints usan la misma comprobación. OK.",
+    "routes_gestor.py líneas 1661-1676: /pendientes añade solicitudes_pendientes con count='exact' + estado='pendiente' + try/except que devuelve 0 si la tabla no existe. Defensivo y correcto.",
+    "App.js:176-182 badgeFor('musicos') apunta a pendientes.solicitudes_pendientes con color rose-500; badge solo se renderiza si count>0. Consistente con resto de badges (seguimiento, mensajes, reclamaciones).",
+    "App.js:185-249 navItems: 7 grupos con iconos lucide (Calendar, Truck, CreditCard, Users, BookOpen, MessageSquare, Settings) + 26 children. Todas las rutas son idénticas a iter21 (sin cambios funcionales)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter22_guards_unified.py"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18 pytest pass)",
+    "frontend": "100% (menú, iconos, H1, navegación todos OK)"
+  },
+  "test_credentials": "admin@convocatorias.com/Admin123! (rol=gestor BD + super admin por email), jalonso@p.csmb.es/Director2026! (DG), jesusalonsodirector@gmail.com/Musico123! (músico).",
+  "seed_data_creation": "Ningún dato creado. Los tests son idempotentes (GET + PUT con valores actuales, dry_run en recordatorios).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter22 validó: (1) Unificación de guards vía is_super_admin — admin@convocatorias.com (rol BD=gestor) sigue pudiendo editar /api/admin/configuracion, /api/admin/registro-publico/config, /api/gestor/preview/generar-token, /api/admin/recordatorios/send-monthly-summary-musicians. (2) director_general jalonso@p.csmb.es también accede. (3) Músico (no admin) recibe 401/403 en PUT config + registro + preview. (4) GET /api/gestor/pendientes incluye solicitudes_pendientes:int. (5) Menú lateral admin con 7 grupos expandibles, iconos lucide SVG, 26 data-testids sidebar-nav-{id} navegan a rutas esperadas (idénticas a iter21). (6) H1 'Logística y Servicios' confirmada en /asistencia/logistica. (7) Badge de musicos (bg-rose-500) sólo se renderiza cuando solicitudes_pendientes>0; actualmente 0 por lo que no visible. Sin regresiones detectadas. NO se probó flujo completo auto-registro de solicitud nueva — ya testeado en iter21 y no modificado. NO se creó solicitud de prueba para forzar badge visible (requiere crear solicitud via /api/registro-publico/solicitar con token válido).",
+  "rca of the issue": "N/A — no issues."
+}

@@ -125,7 +125,7 @@ export default function Logistica() {
     <div className="space-y-4 p-4" data-testid="page-logistica">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-cabinet text-2xl font-bold text-slate-900 flex items-center gap-2">🚌 Logística</h1>
+          <h1 className="font-cabinet text-2xl font-bold text-slate-900 flex items-center gap-2">Logística y Servicios</h1>
           <p className="text-sm text-slate-500">Resumen global de transportes y alojamientos por evento.</p>
         </div>
       </div>

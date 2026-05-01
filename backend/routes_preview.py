@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from supabase_client import supabase
-from auth_utils import get_current_gestor
+from auth_utils import get_current_gestor, is_super_admin
 
 router = APIRouter(prefix="/api", tags=["preview-musico"])
 
@@ -26,11 +26,7 @@ TOKEN_TTL_MIN = 30
 
 
 def _is_admin(user: dict) -> bool:
-    rol = (user or {}).get("rol") or ((user or {}).get("profile") or {}).get("rol")
-    if rol in ("admin", "director_general"):
-        return True
-    email = ((user or {}).get("email") or ((user or {}).get("profile") or {}).get("email") or "").lower()
-    return email == "admin@convocatorias.com"
+    return is_super_admin(user)
 
 
 def _now_utc() -> datetime:

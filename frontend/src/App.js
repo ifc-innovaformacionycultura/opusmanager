@@ -175,7 +175,7 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
   // Map child id -> badge count
   const badgeFor = (id) => {
     if (id === 'reclamaciones') return { count: pendientes.reclamaciones_pendientes, color: 'bg-red-500' };
-    if (id === 'musicos') return { count: pendientes.perfiles_actualizados, color: 'bg-amber-500' };
+    if (id === 'musicos') return { count: pendientes.solicitudes_pendientes, color: 'bg-rose-500' };
     if (id === 'seguimiento') return { count: pendientes.respuestas_nuevas, color: 'bg-orange-500' };
     if (id === 'mensajes') return { count: pendientes.comentarios_pendientes, color: 'bg-blue-500' };
     return null;
@@ -183,90 +183,69 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
   const adminTotal = (pendientes.reclamaciones_pendientes || 0) + (pendientes.perfiles_actualizados || 0) + (pendientes.comentarios_pendientes || 0);
 
   const navItems = Array.isArray(user) ? [] : [
-    { 
-      id: "dashboard", 
-      label: "Dashboard", 
-      icon: "LayoutDashboard", 
-      path: "/" 
-    },
-    { 
-      id: "configuracion", 
-      label: "Configuración de temporada", 
-      icon: "Settings",
-      path: "/configuracion",
+    { id: "dashboard", label: "Dashboard", icon: "LayoutDashboard", path: "/" },
+    {
+      id: "temporada", label: "Temporada", icon: "Calendar", path: "/configuracion",
       children: [
-        { id: "eventos", label: "Eventos", path: "/configuracion/eventos" },
+        { id: "eventos", label: "Configuración de Eventos", path: "/configuracion/eventos" },
         { id: "presupuestos", label: "Presupuestos", path: "/configuracion/presupuestos" },
-        { id: "plantillas", label: "Centro de comunicaciones", path: "/configuracion/plantillas" }
-      ]
-    },
-    { 
-      id: "seguimiento", 
-      label: "Seguimiento de convocatorias", 
-      icon: "Users",
-      path: "/seguimiento"
-    },
-    { 
-      id: "plantillas-definitivas", 
-      label: "Plantillas definitivas", 
-      icon: "CheckSquare",
-      path: "/plantillas-definitivas"
+        { id: "seguimiento", label: "Seguimiento de Convocatorias", path: "/seguimiento" },
+        { id: "plantillas-definitivas", label: "Plantillas Definitivas", path: "/plantillas-definitivas" },
+      ],
     },
     {
-      id: "logistica",
-      label: "Desplazamientos y Alojamientos",
-      icon: "Truck",
-      path: "/asistencia/logistica"
-    },
-    { 
-      id: "asistencia", 
-      label: "Asistencia y pagos", 
-      icon: "CreditCard",
-      path: "/asistencia",
+      id: "logistica-servicios", label: "Logística y Servicios", icon: "Truck", path: "/asistencia/logistica",
       children: [
-        { id: "asistencia-pagos", label: "Gestión económica", path: "/asistencia/pagos" },
+        { id: "logistica", label: "Logística y Servicios", path: "/asistencia/logistica" },
         { id: "registro-asistencia", label: "Registro de Asistencia", path: "/asistencia/registro" },
-        { id: "analisis-economico", label: "Análisis económico", path: "/asistencia/analisis" },
-        { id: "recibos-certificados", label: "Recibos y certificados", path: "/asistencia/recibos-certificados" }
-      ]
+      ],
     },
-    { 
-      id: "informes", 
-      label: "Informes", 
-      icon: "BarChart3",
-      path: "/informes"
-    },
-    { 
-      id: "administracion", 
-      label: "Administración", 
-      icon: "Shield",
-      path: "/admin",
+    {
+      id: "economia", label: "Economía", icon: "CreditCard", path: "/asistencia",
       children: [
-        { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
-        { id: "musicos", label: "Base de datos músicos", path: "/admin/musicos" },
-        { id: "historial-musicos", label: "Historial y CRM", path: "/admin/historial-musicos" },
-        { id: "configuracion-app", label: "⚙️ Configuración", path: "/admin/configuracion" },
-        { id: "preview-musico", label: "👁 Vista músico", path: "/admin/preview-musico" },
-        { id: "tareas", label: "Planificador de tareas", path: "/admin/tareas" },
-        { id: "incidencias", label: "Feedback e incidencias", path: "/admin/incidencias" },
-        { id: "mensajes", label: "💬 Mensajes", path: "/admin/mensajes" },
-        { id: "archivo", label: "📚 Archivo musical", path: "/admin/archivo" },
-        { id: "inventario", label: "📦 Inventario material", path: "/admin/inventario" },
-        { id: "recordatorios", label: "Recordatorios auto.", path: "/admin/recordatorios" },
-        { id: "emails", label: "Historial de emails", path: "/admin/emails" },
-        { id: "config-email", label: "Configuración de email", path: "/admin/emails/configuracion" },
-        { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
-        { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
-        { id: "actividad", label: "Registro de actividad", path: "/admin/actividad" },
-        { id: "recordatorios", label: "Recordatorios push", path: "/admin/recordatorios" }
-      ]
+        { id: "asistencia-pagos", label: "Gestión Económica", path: "/asistencia/pagos" },
+        { id: "analisis-economico", label: "Análisis Económico", path: "/asistencia/analisis" },
+        { id: "recibos-certificados", label: "Recibos y Certificados", path: "/asistencia/recibos-certificados" },
+        { id: "informes", label: "Informes", path: "/informes" },
+      ],
     },
-    { 
-      id: "ayuda", 
-      label: "Manual de Usuario", 
-      icon: "HelpCircle",
-      path: "/ayuda"
-    }
+    {
+      id: "musicos-grupo", label: "Músicos", icon: "Users", path: "/admin/musicos",
+      children: [
+        { id: "musicos", label: "Base de Datos de Músicos", path: "/admin/musicos" },
+        { id: "historial-musicos", label: "Historial y CRM", path: "/admin/historial-musicos" },
+        { id: "preview-musico", label: "Vista Músico", path: "/admin/preview-musico" },
+      ],
+    },
+    {
+      id: "repertorio", label: "Repertorio y Material", icon: "BookOpen", path: "/admin/archivo",
+      children: [
+        { id: "archivo", label: "Archivo Musical", path: "/admin/archivo" },
+        { id: "inventario", label: "Inventario Material", path: "/admin/inventario" },
+      ],
+    },
+    {
+      id: "comunicaciones", label: "Comunicaciones", icon: "MessageSquare", path: "/admin/mensajes",
+      children: [
+        { id: "mensajes", label: "Mensajes", path: "/admin/mensajes" },
+        { id: "plantillas", label: "Centro de Comunicaciones", path: "/configuracion/plantillas" },
+      ],
+    },
+    {
+      id: "administracion", label: "Administración", icon: "Settings", path: "/admin",
+      children: [
+        { id: "tareas", label: "Planificador de Tareas", path: "/admin/tareas" },
+        { id: "incidencias", label: "Incidencias", path: "/admin/incidencias" },
+        { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
+        { id: "recordatorios", label: "Recordatorios Push", path: "/admin/recordatorios" },
+        { id: "emails", label: "Historial de Emails", path: "/admin/emails" },
+        { id: "actividad", label: "Registro de Actividad", path: "/admin/actividad" },
+        { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
+        { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
+        { id: "configuracion-app", label: "Configuración", path: "/admin/configuracion" },
+      ],
+    },
+    { id: "ayuda", label: "Manual de Usuario", icon: "HelpCircle", path: "/ayuda" },
   ];
 
   const toggleSection = (id) => {
@@ -293,6 +272,9 @@ const Sidebar = ({ isCollapsed, onToggle }) => {
       CheckSquare: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>,
       CreditCard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
       Truck: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>,
+      Calendar: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+      BookOpen: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
+      MessageSquare: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
       BarChart3: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>,
       Shield: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
       HelpCircle: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
@@ -456,7 +438,7 @@ const Layout = ({ children }) => {
     } else if (path.startsWith("/asistencia/pagos")) {
       return { page: "Asistencia y pagos", section: "Gestión económica" };
     } else if (path.startsWith("/asistencia/logistica")) {
-      return { page: "Desplazamientos y Alojamientos", section: null };
+      return { page: "Logística y Servicios", section: null };
     } else if (path.startsWith("/asistencia/analisis")) {
       return { page: "Asistencia y pagos", section: "Análisis económico" };
     } else if (path.startsWith("/asistencia/registro")) {

@@ -8,21 +8,14 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
 
 from supabase_client import supabase
-from auth_utils import get_current_gestor, get_current_user
+from auth_utils import get_current_gestor, get_current_user, is_super_admin
+# Alias retro-compat: referencias antiguas usan _is_admin_or_director.
+_is_admin_or_director = is_super_admin
 from config_app import get_config, invalidate_config, get_fichaje_global, invalidate_fichaje_global
 
 router = APIRouter(prefix="/api", tags=["configuracion"])
 
 BUCKET = "configuracion"
-
-
-def _is_admin_or_director(user: dict) -> bool:
-    rol = (user or {}).get("rol") or ((user or {}).get("profile") or {}).get("rol")
-    if rol in ("admin", "director_general"):
-        return True
-    # El admin histórico de la plataforma se identifica por email (rol real = 'gestor' en BD).
-    email = ((user or {}).get("email") or ((user or {}).get("profile") or {}).get("email") or "").lower()
-    return email == "admin@convocatorias.com"
 
 
 # =============================================================================

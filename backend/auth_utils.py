@@ -63,11 +63,14 @@ async def get_current_gestor(
 def is_super_admin(user: Dict) -> bool:
     """True para admin/director_general/admin@convocatorias.com — los únicos con permisos de verificación
     y publicación bypass."""
-    if not user: return False
-    if user.get("rol") in ("admin", "director_general"):
+    if not user:
+        return False
+    profile = user.get("profile") or {}
+    rol = profile.get("rol") or user.get("rol") or ""
+    if rol in ("admin", "director_general"):
         return True
-    email = (user.get("profile") or {}).get("email") or user.get("email") or ""
-    return email.lower() == "admin@convocatorias.com"
+    email = (profile.get("email") or user.get("email") or "").lower()
+    return email == "admin@convocatorias.com"
 
 
 async def require_super_admin(

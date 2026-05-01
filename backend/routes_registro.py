@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
 
 from supabase_client import supabase
-from auth_utils import get_current_gestor
+from auth_utils import get_current_gestor, is_super_admin
 from config_app import org_nombre
 
 logger = logging.getLogger(__name__)
@@ -34,11 +34,7 @@ def _now() -> str:
 
 
 def _is_admin(user: dict) -> bool:
-    rol = (user or {}).get("rol") or ((user or {}).get("profile") or {}).get("rol")
-    if rol in ("admin", "director_general"):
-        return True
-    email = ((user or {}).get("email") or ((user or {}).get("profile") or {}).get("email") or "").lower()
-    return email == "admin@convocatorias.com"
+    return is_super_admin(user)
 
 
 def _email_valido(email: str) -> bool:

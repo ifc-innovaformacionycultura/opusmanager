@@ -1658,12 +1658,22 @@ async def get_pendientes(current_user: dict = Depends(get_current_gestor)):
         except Exception:
             comentarios_pendientes = 0
 
+        try:
+            sr_res = supabase.table('solicitudes_registro') \
+                .select('id', count='exact') \
+                .eq('estado', 'pendiente') \
+                .execute()
+            solicitudes_pendientes = sr_res.count or 0
+        except Exception:
+            solicitudes_pendientes = 0
+
         return {
             "reclamaciones_pendientes": reclamaciones_pendientes,
             "perfiles_actualizados": perfiles_actualizados,
             "respuestas_nuevas": respuestas_nuevas,
             "tareas_proximas": tareas_proximas,
             "comentarios_pendientes": comentarios_pendientes,
+            "solicitudes_pendientes": solicitudes_pendientes,
             "ultimo_acceso_gestor": ultimo_acceso
         }
     except Exception as e:
