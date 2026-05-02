@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## Iter 25 · 2026-05-02 · HOTFIX Railway — Sustituir WeasyPrint por ReportLab
+
+### 🔥 BLOQUE 1 — Eliminar WeasyPrint
+- **Problema:** Railway fallaba al arrancar con `OSError: cannot load library 'libgobject-2.0-0'` porque WeasyPrint requiere librerías del sistema (pango/cairo/gobject) no disponibles en contenedores Railway estándar.
+- **Solución quirúrgica:** reescrito `pdf_renderer.py` usando **ReportLab puro** (Python, sin deps del sistema). API pública intacta — `routes_documentos.py` sigue llamando a `html_to_pdf_bytes(html)`, `upload_pdf`, `merge_pdfs`, `fetch_pdf_bytes`.
+- Parser HTML basado en `html.parser` (stdlib) — convierte subset HTML (`h1/h2/h3`, `p`, `strong/b/em/i`, `br`, `hr`, `img`, `table/tr/td`, `div` con clases `titulo/sub/nombre/cuerpo/firma/numcert/pie`) a flowables ReportLab.
+- Detecta `@page size: A4 landscape` en el CSS del HTML para elegir orientación.
+- `weasyprint==68.1` eliminado de `requirements.txt`.
+- Dependencias transitivas (`pydyf`, `tinycss2`, `cssselect2`, `Pillow`, `fonttools`) mantenidas (no rompen nada, Pillow sigue siendo útil para subida de imágenes).
+
+### Validación
+- Backend arranca: `INFO: Application startup complete` ✅
+- PDF generado con cabecera `%PDF` válida ✅
+- Endpoints `/api/gestor/documentos/recibos` y `/certificados` → 200 OK ✅
+
+### Estilo visual resultante
+Documentos más sobrios que los de WeasyPrint (sin gradientes/shadows CSS), pero profesional: títulos grandes centrados, nombre destacado en naranja, tablas con líneas bajas gris claro, firmas centradas. Acorde al estilo de los informes A-K preexistentes.
+
+### Archivos modificados (quirúrgico)
+- `/app/backend/pdf_renderer.py` — reescrito completo (74 → 280 líneas).
+- `/app/backend/requirements.txt` — eliminada línea `weasyprint==68.1`.
+- Zero cambios en `routes_documentos.py` ni en otras rutas.
+
+### Salvaguardas respetadas ✅
+- AuthContext, SupabaseAuthContext, LoginUnificado, auth_utils, guards, RLS, cálculo cachés, rutas existentes — todo intacto.
+
+---
+
 ## Iter 24 · 2026-05-02 · Command Palette — Acciones rápidas ⚡
 
 ### BLOQUE 1 — Acciones rápidas en ⌘K
