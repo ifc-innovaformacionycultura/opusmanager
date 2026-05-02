@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## Iter 28 · 2026-05-02 · Fix UX loading /admin/musicos + regresión completa
+
+### 🐛 Bug fix quirúrgico
+- **`GestorMusicos.js` línea 754**: durante el `loading=true` el contador mostraba "Total: **0** músicos" (confuso — el usuario creía que no había datos). Ahora muestra "Total: **—** cargando..." y al terminar carga "Total: **15** músicos". RCA: el estado `musicosFiltrados` es `[]` mientras llega la respuesta del API → `musicosFiltrados.length` = 0.
+- Endpoint backend `/api/gestor/musicos` siempre devolvió 15 músicos correctamente (verificado con curl).
+
+### ✅ Regresión completa iter23+26+27+28
+- Backend: **28/28 pytest PASS** (`test_iter23_bandeja.py` + `test_iter27_mejoras.py` + `test_iter28_regression.py` nuevo).
+- Frontend Playwright: 8/8 flujos críticos OK — confirmado:
+  - `/admin/musicos` muestra 15 músicos, transición "—" → "15" durante carga.
+  - Firma custom persiste tras ALTER TABLE. Se inyecta en respuestas. Borrar vuelve a default.
+  - `btn-marcar-todos-leidos` funcional.
+  - Widget `UltimosEmailsMusico` renderiza en ficha músico.
+  - HelpPanel: toggle visible en panel gestor, textos distintos por ruta, localStorage persiste, **NO** renderiza en `/portal`.
+  - Sidebar Comunicaciones tiene 3 items; Administración ya NO tiene Recordatorios/Emails.
+- **0 bugs detectados** por el testing agent.
+
+
+
 ## Iter 27 · 2026-05-02 · Mejoras Bandeja + HelpPanel contextual
 
 ### 🆕 Features
