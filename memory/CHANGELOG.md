@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## Iter 26 · 2026-05-02 · Centro de Comunicaciones + Bandeja Gmail IMAP
+
+### 🆕 Backend
+- **Nueva tabla `email_inbox`** (SQL ejecutado por usuario) — almacena correos entrantes (IMAP) y salientes (Resend) con `thread_id`, `direccion`, `remitente/destinatario`, `asunto`, `cuerpo_html`, `leido`, `destacado`, `archivado`, `carpeta`, `musico_id` (vinculación CRM), `adjuntos_meta` JSONB, `raw_headers`.
+- **Columnas añadidas a `configuracion_app`**: `gmail_imap_host` / `port` / `user` / `app_password` / `sync_enabled` / `sync_folder` / `sync_last_run` / `sync_last_uid`.
+- **Nuevo router `routes_bandeja.py`** con:
+  - `GET /api/gestor/bandeja/emails?carpeta=INBOX|SENT|DESTACADOS|ARCHIVED&q=&musico_id=&leido=&destacado=` — lista + contadores globales.
+  - `GET /api/gestor/bandeja/emails/{id}` — detalle + hilo de conversación (por `thread_id`). Auto-marca leído.
+  - `POST /api/gestor/bandeja/sincronizar` — fuerza sync IMAP manual (admin).
+  - `POST /api/gestor/bandeja/responder` — envía vía Resend + registra como saliente en `email_inbox`. Tolerante a fallos (row se crea aunque Resend falle).
+  - `PUT /api/gestor/bandeja/emails/{id}/leido` · `/destacar` — toggles.
+  - `DELETE /api/gestor/bandeja/emails/{id}` — archivar soft (`archivado=TRUE`).
+  - `GET/PUT /api/admin/bandeja/config` — credenciales IMAP con **password enmascarado** y no-sobrescritura cuando vacío.
+  - `POST /api/admin/bandeja/test-conexion` — valida login IMAP sin lanzar 500 (devuelve `{ok:false,error}`).
+- **APScheduler job** `gmail_inbox_sync` registrado en `routes_recordatorios.init_scheduler()` con `IntervalTrigger(minutes=15)`. Idempotente — evita duplicados por `UID` + `message_id`.
+- **Vinculación automática con CRM**: `_match_musico_by_email()` busca el `remitente_email` en tabla `usuarios` (rol=musico) y registra contacto en `contactos_musico` vía `log_contacto_auto()`.
+
+### 🎨 Frontend
+- **Nueva página `/admin/comunicaciones`** (`CentroComunicaciones.js`) con **7 pestañas**:
+  1. 📥 Bandeja de entrada (`BandejaEntrada.js`) — layout dos paneles (40% lista / 60% lector) + sidebar interno con carpetas + modal redactar/responder con quote blocks.
+  2. 📤 Enviados (reutiliza `GestorEmailLog`).
+  3. 💬 Chat del equipo (reutiliza `ChatInterno`).
+  4. 📋 Comentarios del equipo (`ComentariosEquipoGlobal.js`) — listado agregado con filtros por estado.
+  5. 🔔 Recordatorios push (reutiliza `RecordatoriosAdmin`).
+  6. 🎨 Plantillas (reutiliza `ConfiguracionPlantillas`).
+  7. ⚙️ Configuración (`ConfiguracionBandeja.js`) — formulario IMAP con enmascarado, checkbox activación, botón "Probar conexión", enlace a Google App Passwords.
+- **Reorganización del sidebar**:
+  - Grupo **Comunicaciones** ahora contiene: *Centro de Comunicaciones · Recordatorios Push · Historial de Emails*.
+  - Eliminados de **Administración**: Recordatorios Push + Historial de Emails.
+- Paleta corporativa navy (`#1A3A5C`) + gold (`#C9920A`) aplicada en toda la UI de bandeja.
+
+### ✅ Validación
+- Backend: **11/11 pytest PASS** (`/app/backend/tests/test_iter23_bandeja.py`). Cubre listar/config/test-conexion/sync/responder/marcar/archivar + permiso 403.
+- Frontend: E2E Playwright verifica login → 7 tabs → configuración → bandeja + 4 carpetas + modal redactar.
+- Sincronización IMAP real pendiente hasta que el usuario introduzca su App Password de Gmail desde `/admin/comunicaciones` → ⚙️ Configuración.
+
+
+
 ## Iter 25 · 2026-05-02 · HOTFIX Railway — Sustituir WeasyPrint por ReportLab
 
 ### 🔥 BLOQUE 1 — Eliminar WeasyPrint

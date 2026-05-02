@@ -28,6 +28,7 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 - [x] **Bloque 2 — Mi Historial** (eventos, pagos, reclamaciones)
 - [x] **Bloque 3 — Recordatorios automáticos por evento** (10 predefinidos) + Historial de emails + Reclamaciones (gestor)
 - [x] **Bloque 4 — Resend activo** (API key configurada)
+- [x] **Iter 26 — Centro de Comunicaciones unificado con Bandeja Gmail IMAP** (tabla `email_inbox`, sync APScheduler cada 15min, 7 pestañas, vinculación automática CRM, config admin)
 - [x] **Iter 19/20 — Recibos & Certificados PDF (WeasyPrint)**
 - [x] **Iter 19/20 — Servicio de Comedor + opciones_menu (D1)**
 - [x] **Iter 19/20 — Configuración global organización (`/admin/configuracion`)**
