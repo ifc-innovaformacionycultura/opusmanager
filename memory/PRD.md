@@ -43,6 +43,7 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 - [x] **Iter 22 — Unificación de guards admin** (auth_utils.is_super_admin)
 - [x] **Iter 22 — Badge solicitudes pendientes** en "Base de Datos de Músicos"
 - [x] **Iter 23 — Command Palette ⌘K** (búsqueda rápida estilo Notion/Linear para gestores)
+- [x] **Iter 24 — Acciones rápidas ⚡ en ⌘K** (crear evento / invitar músico / nueva tarea / nuevo contacto CRM / ver solicitudes)
 
 > Ver `/app/memory/CHANGELOG.md` para el detalle del sprint Iter 20.
 

@@ -2,9 +2,53 @@
 // Se abre con atajo de teclado o desde el icono Search del sidebar.
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, CornerDownLeft, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, CornerDownLeft, ArrowUp, ArrowDown, Zap } from "lucide-react";
 
 const norm = (s) => (s || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+// Acciones rápidas — se ejecutan navegando a la ruta (si es distinta de la actual) y emitiendo un CustomEvent
+// que las páginas escuchan para abrir modales sin acoplar directamente los componentes.
+const QUICK_ACTIONS = [
+  {
+    id: "accion-nuevo-evento",
+    label: "Crear evento",
+    hint: "Abre el formulario de nuevo evento",
+    aliases: ["crear evento", "nuevo evento", "new event", "add event"],
+    path: "/configuracion/eventos",
+    event: "opus:nuevo-evento",
+  },
+  {
+    id: "accion-invitar-musico",
+    label: "Invitar músico",
+    hint: "Ir a la base de datos para invitar",
+    aliases: ["invitar musico", "invitar músico", "invite"],
+    path: "/admin/musicos",
+    event: "opus:invitar-musico",
+  },
+  {
+    id: "accion-nueva-tarea",
+    label: "Nueva tarea",
+    hint: "Abre el modal de nueva tarea en el planificador",
+    aliases: ["nueva tarea", "crear tarea", "task", "add task"],
+    path: "/admin/tareas",
+    event: "opus:nueva-tarea",
+  },
+  {
+    id: "accion-nuevo-contacto-crm",
+    label: "Nuevo contacto CRM",
+    hint: "Comentar con el equipo",
+    aliases: ["contacto crm", "nuevo contacto", "comentarios equipo", "crm"],
+    event: "opus:open-comentarios-equipo",
+  },
+  {
+    id: "accion-ver-solicitudes",
+    label: "Ver solicitudes",
+    hint: "Abrir panel de solicitudes de registro",
+    aliases: ["solicitudes", "solicitudes registro", "peticiones", "aprobar"],
+    path: "/admin/musicos",
+    event: "opus:solicitudes-registro",
+  },
+];
 
 const flattenNavItems = (items) => {
   const out = [];
@@ -12,10 +56,10 @@ const flattenNavItems = (items) => {
     if (!it) return;
     if (Array.isArray(it.children) && it.children.length > 0) {
       it.children.forEach((c) => {
-        out.push({ id: c.id, label: c.label, path: c.path, grupo: it.label });
+        out.push({ id: c.id, label: c.label, path: c.path, grupo: it.label, kind: "page" });
       });
     } else if (it.path) {
-      out.push({ id: it.id, label: it.label, path: it.path, grupo: null });
+      out.push({ id: it.id, label: it.label, path: it.path, grupo: null, kind: "page" });
     }
   });
   return out;
@@ -32,12 +76,35 @@ const CommandPalette = ({ open, onClose, navItems }) => {
 
   const resultados = useMemo(() => {
     const q = norm(query.trim());
-    if (!q) return allPages;
-    return allPages.filter((p) =>
-      norm(p.label).includes(q) ||
-      norm(p.grupo || "").includes(q) ||
-      norm(p.path).includes(q)
-    );
+    // Acciones marcadas con kind='action'
+    const acciones = QUICK_ACTIONS.map((a) => ({ ...a, kind: "action" }));
+    const combinado = [...acciones, ...allPages];
+    if (!q) return combinado;
+
+    // Ranking: acciones con match en alias > páginas con match en label > resto
+    const scored = combinado.map((it) => {
+      let score = 0;
+      const label = norm(it.label);
+      const grupo = norm(it.grupo || "");
+      const path = norm(it.path || "");
+      if (it.kind === "action") {
+        const aliases = (it.aliases || []).map(norm);
+        if (aliases.some((a) => a === q)) score = 100;
+        else if (aliases.some((a) => a.startsWith(q))) score = 90;
+        else if (aliases.some((a) => a.includes(q))) score = 80;
+        else if (label.includes(q)) score = 70;
+      } else {
+        if (label === q) score = 95;
+        else if (label.startsWith(q)) score = 75;
+        else if (label.includes(q)) score = 60;
+        else if (grupo.includes(q)) score = 50;
+        else if (path.includes(q)) score = 40;
+      }
+      return { it, score };
+    }).filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.it);
+    return scored;
   }, [query, allPages]);
 
   // Auto-focus y reset al abrir
@@ -60,9 +127,20 @@ const CommandPalette = ({ open, onClose, navItems }) => {
     active?.scrollIntoView({ block: "nearest" });
   }, [selectedIdx]);
 
-  const go = useCallback((path) => {
+  const go = useCallback((item) => {
     onClose();
-    navigate(path);
+    if (item.kind === "action") {
+      const needsNavigate = item.path && typeof window !== "undefined" && window.location.pathname !== item.path;
+      if (needsNavigate) {
+        navigate(item.path);
+        // Delay para esperar que la página se monte y su listener esté registrado
+        setTimeout(() => window.dispatchEvent(new CustomEvent(item.event)), 800);
+      } else if (item.event) {
+        window.dispatchEvent(new CustomEvent(item.event));
+      }
+    } else {
+      navigate(item.path);
+    }
   }, [navigate, onClose]);
 
   const onKeyDown = (e) => {
@@ -76,7 +154,7 @@ const CommandPalette = ({ open, onClose, navItems }) => {
     } else if (e.key === "Enter") {
       e.preventDefault();
       const sel = resultados[selectedIdx];
-      if (sel) go(sel.path);
+      if (sel) go(sel);
     }
   };
 
@@ -110,19 +188,32 @@ const CommandPalette = ({ open, onClose, navItems }) => {
           ) : (
             resultados.map((p, idx) => {
               const active = idx === selectedIdx;
+              const isAction = p.kind === "action";
               return (
-                <li key={`${p.id}-${p.path}`} data-idx={idx}>
+                <li key={`${p.id}-${p.path || p.event}`} data-idx={idx}>
                   <button
                     type="button"
                     onMouseEnter={() => setSelectedIdx(idx)}
-                    onClick={() => go(p.path)}
+                    onClick={() => go(p)}
                     data-testid={`command-palette-item-${p.id}`}
-                    className={`w-full flex items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors ${active ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors ${active ? (isAction ? "bg-amber-500 text-white" : "bg-slate-900 text-white") : "text-slate-700 hover:bg-slate-50"}`}
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">{p.label}</div>
-                      <div className={`text-xs truncate ${active ? "text-slate-300" : "text-slate-500"}`}>
-                        {p.grupo ? `${p.grupo} · ${p.path}` : p.path}
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {isAction && (
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${active ? "bg-white/20" : "bg-amber-100"}`}>
+                          <Zap className={`w-3.5 h-3.5 ${active ? "text-white" : "text-amber-600"}`}/>
+                        </span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium truncate">{p.label}</span>
+                          {isAction && !active && (
+                            <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">acción</span>
+                          )}
+                        </div>
+                        <div className={`text-xs truncate ${active ? (isAction ? "text-amber-50" : "text-slate-300") : "text-slate-500"}`}>
+                          {isAction ? p.hint : (p.grupo ? `${p.grupo} · ${p.path}` : p.path)}
+                        </div>
                       </div>
                     </div>
                     {active && <CornerDownLeft className="w-3.5 h-3.5 shrink-0"/>}

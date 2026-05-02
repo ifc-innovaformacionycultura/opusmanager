@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## Iter 24 · 2026-05-02 · Command Palette — Acciones rápidas ⚡
+
+### BLOQUE 1 — Acciones rápidas en ⌘K
+- 5 acciones con icono ⚡ (lucide `Zap`) y badge "ACCIÓN" amarillo, que aparecen **por encima** de las páginas y se destacan con prioridad cuando el usuario escribe:
+  - **Crear evento** → navega a `/configuracion/eventos` y dispara `opus:nuevo-evento` (abre modal vía listener en `ConfiguracionEventos`).
+  - **Invitar músico** → navega a `/admin/musicos` y enfoca el buscador.
+  - **Nueva tarea** → navega a `/admin/tareas` y dispara `opus:nueva-tarea` (abre modal).
+  - **Nuevo contacto CRM** → dispara `opus:open-comentarios-equipo` (abre FAB de comentarios equipo sin navegar).
+  - **Ver solicitudes** → navega a `/admin/musicos` y dispara `opus:solicitudes-registro` (abre modal).
+
+### Implementación — arquitectura desacoplada vía CustomEvent
+- `CommandPalette.js` no depende de ningún componente destino: emite `window.dispatchEvent(new CustomEvent(eventName))` y espera 800ms tras navegar para que el destino se monte.
+- Cada componente destino registra su `useEffect` con `window.addEventListener('opus:*', handler)` y cleanup. Zero imports cruzados.
+- Ranking en el palette: acciones con alias match tienen score ≥ 80, páginas con label match ≤ 75 → acciones siempre primero cuando son relevantes.
+
+### Archivos modificados (quirúrgico)
+- `CommandPalette.js` — acciones + ranking + icono Zap.
+- `ConfiguracionEventos.js` — listener `opus:nuevo-evento`.
+- `GestorTareas.js` — listener `opus:nueva-tarea`.
+- `GestorMusicos.js` — listeners `opus:invitar-musico` + `opus:solicitudes-registro`.
+- `ComentariosEquipoButton.js` — listener `opus:open-comentarios-equipo`.
+
+### Salvaguardas respetadas ✅
+- Zero modificaciones en AuthContext, SupabaseAuthContext, LoginUnificado, auth_utils, guards, RLS, cálculo cachés, rutas.
+
+---
+
 ## Iter 23 · 2026-05-01 · Command Palette ⌘K
 
 ### BLOQUE 1 — Buscador rápido estilo Notion/Linear

@@ -60,6 +60,13 @@ const GestorTareas = () => {
   const [filterResponsable, setFilterResponsable] = useState('');
   const [filterEvento, setFilterEvento] = useState('');
 
+  // Listener para acción rápida del Command Palette (Cmd+K → "nueva tarea")
+  useEffect(() => {
+    const h = () => { setEdit(null); setShowForm(true); };
+    window.addEventListener('opus:nueva-tarea', h);
+    return () => window.removeEventListener('opus:nueva-tarea', h);
+  }, []);
+
   const cargar = async () => {
     try {
       setLoading(true);

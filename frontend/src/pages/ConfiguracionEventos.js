@@ -1327,6 +1327,14 @@ const ConfiguracionEventos = () => {
     }
   };
 
+  // Listener para acción rápida del Command Palette (Cmd+K → "crear evento")
+  useEffect(() => {
+    const h = () => createNewEvent();
+    window.addEventListener('opus:nuevo-evento', h);
+    return () => window.removeEventListener('opus:nuevo-evento', h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSeason, events.length]);
+
   const duplicateEvent = async (eventId) => {
     try {
       const originalEvent = events.find(e => e.id === eventId);

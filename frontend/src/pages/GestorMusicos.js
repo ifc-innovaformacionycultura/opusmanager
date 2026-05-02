@@ -387,6 +387,24 @@ const GestorMusicos = () => {
 
   useEffect(() => { cargarPendientesSolicitudes(); }, [cargarPendientesSolicitudes]);
 
+  // Listeners para acciones rápidas del Command Palette (Cmd+K)
+  useEffect(() => {
+    const hSolicitudes = () => setSolicitudesOpen(true);
+    const hInvitar = () => {
+      // Enfocar el buscador para que el usuario elija a quién invitar
+      setTimeout(() => {
+        const input = document.querySelector('[data-testid="musicos-search-input"], input[placeholder*="Buscar"], input[name="q"]');
+        input?.focus();
+      }, 200);
+    };
+    window.addEventListener('opus:solicitudes-registro', hSolicitudes);
+    window.addEventListener('opus:invitar-musico', hInvitar);
+    return () => {
+      window.removeEventListener('opus:solicitudes-registro', hSolicitudes);
+      window.removeEventListener('opus:invitar-musico', hInvitar);
+    };
+  }, []);
+
   const cargarMusicos = useCallback(async () => {
     try {
       setLoading(true);

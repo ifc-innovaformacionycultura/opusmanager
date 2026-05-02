@@ -13,6 +13,13 @@ const ComentariosEquipoButton = () => {
   const loc = useLocation();
   const [open, setOpen] = useState(false);
 
+  // Listener para acción rápida desde Command Palette (Cmd+K → "nuevo contacto CRM")
+  React.useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener('opus:open-comentarios-equipo', handler);
+    return () => window.removeEventListener('opus:open-comentarios-equipo', handler);
+  }, []);
+
   if (!api) return null;
 
   return (
