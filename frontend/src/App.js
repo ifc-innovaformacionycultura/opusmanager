@@ -225,10 +225,11 @@ const Sidebar = ({ isCollapsed, onToggle, onOpenCommandPalette }) => {
       ],
     },
     {
-      id: "comunicaciones", label: "Comunicaciones", icon: "MessageSquare", path: "/admin/mensajes",
+      id: "comunicaciones", label: "Comunicaciones", icon: "MessageSquare", path: "/admin/comunicaciones",
       children: [
-        { id: "mensajes", label: "Mensajes", path: "/admin/mensajes" },
-        { id: "plantillas", label: "Centro de Comunicaciones", path: "/configuracion/plantillas" },
+        { id: "comunicaciones-centro", label: "Centro de Comunicaciones", path: "/admin/comunicaciones" },
+        { id: "recordatorios", label: "Recordatorios Push", path: "/admin/recordatorios" },
+        { id: "emails", label: "Historial de Emails", path: "/admin/emails" },
       ],
     },
     {
@@ -237,8 +238,6 @@ const Sidebar = ({ isCollapsed, onToggle, onOpenCommandPalette }) => {
         { id: "tareas", label: "Planificador de Tareas", path: "/admin/tareas" },
         { id: "incidencias", label: "Incidencias", path: "/admin/incidencias" },
         { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
-        { id: "recordatorios", label: "Recordatorios Push", path: "/admin/recordatorios" },
-        { id: "emails", label: "Historial de Emails", path: "/admin/emails" },
         { id: "actividad", label: "Registro de Actividad", path: "/admin/actividad" },
         { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
         { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
@@ -459,15 +458,14 @@ const PALETTE_NAV_ITEMS = [
     { id: "inventario", label: "Inventario Material", path: "/admin/inventario" },
   ]},
   { id: "comunicaciones", label: "Comunicaciones", children: [
-    { id: "mensajes", label: "Mensajes", path: "/admin/mensajes" },
-    { id: "plantillas", label: "Centro de Comunicaciones", path: "/configuracion/plantillas" },
+    { id: "comunicaciones-centro", label: "Centro de Comunicaciones", path: "/admin/comunicaciones" },
+    { id: "recordatorios", label: "Recordatorios Push", path: "/admin/recordatorios" },
+    { id: "emails", label: "Historial de Emails", path: "/admin/emails" },
   ]},
   { id: "administracion", label: "Administración", children: [
     { id: "tareas", label: "Planificador de Tareas", path: "/admin/tareas" },
     { id: "incidencias", label: "Incidencias", path: "/admin/incidencias" },
     { id: "reclamaciones", label: "Reclamaciones", path: "/admin/reclamaciones" },
-    { id: "recordatorios", label: "Recordatorios Push", path: "/admin/recordatorios" },
-    { id: "emails", label: "Historial de Emails", path: "/admin/emails" },
     { id: "actividad", label: "Registro de Actividad", path: "/admin/actividad" },
     { id: "usuarios", label: "Gestión de usuarios", path: "/admin/usuarios" },
     { id: "permisos", label: "Gestión de permisos", path: "/admin/permisos" },
@@ -529,12 +527,14 @@ const Layout = ({ children }) => {
       return { page: "Administración", section: "Base de datos músicos" };
     } else if (path.startsWith("/admin/configuracion")) {
       return { page: "Administración", section: "⚙️ Configuración" };
+    } else if (path.startsWith("/admin/comunicaciones")) {
+      return { page: "Centro de Comunicaciones", section: null };
     } else if (path.startsWith("/admin/recordatorios")) {
-      return { page: "Administración", section: "Recordatorios automáticos" };
+      return { page: "Comunicaciones", section: "Recordatorios Push" };
     } else if (path.startsWith("/admin/emails/configuracion")) {
-      return { page: "Administración", section: "Configuración de email" };
+      return { page: "Comunicaciones", section: "Configuración de email" };
     } else if (path.startsWith("/admin/emails")) {
-      return { page: "Administración", section: "Historial de emails" };
+      return { page: "Comunicaciones", section: "Historial de emails" };
     } else if (path.startsWith("/admin/reclamaciones")) {
       return { page: "Administración", section: "Reclamaciones" };
     } else if (path.startsWith("/admin/permisos")) {
@@ -818,6 +818,7 @@ const PlaceholderPage = ({ title, description }) => (
 import ConfiguracionEventos from "./pages/ConfiguracionEventos";
 import ConfiguracionBaseDatos from "./pages/ConfiguracionBaseDatos";
 import ConfiguracionPlantillas from "./pages/ConfiguracionPlantillas";
+import CentroComunicaciones from "./pages/CentroComunicaciones";
 import Presupuestos from "./pages/Presupuestos";
 import SeguimientoConvocatorias from "./pages/SeguimientoConvocatorias";
 import PlantillasDefinitivas from "./pages/PlantillasDefinitivas";
@@ -914,6 +915,7 @@ function App() {
                         <Route path="/configuracion/presupuestos" element={<Presupuestos />} />
                         <Route path="/configuracion/base-datos" element={<GestorMusicos />} />
                         <Route path="/configuracion/plantillas" element={<ConfiguracionPlantillas />} />
+                        <Route path="/admin/comunicaciones" element={<CentroComunicaciones />} />
                         <Route path="/seguimiento" element={<SeguimientoConvocatorias />} />
                         <Route path="/plantillas-definitivas" element={<PlantillasDefinitivas />} />
                         <Route path="/asistencia" element={<Navigate to="/asistencia/pagos" replace />} />

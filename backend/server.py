@@ -38,6 +38,7 @@ from routes_configuracion import router as configuracion_router
 from routes_fichaje import router as fichaje_router
 from routes_preview import router as preview_router
 from routes_registro import router as registro_router
+from routes_bandeja import router as bandeja_router, sync_gmail_inbox_job
 
 # ==================== App Configuration ====================
 
@@ -101,6 +102,7 @@ app.include_router(configuracion_router)  # /api/admin/configuracion + /api/admi
 app.include_router(fichaje_router)  # /api/fichaje/* + /api/gestor/registro-asistencia
 app.include_router(preview_router)  # /api/gestor/preview/* + /api/preview/{token}
 app.include_router(registro_router)  # /api/registro-publico/* + /api/gestor/solicitudes-registro/*
+app.include_router(bandeja_router)  # /api/gestor/bandeja/* + /api/admin/bandeja/*
 
 # ==================== Health Check ====================
 

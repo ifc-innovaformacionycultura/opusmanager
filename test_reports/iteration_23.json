@@ -1,0 +1,41 @@
+{
+  "summary": "Iter23 E2E — Centro de Comunicaciones (Bandeja IMAP + 7 tabs + sidebar reorg). Backend: 11/11 pytest PASS en /app/backend/tests/test_iter23_bandeja.py cubriendo: listar INBOX + contadores (no_leidos/inbox/destacados/enviados), GET/PUT /api/admin/bandeja/config con enmascarado + configurada=True, PUT con password vacío no sobrescribe, POST /test-conexion devuelve {ok:false,error:'Login IMAP falló: ...'} SIN 500, POST /sincronizar con sync_enabled=false devuelve {ok:false,error:'...deshabilitada...'}, permiso 403 para gestor no-admin (palvarez) en PUT config, POST /responder crea row saliente en email_inbox (carpeta=SENT), PUT /leido y /destacar persisten (destacado aparece en DESTACADOS), DELETE archiva (soft — sale de SENT, aparece en ARCHIVED). Frontend: login admin@convocatorias.com OK, /admin/comunicaciones renderiza data-testid=centro-comunicaciones con H1 'Centro de Comunicaciones' y las 7 pestañas (tab-bandeja, tab-enviados, tab-chat, tab-comentarios, tab-push, tab-plantillas, tab-configuracion) — todas visibles. tab-configuracion muestra config-bandeja-container con input-imap-host, input-imap-port, input-imap-user, input-imap-password, input-imap-folder, checkbox-sync-enabled, btn-guardar-config, btn-probar-conexion. tab-bandeja muestra bandeja-entrada-container con carpeta-inbox/destacados/sent/archived, btn-nuevo-correo, btn-sincronizar-ahora. Click btn-nuevo-correo abre modal-responder con input-destinatario, input-asunto, input-cuerpo, btn-enviar-respuesta. Sidebar: grupo Comunicaciones expandido lista exactamente 3 items (Centro de Comunicaciones, Recordatorios Push, Historial de Emails) con testids sidebar-nav-comunicaciones-centro / sidebar-nav-recordatorios / sidebar-nav-emails. Administración NO contiene esos ids (verificado por grep en App.js).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_bandeja.py",
+    "/app/test_reports/pytest/iter23_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes_bandeja.py _require_admin usa is_super_admin unificado (bien). 403 correcto para gestor no-admin.",
+    "PUT /api/admin/bandeja/config: lógica de NO sobrescribir password vacío usa 'and not str(payload[key]).strip()' (línea 565) — correcto y probado.",
+    "POST /test-conexion: captura imaplib.IMAP4.error y genérico → devuelve {ok:false,error} SIN 500, bien.",
+    "_sync_imap_inbox devuelve dict con ok/error en lugar de levantar → idempotente para el scheduler (routes_recordatorios APScheduler cada 15 min).",
+    "responder_email: si Resend falla por API key dummy, aún así se inserta row saliente en email_inbox (dirección='saliente', carpeta='SENT'). Comportamiento correcto tolerante a fallos de envío.",
+    "listar_emails aplica filtros por carpeta virtual (INBOX/SENT/DESTACADOS/ARCHIVED) basados en columnas direccion+archivado+destacado. Consistente con UI.",
+    "CentroComunicaciones.js (69 líneas) — componente limpio, estado local, 7 tabs con data-testid=tab-{key}.",
+    "App.js grupo Comunicaciones líneas 228-232 y duplicado 460-463 coinciden con navItems; no hay tags duplicados de recordatorios/emails fuera de ese grupo.",
+    "Enmascarado password: '•'*(n-4) + last4 — suficiente para UI, evita leakage."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_bandeja.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 pytest pass)",
+    "frontend": "100% (7 tabs + config + bandeja + modal + sidebar 3 items todos OK)"
+  },
+  "test_credentials": "admin@convocatorias.com/Admin123! (super admin vía email), palvarez@netmetrix.es/Opus2026! (gestor no-admin para probar 403). Login endpoint devuelve {access_token:...} (no 'token' como sugería el template — ajustado en el fixture).",
+  "seed_data_creation": "Durante los tests se crearon 2 filas en email_inbox: (1) saliente 'TEST iter23 saliente' que luego se archiva (archivado=TRUE, permanece en tabla). No se eliminan filas porque archivar es soft-delete. Si se desea limpiar, borrar manualmente rows con asunto LIKE 'TEST iter23%'. Además se actualizó configuracion_app con gmail_imap_user='innovaformacionyculturapruebas@gmail.com' y gmail_imap_app_password='fakepass1234' + gmail_sync_enabled=false (el usuario puede sustituir por credenciales reales desde la UI).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter23 validó todo el flujo de Centro de Comunicaciones + Bandeja IMAP. Backend 11 tests cubren: listar INBOX/SENT/DESTACADOS/ARCHIVED, config IMAP (GET/PUT con enmascarado y no-sobrescribir password vacío), test-conexion con creds falsas (200 ok:false), sincronizar con enabled=false (200 ok:false), permiso 403 gestor no-admin, responder (crea saliente), marcar leído/destacado, archivar (soft). Frontend verificado: 7 tabs, config form completo, bandeja container con 4 carpetas, modal responder, sidebar Comunicaciones con 3 hijos (recordatorios y emails movidos correctamente desde Administración). NO se testeó sincronización IMAP real end-to-end (app_password dummy — el usuario debe introducir la real desde /admin/comunicaciones > Configuración). NO se testeó Resend envío real (API key de desarrollo puede devolver sent=false pero row en email_inbox se crea igualmente). configuracion_app tiene datos de test — el usuario puede sobrescribir desde UI. La tabla email_inbox tiene 1+ row de test (archivada) — limpieza manual opcional.",
+  "rca of the issue": "N/A — sin issues. Solo ajuste menor en el fixture _login() para leer 'access_token' (clave real) en lugar de 'token'."
+}

@@ -408,6 +408,17 @@ def init_scheduler():
             )
         except Exception as e:
             logger.warning(f"No se pudo registrar resumen_mensual_musicos: {e}")
+        # Bandeja Gmail IMAP — cada 15 minutos
+        try:
+            from routes_bandeja import sync_gmail_inbox_job as _gmail_sync
+            from apscheduler.triggers.interval import IntervalTrigger
+            sched.add_job(
+                _gmail_sync, IntervalTrigger(minutes=15, timezone=tz),
+                id="gmail_inbox_sync", replace_existing=True, max_instances=1,
+                coalesce=True,
+            )
+        except Exception as e:
+            logger.warning(f"No se pudo registrar gmail_inbox_sync: {e}")
         sched.start()
         _scheduler = sched
         logger.info("APScheduler iniciado: recordatorios diarios @ 09:00 + última llamada @ 12:00 + resumen semanal lunes @ 08:00 (Europe/Madrid)")
