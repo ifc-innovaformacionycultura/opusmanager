@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Iter 27 · 2026-05-02 · Mejoras Bandeja + HelpPanel contextual
+
+### 🆕 Features
+1. **Widget "Últimos emails" en ficha del músico** (`GestorMusicoDetalle`)
+   - Nuevo componente `UltimosEmailsMusico.js` muestra los 3 últimos correos (entrantes+salientes) vinculados al músico por `musico_id`.
+   - Mismo estilo que `HistorialContactosMusico`. Click → redirige a `/admin/comunicaciones`.
+2. **Firma institucional configurable** (`Administración → Configuración → pestaña "Configuración" del Centro de Comunicaciones`)
+   - Textarea HTML en `ConfiguracionBandeja.js` con previsualización en vivo.
+   - Nueva columna `email_firma_html` en `configuracion_app` (⚠️ SQL pendiente).
+   - Si está vacía se usa la **firma por defecto** auto-generada con `org_nombre + dirección + teléfono + web`.
+   - El backend (`_firma_actual()`) inyecta la firma al final de cada respuesta saliente con un separador `border-top: 2px solid #C9920A`.
+3. **Botón "✓ Todos leídos"** en la barra superior de la lista de Bandeja
+   - Nuevo endpoint `POST /api/gestor/bandeja/marcar-todos-leidos?carpeta=INBOX|SENT|DESTACADOS|ARCHIVED`.
+   - Marca en masa `leido=true` todos los correos de la carpeta actual (respetando `archivado=false`).
+4. **HelpPanel contextual** (`components/HelpPanel.js`)
+   - Botón flotante `?` en esquina inferior izquierda (bg-gray-500) — no colisiona con los flotantes derechos (feedback verde, comentarios azul, hilos pendientes).
+   - Panel lateral izquierdo de 320px con texto de ayuda específico por ruta.
+   - **26 rutas** cubiertas: `/dashboard`, `/configuracion/eventos`, `/configuracion/presupuestos`, `/seguimiento`, `/plantillas-definitivas`, `/asistencia/logistica`, `/asistencia/registro`, `/asistencia/pagos`, `/asistencia/analisis`, `/asistencia/recibos-certificados`, `/informes`, `/admin/archivo`, `/admin/inventario`, `/admin/musicos`, `/admin/historial-musicos`, `/admin/preview-musico`, `/admin/comunicaciones`, `/admin/tareas`, `/admin/incidencias`, `/admin/reclamaciones`, `/admin/recordatorios`, `/admin/configuracion`, `/admin/actividad` + variantes.
+   - Persistencia en `localStorage` key `helpPanel_open`.
+   - **No renderiza en `/portal`** (guard explícito).
+   - Integrado con **1 línea** en `App.js` (`<HelpPanel />` dentro de `<Layout>`).
+
+### ✅ Validación
+- Backend: 9/10 pytest PASS + 1 skip intencional (columna pendiente).
+- Frontend: HelpPanel verificado en 4 rutas + guard /portal + persistencia localStorage + botón marcar-todos-leidos + textarea firma.
+
+### ⚠️ SQL pendiente de ejecutar
+```sql
+ALTER TABLE configuracion_app ADD COLUMN IF NOT EXISTS email_firma_html TEXT;
+```
+El endpoint `PUT /api/admin/bandeja/config` detecta la ausencia de columna y devuelve **400 con mensaje claro** (no 500). Tras ejecutar el ALTER, la firma custom se podrá guardar sin cambios adicionales.
+
+
+
 ## Iter 26 · 2026-05-02 · Centro de Comunicaciones + Bandeja Gmail IMAP
 
 ### 🆕 Backend
