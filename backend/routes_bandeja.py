@@ -357,6 +357,43 @@ class ConfigBandejaPayload(BaseModel):
     gmail_imap_app_password: Optional[str] = None
     gmail_sync_enabled: Optional[bool] = None
     gmail_sync_folder: Optional[str] = None
+    email_firma_html: Optional[str] = None
+
+
+def _firma_por_defecto() -> str:
+    """Firma por defecto construida con datos de la organización."""
+    cfg = get_config() or {}
+    org = (cfg.get("org_nombre") or "").strip()
+    dir_ = (cfg.get("org_direccion") or "").strip()
+    tel = (cfg.get("org_telefono") or "").strip()
+    web = (cfg.get("org_web") or "").strip()
+    email = (cfg.get("org_email") or "").strip()
+    lineas = [f"<strong>{org}</strong>" if org else ""]
+    if dir_:
+        lineas.append(dir_)
+    tel_email = " · ".join([x for x in [tel, email] if x])
+    if tel_email:
+        lineas.append(tel_email)
+    if web:
+        lineas.append(f'<a href="{web}" style="color:#1A3A5C">{web}</a>')
+    body = "<br/>".join([ln for ln in lineas if ln])
+    if not body:
+        return ""
+    return (
+        '<br/><br/>'
+        '<div style="border-top:2px solid #C9920A;padding-top:12px;margin-top:16px;color:#1A3A5C;font-size:13px;font-family:Arial,sans-serif">'
+        f'{body}'
+        '</div>'
+    )
+
+
+def _firma_actual() -> str:
+    """Devuelve la firma configurada o la por defecto."""
+    cfg = get_config() or {}
+    custom = (cfg.get("email_firma_html") or "").strip()
+    if custom:
+        return f"<br/><br/>{custom}"
+    return _firma_por_defecto()
 
 
 # ============================================================================
@@ -461,11 +498,15 @@ async def sincronizar_ahora(user: Dict = Depends(get_current_gestor)):
 
 @router.post("/gestor/bandeja/responder")
 async def responder_email(payload: ResponderPayload, user: Dict = Depends(get_current_gestor)):
+    # Añadir firma institucional al cuerpo
+    firma = _firma_actual()
+    cuerpo_final = (payload.cuerpo_html or "") + firma
+
     # Enviar vía Resend (reutiliza pipeline existente)
     send_res = await _send_email(
         to_email=payload.destinatario,
         subject=payload.asunto,
-        html=payload.cuerpo_html,
+        html=cuerpo_final,
         tipo="bandeja_respuesta",
         usuario_id=payload.musico_id,
     )
@@ -490,7 +531,7 @@ async def responder_email(payload: ResponderPayload, user: Dict = Depends(get_cu
             "destinatario": payload.destinatario,
             "cc": payload.cc,
             "asunto": payload.asunto[:500],
-            "cuerpo_html": payload.cuerpo_html,
+            "cuerpo_html": cuerpo_final,
             "fecha_envio": _now_iso(),
             "leido": True,
             "carpeta": "SENT",
@@ -530,6 +571,31 @@ async def archivar_email(email_id: str, user: Dict = Depends(get_current_gestor)
     return {"ok": True}
 
 
+@router.post("/gestor/bandeja/marcar-todos-leidos")
+async def marcar_todos_leidos(
+    carpeta: str = Query("INBOX"),
+    user: Dict = Depends(get_current_gestor),
+):
+    """Marca todos los emails no leídos de la carpeta indicada como leídos."""
+    try:
+        q = supabase.table("email_inbox").update({"leido": True}).eq("leido", False).eq("archivado", False)
+        if carpeta == "DESTACADOS":
+            q = q.eq("destacado", True)
+        elif carpeta == "SENT":
+            q = q.eq("direccion", "saliente")
+        elif carpeta == "INBOX":
+            q = q.eq("direccion", "entrante")
+        elif carpeta == "ARCHIVED":
+            # reabrir leído solo sobre archivados no es lo habitual, pero se soporta
+            q = supabase.table("email_inbox").update({"leido": True}).eq("leido", False).eq("archivado", True)
+        r = q.execute()
+        n = len(r.data or [])
+        return {"ok": True, "actualizados": n}
+    except Exception as e:
+        logger.error(f"marcar_todos_leidos: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
 # Endpoints — Configuración Admin
 # ============================================================================
@@ -550,6 +616,8 @@ async def obtener_config_bandeja(user: Dict = Depends(get_current_gestor)):
         "gmail_sync_folder": cfg.get("gmail_sync_folder") or "INBOX",
         "gmail_sync_last_run": cfg.get("gmail_sync_last_run"),
         "gmail_sync_last_uid": cfg.get("gmail_sync_last_uid"),
+        "email_firma_html": cfg.get("email_firma_html") or "",
+        "email_firma_preview_default": _firma_por_defecto(),
     }
 
 
@@ -567,7 +635,18 @@ async def actualizar_config_bandeja(data: ConfigBandejaPayload, user: Dict = Dep
 
     if payload:
         payload["updated_at"] = _now_iso()
-        supabase.table("configuracion_app").update(payload).eq("id", cfg["id"]).execute()
+        try:
+            supabase.table("configuracion_app").update(payload).eq("id", cfg["id"]).execute()
+        except Exception as e:
+            # Fallback: si falla por columna inexistente (p.ej. email_firma_html aún no migrada)
+            msg = str(e).lower()
+            if "email_firma_html" in payload and ("column" in msg or "does not exist" in msg or "schema" in msg):
+                logger.warning("email_firma_html no existe todavía en configuracion_app — reintentando sin firma")
+                payload.pop("email_firma_html", None)
+                if len(payload) > 1:  # más que solo updated_at
+                    supabase.table("configuracion_app").update(payload).eq("id", cfg["id"]).execute()
+                raise HTTPException(status_code=400, detail="La columna 'email_firma_html' no existe aún en configuracion_app. Ejecuta la SQL de migración y vuelve a intentarlo.")
+            raise
         invalidate_config()
     return {"ok": True}
 

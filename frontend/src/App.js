@@ -568,6 +568,7 @@ const Layout = ({ children }) => {
         <ComentariosEquipoButton />
         <HilosPendientesAuto />
         <PushPermissionPrompt clientOrToken={api} />
+        <HelpPanel />
       </main>
       <CommandPalette
         open={paletteOpen}
@@ -868,6 +869,7 @@ const HilosPendientesAuto = () => {
   return <HilosPendientesDrawer key={match} pagina={match} />;
 };
 import ComentariosEquipoButton from "./components/ComentariosEquipoButton";
+import HelpPanel from "./components/HelpPanel";
 import NotificacionesBell from "./components/NotificacionesBell";
 import PushPermissionPrompt from "./components/PushPermissionPrompt";
 

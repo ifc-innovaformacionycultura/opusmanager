@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ComentariosEquipoInline from '../components/ComentariosEquipoInline';
 import InvitacionMusicoModal from '../components/InvitacionMusicoModal';
 import HistorialContactosMusico from '../components/HistorialContactosMusico';
+import UltimosEmailsMusico from '../components/UltimosEmailsMusico';
 
 const estadoBadge = (e) => ({
   confirmado: 'bg-green-100 text-green-800',
@@ -324,6 +325,7 @@ const GestorMusicoDetalle = () => {
         )}
       </div>
 
+      <UltimosEmailsMusico api={api} usuarioId={id} />
       <HistorialContactosMusico api={api} usuarioId={id} />
     </div>
   );

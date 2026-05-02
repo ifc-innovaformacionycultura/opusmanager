@@ -16,6 +16,7 @@ const ConfiguracionBandeja = () => {
     gmail_imap_app_password: "",
     gmail_sync_enabled: false,
     gmail_sync_folder: "INBOX",
+    email_firma_html: "",
   });
 
   const cargar = useCallback(async () => {
@@ -31,6 +32,7 @@ const ConfiguracionBandeja = () => {
         gmail_imap_user: data.gmail_imap_user || "",
         gmail_sync_enabled: !!data.gmail_sync_enabled,
         gmail_sync_folder: data.gmail_sync_folder || "INBOX",
+        email_firma_html: data.email_firma_html || "",
         gmail_imap_app_password: "", // nunca rellenar para no enviarla vacía
       }));
     } catch (e) {
@@ -183,6 +185,34 @@ const ConfiguracionBandeja = () => {
             {cfg.gmail_sync_last_uid && <div>Último UID procesado: <code>{cfg.gmail_sync_last_uid}</code></div>}
           </div>
         )}
+
+        <div className="pt-4 border-t border-slate-200">
+          <label className="block text-sm font-semibold text-[#1A3A5C] mb-2">✍️ Firma de email (respuestas salientes)</label>
+          <p className="text-xs text-slate-500 mb-2">
+            Se añade automáticamente al final de cada respuesta enviada desde la Bandeja de Entrada. Admite HTML básico (<code>&lt;br/&gt;</code>, <code>&lt;strong&gt;</code>, <code>&lt;a&gt;</code>).
+            Si dejas este campo vacío, se usa la <em>firma por defecto</em> generada con los datos de la organización.
+          </p>
+          <textarea
+            rows={6}
+            value={form.email_firma_html}
+            onChange={(e) => setForm({ ...form, email_firma_html: e.target.value })}
+            placeholder={cfg?.email_firma_preview_default ? "Deja vacío para usar la firma por defecto (ver previsualización abajo)" : "<strong>Nombre organización</strong><br/>Dirección<br/>Teléfono · email@org.com<br/>www.mi-orquesta.com"}
+            data-testid="input-email-firma"
+            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-[#1A3A5C] font-mono"
+          />
+          {cfg?.email_firma_preview_default && !form.email_firma_html?.trim() && (
+            <div className="mt-2 text-xs text-slate-500">
+              <div className="mb-1">Previsualización firma por defecto:</div>
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200" dangerouslySetInnerHTML={{ __html: cfg.email_firma_preview_default }} />
+            </div>
+          )}
+          {form.email_firma_html?.trim() && (
+            <div className="mt-2 text-xs text-slate-500">
+              <div className="mb-1">Previsualización:</div>
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200" dangerouslySetInnerHTML={{ __html: form.email_firma_html }} />
+            </div>
+          )}
+        </div>
 
         {feedback && (
           <div className={`text-sm p-3 rounded-lg ${feedback.tipo === "ok" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`} data-testid="config-feedback">

@@ -143,6 +143,19 @@ const BandejaEntrada = () => {
     }
   }, [api, cargarEmails]);
 
+  const marcarTodosLeidos = useCallback(async () => {
+    if (!window.confirm(`¿Marcar como leídos todos los correos de "${carpeta}"?`)) return;
+    try {
+      const r = await api.post(`/api/gestor/bandeja/marcar-todos-leidos?carpeta=${carpeta}`);
+      setSyncMsg({ tipo: "ok", txt: `✅ ${r.data?.actualizados || 0} correos marcados como leídos` });
+      await cargarEmails();
+    } catch (e) {
+      setSyncMsg({ tipo: "err", txt: `⚠️ ${e?.response?.data?.detail || e.message}` });
+    } finally {
+      setTimeout(() => setSyncMsg(null), 5000);
+    }
+  }, [api, carpeta, cargarEmails]);
+
   const abrirRespuesta = () => {
     if (!detalle) return;
     setReplyTo(detalle);
@@ -216,6 +229,14 @@ const BandejaEntrada = () => {
             data-testid="bandeja-buscador"
             className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-[#1A3A5C]"
           />
+          <button
+            onClick={marcarTodosLeidos}
+            title="Marcar todos como leídos"
+            data-testid="btn-marcar-todos-leidos"
+            className="text-xs px-2 py-1.5 text-slate-600 hover:text-[#1A3A5C] border border-slate-300 hover:border-[#1A3A5C] rounded"
+          >
+            ✓ Todos leídos
+          </button>
           <button onClick={cargarEmails} className="text-xs text-slate-600 hover:text-[#1A3A5C]" title="Actualizar">
             <IconRefresh spin={loading} />
           </button>
