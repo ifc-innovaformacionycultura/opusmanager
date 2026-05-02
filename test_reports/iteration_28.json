@@ -1,0 +1,39 @@
+{
+  "summary": "Iter28 — Regresión completa post-migración SQL email_firma_html. Backend: 28/28 PASS (21 iter23+iter27 + 7 nuevos iter28). Frontend: 8/8 flujos críticos PASS. Confirmado: 15 músicos en /admin/musicos, fix loading 'Total: — cargando...' luego '15 músicos' OK, widget UltimosEmailsMusico visible en ficha, firma custom persiste y se inyecta, borrar firma vuelve a default, marcar-todos-leidos OK, HelpPanel contextual con textos distintos por ruta, persistencia localStorage OK, guard /portal funciona (no toggle para músico).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_regression.py",
+    "/app/backend/tests/test_iter27_mejoras.py",
+    "/app/backend/tests/test_iter23_bandeja.py",
+    "/app/test_reports/pytest/iter28_regression.xml",
+    "/app/test_reports/pytest/iter28_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GestorMusicos.js línea 754: fix de loading correcto. Durante loading muestra 'Total: — cargando...' (data-testid=musicos-total contiene '—'), tras cargar muestra '15 músicos'. Confirmado en UI real con admin@convocatorias.com.",
+    "routes_bandeja.py firma flow: PUT con email_firma_html persiste 200; GET /admin/bandeja/config devuelve email_firma_html y email_firma_preview_default; responder inyecta firma custom cuando exists, default cuando vacía. Verificado E2E vía pytest.",
+    "HelpPanel guard /portal: toggle.count() == 0 cuando músico autenticado en /portal. Funciona correctamente.",
+    "HelpPanel localStorage: panel cerrado tras reload — confirmado. Textos diferentes por ruta (/dashboard vs /admin/comunicaciones)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_regression.py (nuevo)"
+  ],
+  "success_rate": {
+    "backend": "100% (28/28 PASS)",
+    "frontend": "100% (8/8 flujos críticos OK)"
+  },
+  "test_credentials": "admin@convocatorias.com/Admin123! (super admin), jesusalonsodirector@gmail.com/Musico123! (músico), palvarez@netmetrix.es/Opus2026! (gestor no-admin)",
+  "seed_data_creation": "El test test_2_responder_inyecta_firma_custom y test_3_borrar_firma_vuelve_a_default crean rows salientes con asunto 'TEST iter28 ...' y los archivan al terminar (cleanup vía DELETE). El test fixture restore_firma deja la firma vacía al finalizar la clase.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter28 cubre regresión completa post ALTER TABLE configuracion_app ADD COLUMN email_firma_html. La columna ahora existe — los 400 de iter27 ya NO ocurren. Tests nuevos: TestMusicosEndpoint (15 músicos), TestFirmaFlujoCompleto (3 tests: persiste, inyecta custom, borrar vuelve a default), TestMarcarTodosLeidos, TestGuards (gestor no-admin 403, músico no acceso bandeja). Todos PASS. Frontend Playwright valida data-testids: musicos-total, widget-ultimos-emails-musico, input-email-firma, btn-guardar-config, btn-marcar-todos-leidos, help-panel-toggle, help-panel, help-panel-close, tab-configuracion, tab-bandeja. Cero bugs detectados. Ningún cambio de código aplicado por el testing agent — solo creación del test file de regresión.",
+  "rca of the issue": "N/A — no se encontraron bugs. La migración SQL ejecutada por el usuario (ALTER TABLE configuracion_app ADD COLUMN IF NOT EXISTS email_firma_html TEXT) resolvió el único pending de iter27. El fix de E1 en GestorMusicos.js línea 754 (mostrar '—' durante loading) elimina la confusión UX previa de '0 músicos'."
+}

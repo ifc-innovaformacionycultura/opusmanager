@@ -751,7 +751,7 @@ const GestorMusicos = () => {
         </div>
 
         <div className="px-4 py-3 border-t border-slate-200 text-xs text-slate-600 bg-slate-50">
-          Total: <span className="font-semibold text-slate-900" data-testid="musicos-total">{musicosFiltrados.length}</span> {musicosFiltrados.length === 1 ? 'músico' : 'músicos'}
+          Total: <span className="font-semibold text-slate-900" data-testid="musicos-total">{loading ? '—' : musicosFiltrados.length}</span> {loading ? 'cargando...' : (musicosFiltrados.length === 1 ? 'músico' : 'músicos')}
         </div>
       </div>
 
