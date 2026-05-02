@@ -35,6 +35,11 @@ from supabase_client import supabase
 
 BUCKET = "documentos-musicos"
 
+# Paleta corporativa IFC
+IFC_NAVY = colors.HexColor("#1A3A5C")
+IFC_GOLD = colors.HexColor("#C9920A")
+IFC_WHITE = colors.HexColor("#FFFFFF")
+
 
 # ---------------------------------------------------------------------------
 # Parser HTML mínimo → flowables de ReportLab
@@ -60,21 +65,21 @@ def _page_size_from_html(html: str):
 def _make_styles():
     base = getSampleStyleSheet()
     return {
-        "h1": ParagraphStyle("h1", parent=base["Heading1"], fontSize=24, alignment=TA_CENTER,
-                             textColor=colors.HexColor("#1e293b"), spaceAfter=12, fontName="Helvetica-Bold"),
-        "h2": ParagraphStyle("h2", parent=base["Heading2"], fontSize=16, alignment=TA_CENTER,
-                             textColor=colors.HexColor("#475569"), spaceAfter=10),
+        "h1": ParagraphStyle("h1", parent=base["Heading1"], fontSize=22, alignment=TA_CENTER,
+                             textColor=IFC_WHITE, spaceAfter=4, fontName="Helvetica-Bold"),
+        "h2": ParagraphStyle("h2", parent=base["Heading2"], fontSize=14, alignment=TA_CENTER,
+                             textColor=IFC_GOLD, spaceAfter=2, fontName="Helvetica-Bold"),
         "h3": ParagraphStyle("h3", parent=base["Heading3"], fontSize=12, alignment=TA_LEFT,
-                             textColor=colors.HexColor("#64748b"), spaceAfter=4),
+                             textColor=IFC_NAVY, spaceAfter=4, fontName="Helvetica-Bold"),
         "body": ParagraphStyle("body", parent=base["BodyText"], fontSize=11, leading=15,
                                textColor=colors.HexColor("#1e293b"), spaceAfter=6),
         "body_center": ParagraphStyle("body_c", parent=base["BodyText"], fontSize=11, leading=15,
                                       alignment=TA_CENTER, textColor=colors.HexColor("#1e293b"), spaceAfter=6),
         "firma_nombre": ParagraphStyle("firma", parent=base["BodyText"], fontSize=11, alignment=TA_CENTER,
-                                       textColor=colors.HexColor("#1e293b"), spaceBefore=30, spaceAfter=2),
-        "nombre_grande": ParagraphStyle("nombre", parent=base["BodyText"], fontSize=18, alignment=TA_CENTER,
-                                        textColor=colors.HexColor("#b45309"), fontName="Helvetica-Bold",
-                                        spaceBefore=8, spaceAfter=8),
+                                       textColor=IFC_NAVY, spaceBefore=30, spaceAfter=2, fontName="Helvetica-Bold"),
+        "nombre_grande": ParagraphStyle("nombre", parent=base["BodyText"], fontSize=20, alignment=TA_CENTER,
+                                        textColor=IFC_GOLD, fontName="Helvetica-Bold",
+                                        spaceBefore=10, spaceAfter=10),
         "small_right": ParagraphStyle("small_r", parent=base["BodyText"], fontSize=9, alignment=TA_RIGHT,
                                       textColor=colors.HexColor("#64748b"), spaceAfter=2),
         "small": ParagraphStyle("small", parent=base["BodyText"], fontSize=9,
@@ -238,13 +243,16 @@ class _HTML2Flowables(HTMLParser):
                     ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1e293b")),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                     ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("BOX", (0, 0), (-1, -1), 1, IFC_NAVY),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.25, IFC_NAVY),
                 ]
-                # Si la primera columna contiene etiquetas, alinéala a la derecha y gris
+                # Si la primera columna contiene etiquetas, alinéala a la derecha y navy
                 if max_cols >= 2:
+                    style_cmds.append(("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEF2F7")))
                     style_cmds.append(("ALIGN", (0, 0), (0, -1), "RIGHT"))
-                    style_cmds.append(("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#64748b")))
+                    style_cmds.append(("TEXTCOLOR", (0, 0), (0, -1), IFC_NAVY))
                     style_cmds.append(("FONTSIZE", (0, 0), (0, -1), 9))
+                    style_cmds.append(("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"))
                     style_cmds.append(("ALIGN", (1, 0), (-1, -1), "LEFT"))
                     style_cmds.append(("FONTNAME", (1, 0), (-1, -1), "Helvetica-Bold"))
                 t.setStyle(TableStyle(style_cmds))
@@ -281,29 +289,70 @@ class _HTML2Flowables(HTMLParser):
         return self.flow
 
 
+def _header_footer(canvas, doc):
+    """Cabecera navy con línea gold + pie sutil en cada página."""
+    canvas.saveState()
+    w, h = doc.pagesize
+    # Banda superior navy 1.5 cm de alto
+    canvas.setFillColor(IFC_NAVY)
+    canvas.rect(0, h - 1.5 * cm, w, 1.5 * cm, fill=1, stroke=0)
+    # Texto blanco en la banda (nombre de la organización a la izquierda)
+    canvas.setFillColor(IFC_WHITE)
+    canvas.setFont("Helvetica-Bold", 10)
+    org = getattr(doc, "_ifc_org", "IFC OPUS")
+    canvas.drawString(2 * cm, h - 0.95 * cm, org)
+    canvas.setFont("Helvetica", 8)
+    canvas.drawRightString(w - 2 * cm, h - 0.95 * cm, "Documento oficial")
+    # Línea separadora gold debajo de la banda
+    canvas.setStrokeColor(IFC_GOLD)
+    canvas.setLineWidth(2)
+    canvas.line(0, h - 1.5 * cm, w, h - 1.5 * cm)
+    # Pie: línea gold + texto pequeño navy
+    canvas.setStrokeColor(IFC_GOLD)
+    canvas.setLineWidth(1)
+    canvas.line(2 * cm, 1.5 * cm, w - 2 * cm, 1.5 * cm)
+    canvas.setFillColor(IFC_NAVY)
+    canvas.setFont("Helvetica", 7)
+    canvas.drawCentredString(w / 2, 1.1 * cm, f"{org} — sistema de gestión orquestal")
+    canvas.drawRightString(w - 2 * cm, 1.1 * cm, f"Página {doc.page}")
+    canvas.restoreState()
+
+
 def html_to_pdf_bytes(html: str, base_url: Optional[str] = None) -> bytes:
-    """Renderiza HTML (subset) a PDF usando ReportLab. API compatible con el antiguo WeasyPrint."""
+    """Renderiza HTML (subset) a PDF con colores corporativos IFC.
+
+    API compatible con el antiguo motor WeasyPrint.
+    """
     page_size = _page_size_from_html(html)
     styles = _make_styles()
     parser = _HTML2Flowables(styles)
     try:
         parser.feed(html)
     except Exception:
-        # Si falla parseo, caemos a texto plano
         plain = re.sub(r"<[^>]+>", " ", html)
         plain = re.sub(r"\s+", " ", plain).strip()
         parser.flow = [Paragraph(_escape_xml(plain), styles["body"])]
 
     flowables = parser.result() or [Paragraph("Documento vacío", styles["body"])]
 
+    # Intenta recuperar el nombre de la organización desde config_app (sin bloquear si falla)
+    org_name = "IFC OPUS"
+    try:
+        from config_app import org_nombre  # type: ignore
+        org_name = org_nombre() or "IFC OPUS"
+    except Exception:
+        pass
+
     out = io.BytesIO()
     doc = SimpleDocTemplate(
         out, pagesize=page_size,
         leftMargin=2 * cm, rightMargin=2 * cm,
-        topMargin=2 * cm, bottomMargin=2 * cm,
+        topMargin=2.5 * cm,      # espacio para la cabecera navy
+        bottomMargin=2.2 * cm,   # espacio para el pie
         title="Documento",
     )
-    doc.build(flowables)
+    doc._ifc_org = org_name
+    doc.build(flowables, onFirstPage=_header_footer, onLaterPages=_header_footer)
     return out.getvalue()
 
 
