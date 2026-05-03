@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Iter F4 · 2026-05-03 · Reglas de fichaje por ensayo + plantillas globales
+
+### 🎯 Cambios (3 archivos · 0 SQL adicional — tabla `fichaje_plantillas` ya existía con columnas planas)
+
+#### Backend (`routes_fichaje.py`)
+- `FichajeConfigUpdate` ampliado con los 8 campos de notificaciones (`notif_musico_push/email/whatsapp`, `notif_gestor_push/email/dashboard`, `mensaje_aviso_musico/gestor`).
+- `GET /api/gestor/fichaje-config/{ensayo_id}` (Opción A) — devuelve config resuelta (específica si existe, global como fallback).
+- CRUD plantillas con **columnas planas** (no JSONB): `GET/POST/PUT/DELETE /api/gestor/fichaje-plantillas[/{id}]`. Permisos: creador o super-admin para PUT/DELETE.
+- `POST /api/gestor/fichaje-config/{ensayo_id}/aplicar-plantilla/{plantilla_id}` — upsert en fichaje_config.
+- `POST /api/gestor/eventos/{evento_id}/fichaje/aplicar-plantilla/{plantilla_id}` — aplica a todos los ensayos `tipo='ensayo'` del evento (filtra conciertos/funciones).
+- Helper `_extraer_reglas_de_plantilla` filtra `None` para no sobreescribir con null al aplicar.
+- **Endpoints legacy intactos**: `PUT /fichaje-config/{ensayo_id}` con sólo 5 campos antiguos sigue funcionando.
+
+#### Frontend `ConfiguracionEventos.js`
+- Nuevo subcomponente `FichajeConfigPanel`: edita 13 campos por ensayo, panel colapsable con resumen `X′/Y′·aviso Z′` en el toggle, sub-panel de plantillas (aplicar/guardar/eliminar) con permisos (creador o super-admin).
+- Nuevo subcomponente `FichajePlantillaEventoButton` (cabecera de sección "Ensayos y Funciones"): dropdown para aplicar plantilla a TODOS los ensayos del evento.
+- Render bajo cada ensayo persistido **sólo** si `rehearsal.id && tipo === 'ensayo'` (no aparece para nuevos sin guardar ni para conciertos/funciones).
+
+#### Frontend `RegistroAsistencia.js` (reescrito)
+- `FichajeConfigEditor` **eliminado** completamente (era 70 líneas de editor por ensayo).
+- Nuevo `FichajeReglasBadge` read-only debajo del header de cada ensayo: muestra tiempos + computa pre/post + canales de notificación activos para músico y gestor.
+- Header de página actualizado con texto "Las reglas se editan desde Configuración de Eventos".
+- Mantenido: QR descarga/regenera + tabla de fichajes + accordion eventos.
+
+### ✅ Tests
+- Backend: 17/17 PASS (CRUD plantillas, GET/PUT 13 campos, aplicar-plantilla por ensayo y por evento, permisos 403, 404).
+- Regresión Iter F1+F2+F3: 49/50 PASS + 1 SKIP pre-existente.
+- Frontend code review: 100% (todos los `data-testid`, gates correctos, `FichajeConfigEditor` totalmente eliminado).
+- Test file: `/app/backend/tests/test_iter_f4_fichaje_plantillas.py` (autosuficiente, cleanup TEST_F4 prefix).
+- Reporte: `/app/test_reports/iteration_42.json`.
+
+### ℹ️ Nota sobre el SQL
+La tabla `fichaje_plantillas` ya existía en BD con **columnas planas** (no JSONB) cuando empezamos F4. Se usó la estructura real del usuario; el código NO usa la columna `reglas` JSONB residual.
+
+---
+
 ## Iter F3 · 2026-05-03 · Programa Musical conectado con Archivo + Listas favoritas
 
 ### 🎯 Cambios (2 archivos · 1 SQL: `listas_obras_favoritas` + cols display en `evento_obras`)

@@ -51,7 +51,8 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 - [x] **Iter F2 — Transporte de Material multi-operación + Listas favoritas globales**
 - [x] **Iter F2.1 — Reordenar operaciones de transporte con flechas ↑↓**
 - [x] **Iter F3 — Programa Musical conectado con Archivo + Listas obras favoritas globales** (2026-05-03)
-- [ ] **Iter F4 — Reglas Fichaje por ensayo + plantillas** (PRÓXIMO P0)
+- [x] **Iter F4 — Reglas de fichaje por ensayo + plantillas globales** (2026-05-03 · 3 archivos · backend 17/17 PASS · regresión 49/50)
+- [ ] **Iter F5 — TBD** (siguiente P0 — Tour interactivo / QR rápido / Adjuntos comunicaciones / Google OAuth — esperar prioridad del usuario)
 
 > Ver `/app/memory/CHANGELOG.md` para el detalle del sprint Iter 20.
 
