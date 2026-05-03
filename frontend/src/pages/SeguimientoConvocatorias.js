@@ -17,6 +17,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 import { Eye, EyeOff } from "lucide-react";
+import { useServerPref } from "../hooks/usePrefsUI";
 import {
   CRMToggleButton, useCRMExpandidos, ContactosBadge, UltimoContactoCell,
   RegistrarContactoModal, HistorialPanel,
@@ -127,23 +128,17 @@ const SeguimientoConvocatorias = () => {
   }, [visibleCols]);
   const toggleColumn = (key) => setVisibleCols(prev => ({ ...prev, [key]: !prev[key] }));
 
-  // Iter B · Punto 16 — Eventos ocultos/colapsados con persistencia en localStorage
-  const [eventosOcultos, setEventosOcultos] = useState(() => {
-    try {
-      const raw = localStorage.getItem('seguimiento_eventos_ocultos');
-      if (raw) return new Set(JSON.parse(raw));
-    } catch { /* noop */ }
-    return new Set();
-  });
-  useEffect(() => {
-    try { localStorage.setItem('seguimiento_eventos_ocultos', JSON.stringify(Array.from(eventosOcultos))); } catch { /* noop */ }
-  }, [eventosOcultos]);
-  const toggleEventoOculto = (evId) => setEventosOcultos((prev) => {
-    const next = new Set(prev);
-    if (next.has(evId)) next.delete(evId); else next.add(evId);
-    return next;
-  });
-  const mostrarTodosEventos = () => setEventosOcultos(new Set());
+  // Iter B · Punto 16 — Eventos ocultos/colapsados con persistencia en servidor (prefs_ui) + fallback localStorage
+  const [eventosOcultosArr, setEventosOcultosArr] = useServerPref('seguimiento_eventos_ocultos', []);
+  const eventosOcultos = useMemo(() => new Set(Array.isArray(eventosOcultosArr) ? eventosOcultosArr : []), [eventosOcultosArr]);
+  const toggleEventoOculto = (evId) => {
+    setEventosOcultosArr((prevArr) => {
+      const prev = new Set(Array.isArray(prevArr) ? prevArr : []);
+      if (prev.has(evId)) prev.delete(evId); else prev.add(evId);
+      return Array.from(prev);
+    });
+  };
+  const mostrarTodosEventos = () => setEventosOcultosArr([]);
 
   const showFeedback = (type, text) => {
     setFeedback({ type, text });

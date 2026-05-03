@@ -1,0 +1,51 @@
+{
+  "summary": "Iter31 tests — BACKEND 10/10 PASS (GET/PUT /api/gestor/prefs-ui: initial empty, persistencia, merge parcial, borrado con null, aislamiento entre admin/músico, regresión bandeja/mi-perfil/401 sin auth). FRONTEND: PUT user-triggered OK (click btn-ocultar → PUT {prefs:{seguimiento_eventos_ocultos:[uuid]}} tras debounce 500ms; btn-mostrar-todos → PUT []; UI colapsa/expande correctamente). FRONTEND HIDRATACIÓN DESDE SERVIDOR: BUG CRÍTICO — GET devuelve 200 con los datos correctos pero la UI NO colapsa ni escribe localStorage, debido a interacción del guard `mountedRef` con React.StrictMode (dev). Misma causa afectaría a migración localStorage→servidor.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Hidratación inicial desde servidor (useServerPref)",
+        "issue": "GET /api/gestor/prefs-ui devuelve 200 con {prefs:{seguimiento_eventos_ocultos:[uuid]}} pero el estado local NO se actualiza: tras 8-10s en /seguimiento el evento sigue visible (no colapsado), btn-mostrar-todos-eventos no aparece y localStorage sigue null. Causa raíz: en /app/frontend/src/hooks/usePrefsUI.js el useEffect usa `if (mountedRef.current) return; mountedRef.current = true;` antes del fetch. Con React.StrictMode (activado en /app/frontend/src/index.js L8) el effect se ejecuta dos veces; el cleanup del primero pone cancelled(A)=true y al reejecutarse el effect el guard mountedRef impide relanzar el fetch. Cuando la promesa del primer fetch resuelve, el check `if (cancelled) return` la descarta, de modo que setValueState/writeLS/setReady NUNCA se llaman.",
+        "affected_selectors": ["[data-testid^=block-evento-]", "[data-testid=btn-mostrar-todos-eventos]"]
+      },
+      {
+        "flow": "Migración localStorage → servidor (useServerPref)",
+        "issue": "Presumiblemente afectada por el mismo bug: el if (cancelled) return se ejecuta antes de la rama de migración, por lo que el PUT inicial de migración tampoco se dispara en dev. (No fue posible aislar completamente este flow porque el bug de hidratación lo enmascara.)",
+        "affected_selectors": []
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_prefs.py",
+    "/app/test_reports/pytest/iter31_prefs.xml"
+  ],
+  "action_items": [
+    "FIX CRÍTICO: /app/frontend/src/hooks/usePrefsUI.js — eliminar o corregir el guard `mountedRef.current` del useEffect. El `cancelled` por scope ya es suficiente para descartar la respuesta de un mount anterior. Propuesta mínima: quitar las líneas `if (mountedRef.current) return; mountedRef.current = true;` y dejar que el effect se ejecute dos veces en StrictMode (el segundo mount seteará el estado correctamente; el primero se descarta vía cancelled). Alternativa: mover el guard a un flag global por `key` fuera del componente, o usar un ref que permita retomar el fetch cuando cancelled=true pero mounted=true. Tras el fix, re-verificar: (a) hidratación desde servidor, (b) migración localStorage→servidor con GET admin post-reload confirmando la persistencia migrada.",
+    "Considerar loguear warning si cancelled se triggerea antes de resolver (ayuda a debug futuro)."
+  ],
+  "critical_code_review_comments": [
+    "BUG StrictMode: patrón `useRef mounted + cancelled` es incompatible con doble montaje de StrictMode si el fetch se lanza en el primer effect (scope A) y el cleanup marca cancelled(A)=true antes de que resuelva. El segundo effect ve mountedRef=true y hace return, por lo que el resultado del fetch de A se pierde. Este patrón debe eliminarse; `cancelled` per-scope es suficiente.",
+    "routes_prefs.py: el merge es read-merge-write no atómico. Para concurrencia moderada es aceptable, pero dos PUTs paralelos a claves distintas podrían perder uno. Recomendación futura: usar jsonb_set/jsonb_delete en un UPDATE SQL directo, o una transacción.",
+    "routes_prefs.py: el router se monta bajo tag `prefs-ui` pero el prefix `/api/gestor/prefs-ui` sugiere rol gestor; sin embargo `get_current_user` permite cualquier usuario autenticado (músico incluido). Si se quiere mantener compartido, considerar renombrar a `/api/prefs-ui` o documentar explícitamente; si es gestor-only, añadir guard de rol. Actualmente el comportamiento es abierto (música puede usarlo) — consistente con el requisito del iter.",
+    "Hook: si el PUT en debounce falla, se conserva valor local pero no hay retry ni UI feedback. Aceptable para este uso, documentado en el header."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter31_prefs.py (NUEVO)",
+    "/app/test_reports/pytest/iter31_prefs.xml (NUEVO)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 pytest)",
+    "frontend": "50% — PUT user-triggered OK (hide/show-all click + debounced PUT con payload correcto); hidratación server→UI FALLA por bug StrictMode/mountedRef; migración no verificable hasta corregir hidratación"
+  },
+  "test_credentials": "admin@convocatorias.com/Admin123! ✓, jesusalonsodirector@gmail.com/Musico123! ✓",
+  "seed_data_creation": "Durante el test_iter31_prefs.py se escriben y luego se limpian prefs_ui para ambos usuarios (fixture autouse module-scoped resetea todas las claves tras el run). Durante los tests manuales de Playwright el admin quedó con seguimiento_eventos_ocultos=[c4409142-...]; recomiendo limpiar con PUT {seguimiento_eventos_ocultos:null} si el main agent va a re-testear.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend de prefs-ui cubierto 100% por test_iter31_prefs.py (reutilizable como regresión). El bug de hidratación del hook es determinista y reproducible: login admin → pon prefs en servidor vía curl → limpia localStorage (prefs_ui_*) → navega /seguimiento → esperar 8-10s → el evento no se colapsa. GET resp body verificado correcto en network. StrictMode activo en index.js. Tras el fix, verificar FLOW B (migración LS→servidor) también con GET admin post-reload.",
+  "rca of the issue": "RCA hidratación: En usePrefsUI.js el useEffect hace (1) `if (mountedRef.current) return; mountedRef.current = true;` y (2) lanza fetch async, (3) al resolver comprueba `if (cancelled) return`. React.StrictMode (activo en index.js) ejecuta el effect dos veces en dev: primera invocación setea mountedRef=true y lanza fetch-A; cleanup inmediato marca cancelled(A)=true; segunda invocación ve mountedRef=true y hace return sin lanzar fetch-B; cuando fetch-A resuelve, ve cancelled(A)=true y descarta el resultado. Resultado: setValueState/writeLS/setReady no se ejecutan jamás. Reproducción: ver tests Playwright arriba. Mitigación: eliminar el guard mountedRef.current (basta con cancelled per-scope) o cambiarlo por un flag-por-key global a nivel de módulo que permita al segundo mount retomar el fetch."
+}
