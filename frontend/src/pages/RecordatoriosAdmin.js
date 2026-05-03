@@ -126,6 +126,45 @@ export default function RecordatoriosAdmin() {
         }`}>{feedback.msg}</div>
       )}
 
+      {/* Explicación sobre notificaciones push (colapsable, cerrado por defecto) */}
+      <details className="group" data-testid="ayuda-notificaciones-push">
+        <summary className="cursor-pointer select-none bg-blue-100 hover:bg-blue-200 text-blue-900 text-sm font-medium px-4 py-2 rounded-lg inline-flex items-center gap-2 transition">
+          <span>ℹ️ ¿Cómo funcionan las notificaciones push?</span>
+          <span className="text-xs opacity-70 group-open:hidden">(pulsa para leer)</span>
+        </summary>
+        <div className="bg-blue-50 rounded-lg p-4 mt-2 text-sm text-slate-700 space-y-3 leading-relaxed" data-testid="ayuda-notificaciones-contenido">
+          <p>
+            Las notificaciones push son mensajes que aparecen en tu dispositivo aunque no tengas la app abierta,
+            igual que las notificaciones de WhatsApp.
+          </p>
+          <div>
+            <p className="font-semibold text-slate-900">Para recibirlas necesitas:</p>
+            <ol className="list-decimal pl-6 mt-1 space-y-0.5">
+              <li>Abrir la app y pulsar "Activar" cuando el navegador te pregunte.</li>
+              <li>En móvil: instalar la app en tu pantalla de inicio para mayor fiabilidad.</li>
+            </ol>
+          </div>
+          <div>
+            <p className="font-semibold text-slate-900">¿Para qué sirven?</p>
+            <ul className="list-disc pl-6 mt-1 space-y-0.5">
+              <li><strong>Músicos:</strong> nuevas convocatorias, fecha límite de disponibilidad, confirmar transporte o comedor.</li>
+              <li><strong>Gestores:</strong> tareas asignadas, menciones en comentarios, solicitudes de verificación pendientes.</li>
+            </ul>
+          </div>
+          <div>
+            <p className="font-semibold text-slate-900">¿Por qué no me llegan?</p>
+            <ul className="list-disc pl-6 mt-1 space-y-0.5">
+              <li>Si rechazaste el permiso debes activarlo en la configuración del navegador.</li>
+              <li>En Safari (iPhone) solo funcionan con la app instalada en inicio.</li>
+              <li>El modo "No molestar" acumula las notificaciones para después.</li>
+            </ul>
+          </div>
+          <p className="text-xs text-slate-500 pt-2 border-t border-blue-200">
+            💡 Prueba que funcionan con el botón "Enviarme un push de prueba" en <strong>Mi Perfil → Notificaciones</strong>.
+          </p>
+        </div>
+      </details>
+
       {/* Status del scheduler */}
       <Card title="Estado del cron">
         <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">

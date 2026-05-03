@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 import ComentariosPanel from "../components/ComentariosPanel";
 import ConvocatoriaInstrumentosPanel from "../components/ConvocatoriaInstrumentosPanel";
@@ -186,6 +186,9 @@ const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion, eventoId, a
   const [open, setOpen] = useState(false);
   const [notas, setNotas] = useState('');
   const [solicitando, setSolicitando] = useState(false);
+  // Iter 29 · Punto 14 — posicionamiento dinámico del dropdown
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, right: 'auto', bottom: 'auto' });
   const cfg = {
     pendiente: { l: '🟡 PENDIENTE', c: 'bg-amber-400 text-amber-950 border-amber-500' },
     verificado: { l: '✅ VERIFICADO', c: 'bg-emerald-600 text-white border-emerald-700' },
@@ -212,15 +215,51 @@ const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion, eventoId, a
   useEffect(() => {
     if (!open) return;
     const h = (e) => {
-      if (!e.target.closest(`[data-verif-seccion="${seccion}"]`)) setOpen(false);
+      if (!e.target.closest(`[data-verif-seccion="${seccion}"]`) && !e.target.closest(`[data-verif-dropdown="${seccion}"]`)) setOpen(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [open, seccion]);
 
+  // Iter 29 · Punto 14 — calcular posición fixed en función del espacio disponible
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const recalc = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const DROPDOWN_W = 320;
+      const DROPDOWN_H = 280; // estimado
+      const gap = 8;
+      const nearRight = (r.left + DROPDOWN_W + gap) > vw;
+      const nearBottom = (r.bottom + DROPDOWN_H + gap) > vh;
+      const nextPos = { top: 'auto', left: 'auto', right: 'auto', bottom: 'auto' };
+      if (nearBottom) {
+        nextPos.bottom = Math.max(8, vh - r.top + gap);
+      } else {
+        nextPos.top = r.bottom + gap;
+      }
+      if (nearRight) {
+        nextPos.right = Math.max(8, vw - r.right);
+      } else {
+        nextPos.left = r.left;
+      }
+      setPos(nextPos);
+    };
+    recalc();
+    window.addEventListener('scroll', recalc, true);
+    window.addEventListener('resize', recalc);
+    return () => {
+      window.removeEventListener('scroll', recalc, true);
+      window.removeEventListener('resize', recalc);
+    };
+  }, [open]);
+
   return (
     <div className="relative inline-flex items-center gap-1" data-testid={`verif-badge-${seccion}`} data-verif-seccion={seccion}>
       <button
+        ref={btnRef}
         type="button"
         disabled={!puedeEditar}
         onClick={(e) => { e.stopPropagation(); puedeEditar && setOpen(o => !o); }}
@@ -240,8 +279,10 @@ const VerificacionBadge = ({ estado, puedeEditar, onChange, seccion, eventoId, a
         </button>
       )}
       {open && (
-        <div className="absolute z-50 right-0 top-full mt-2 bg-white border-2 border-[#1A3A5C] rounded-lg shadow-2xl p-3 w-80"
+        <div className="bg-white border-2 border-[#1A3A5C] rounded-lg shadow-2xl p-3 w-80"
+             style={{ position: 'fixed', zIndex: 9999, top: pos.top, left: pos.left, right: pos.right, bottom: pos.bottom }}
              data-testid={`verif-dropdown-${seccion}`}
+             data-verif-dropdown={seccion}
              onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-200">
             <span className="text-lg">{ICONOS_SECCION[seccion] || '📋'}</span>
@@ -287,30 +328,60 @@ const SECCION_BG = {
   purple: 'bg-purple-50 border-purple-200',
   orange: 'bg-orange-50 border-orange-200',
   red: 'bg-red-50 border-red-200',
+  pink: 'bg-pink-50 border-pink-200',
   gray: 'bg-gray-50 border-gray-200',
   indigo: 'bg-indigo-50 border-indigo-200',
+};
+// Iter 29 · Punto 9 — barra vertical izquierda coloreada por sección
+const SECCION_BAR = {
+  blue: 'bg-blue-500',
+  green: 'bg-green-500',
+  teal: 'bg-teal-500',
+  yellow: 'bg-yellow-500',
+  purple: 'bg-purple-500',
+  orange: 'bg-orange-500',
+  red: 'bg-red-500',
+  pink: 'bg-pink-500',
+  gray: 'bg-gray-400',
+  indigo: 'bg-indigo-500',
 };
 const Section = ({ titulo, icono, color = 'gray', defaultOpen = false, badge, children, sectionKey }) => {
   const [open, setOpen] = useState(defaultOpen);
   const bg = SECCION_BG[color] || SECCION_BG.gray;
+  const bar = SECCION_BAR[color] || SECCION_BAR.gray;
   return (
-    <div className={`rounded-lg border ${bg} overflow-hidden`} data-testid={`section-${sectionKey}`}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen(o => !o)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); } }}
-        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-black/5 transition cursor-pointer select-none"
-        data-testid={`section-toggle-${sectionKey}`}
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{icono}</span>
-          <span className="font-semibold text-slate-800 text-sm uppercase tracking-wide">{titulo}</span>
-          {badge}
+    <div className={`rounded-lg border ${bg}`} data-testid={`section-${sectionKey}`} style={{ overflow: 'visible' }}>
+      <div className="flex">
+        {/* Iter 29 · Punto 9 — Barra vertical sticky con nombre de sección rotado */}
+        <aside
+          aria-hidden="true"
+          className={`sticky top-0 self-start flex-shrink-0 w-7 ${bar} flex items-center justify-center`}
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', minHeight: '52px' }}
+          data-testid={`section-bar-${sectionKey}`}
+        >
+          <span className="text-white text-[10px] font-bold uppercase tracking-wide py-2 whitespace-nowrap">
+            {titulo}
+          </span>
+        </aside>
+        <div className="flex-1 min-w-0">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setOpen(o => !o)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); } }}
+            className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-black/5 transition cursor-pointer select-none"
+            data-testid={`section-toggle-${sectionKey}`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">{icono}</span>
+              <span className="font-semibold text-slate-800 text-sm uppercase tracking-wide">{titulo}</span>
+              {badge}
+            </div>
+            <span className={`text-slate-500 transform transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+          </div>
+          {open && <div className="p-4 pt-2 border-t border-black/5">{children}</div>}
         </div>
-        <span className={`text-slate-500 transform transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
       </div>
-      {open && <div className="p-4 pt-2 border-t border-black/5">{children}</div>}
     </div>
   );
 };

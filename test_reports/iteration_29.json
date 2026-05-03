@@ -1,0 +1,37 @@
+{
+  "summary": "Iter29 — testing 100% visual frontend. Los 4 puntos (6, 8, 9, 14) PASS. Regresión iter28 PASS. Backend spot-checks (bandeja/emails, bandeja/config, marcar-todos-leidos, PUT config firma) todos 200.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_regression.py",
+    "/app/backend/tests/test_iter27_mejoras.py",
+    "/app/backend/tests/test_iter23_bandeja.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Punto 6 (Dashboard 4 bloques coloreados): /app/frontend/src/pages/DashboardPage.js crea los 4 bloques con testids correctos (bloque-resumen-actividad bg-blue-50, bloque-pendientes-atencion bg-amber-50, bloque-proximos-15-dias bg-green-50, bloque-estado-sistema bg-gray-50), cada uno con rounded-xl p-4 mb-4, h2 título + p descripción. Stats (stat-events, stat-contacts, stat-seasons) contenidos en bloque 1. ActividadPendiente en bloque 2. Listado Próximos eventos en bloque 3. btn-ir-recordatorios en bloque 4 y navega correctamente a /admin/recordatorios. Contador Eventos muestra 9 tras carga (verificado en API /api/gestor/eventos → 9 eventos).",
+    "Punto 8 (Recordatorios ayuda colapsable): /app/frontend/src/pages/RecordatoriosAdmin.js línea 130 usa <details data-testid=ayuda-notificaciones-push> con summary colapsable. Por defecto CERRADO (open=false, contenido no visible). Click en summary → open=true, ayuda-notificaciones-contenido visible con textos 'Para recibirlas necesitas', '¿Para qué sirven?', '¿Por qué no me llegan?'. Card 'Estado del cron' intacto.",
+    "Punto 9 (barras verticales sticky): /app/frontend/src/pages/ConfiguracionEventos.js líneas 336-365 implementa SECCION_BAR con 10 colores. Verificadas 12/12 instancias section-bar-* (datos_generales→blue-500, ensayos→green-500, programa_musical→purple-500, logistica_musicos→yellow-500, comidas/montaje→orange-500, propuesta_plantilla→teal-500, partituras→yellow-500, notas_musicos/notas_internas→gray-400, form_inscripcion/historial_verificaciones→indigo-500). Todas con class='sticky top-0 w-7', style writing-mode:vertical-rl y transform:rotate(180deg). Bar sigue visible al colapsar la sección (layout flex aside+content intacto). NOTA: spec menciona 'section-ensayos_funciones' pero el código usa 'section-ensayos' (naming preexistente, no regresión iter29).",
+    "Punto 14 (dropdown badge verificación fixed): /app/frontend/src/pages/ConfiguracionEventos.js línea 283 — el verif-dropdown tiene style={{position:'fixed', zIndex:9999, top/left/right/bottom dinámicos desde pos}} y pos se calcula con btnRef.current.getBoundingClientRect() (línea 228). Verificado: computedStyle position='fixed', zIndex='9999'. Toggle abre/cierra correctamente y click fuera cierra (línea 218 closes on outside click).",
+    "Regresión iter28 PASS: /admin/musicos muestra 15 músicos (musicos-total='15'), /admin/comunicaciones 7 tabs presentes, help-panel-toggle visible en /admin/*, backend firma/bandeja/marcar-leidos/config todos 200 OK.",
+    "Sin regresiones detectadas. Ningún archivo de iter29 rompe tests previos."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (4/4 spot-check endpoints 200 OK)",
+    "frontend": "100% (4 puntos iter29 + regresión iter28 todos PASS)"
+  },
+  "test_credentials": "admin@convocatorias.com/Admin123! (super admin), jesusalonsodirector@gmail.com/Musico123! (músico)",
+  "seed_data_creation": "Ninguna — solo tests de lectura visual.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter29 es 100% frontend visual. Archivos tocados: DashboardPage.js (extraído de App.js con 4 bloques), RecordatoriosAdmin.js (details colapsable líneas 128-150), ConfiguracionEventos.js (SECCION_BAR + aside sticky líneas 336-387, VerificacionBadge con getBoundingClientRect + position:fixed líneas 185-290). Backend NO tocado. Spec menciona 'section-ensayos_funciones' pero real es 'section-ensayos' (naming preexistente — no confundir). Todos los testids principales verificados: bloque-resumen-actividad, bloque-pendientes-atencion, bloque-proximos-15-dias, bloque-estado-sistema, stat-events/contacts/seasons, btn-ir-recordatorios, ayuda-notificaciones-push, ayuda-notificaciones-contenido, section-bar-{10 keys}, section-toggle-{key}, verif-badge-{seccion}, verif-dropdown-{seccion}, verif-btn-verificado-{seccion}.",
+  "rca of the issue": "N/A — no se encontraron bugs. Todos los cambios de iter29 funcionan correctamente y la regresión iter28 se mantiene intacta."
+}
