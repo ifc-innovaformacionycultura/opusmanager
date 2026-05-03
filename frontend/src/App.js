@@ -732,6 +732,16 @@ function App() {
                         <Route path="/admin/archivo" element={<GestorArchivo />} />
                         <Route path="/admin/inventario" element={<GestorInventario />} />
                         <Route path="/ayuda" element={<ManualUsuario />} />
+                        {/* Alias por compatibilidad: /gestor/* → home gestor */}
+                        <Route path="/gestor/*" element={<Navigate to="/" replace />} />
+                        {/* Catch-all 404 amigable para URLs no registradas */}
+                        <Route path="*" element={
+                          <div className="p-8 text-center" data-testid="not-found-page">
+                            <h1 className="text-2xl font-bold text-slate-900 mb-2">Página no encontrada</h1>
+                            <p className="text-slate-600 mb-4">La ruta solicitada no existe en el panel del gestor.</p>
+                            <Link to="/" className="inline-block px-4 py-2 bg-slate-900 text-white rounded-md hover:bg-slate-800 text-sm">Volver al Dashboard</Link>
+                          </div>
+                        } />
                       </Routes>
                     </Layout>
                   </ProtectedGestorRoute>
