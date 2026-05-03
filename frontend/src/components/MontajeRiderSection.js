@@ -158,6 +158,50 @@ const MontajeRiderSection = ({ evento, api, onEventChange }) => {
       setOpSavingId(null);
     }
   };
+
+  // Iter F2.1 — Reordenar operaciones con flechas ↑↓
+  const reordenarOperacion = async (idx, direccion) => {
+    const j = direccion === 'up' ? idx - 1 : idx + 1;
+    if (j < 0 || j >= operaciones.length) return;
+    // Swap local
+    const nuevas = [...operaciones];
+    [nuevas[idx], nuevas[j]] = [nuevas[j], nuevas[idx]];
+    // Recalcular campo orden en local
+    nuevas.forEach((op, i) => { op.orden = i + 1; });
+    setOperaciones(nuevas);
+    // Persistir si ambas tienen id
+    const a = nuevas[idx];
+    const b = nuevas[j];
+    if (a.id && b.id) {
+      setOpSavingId('reorder');
+      try {
+        const buildPayload = (op, ord) => ({
+          tipo: op.tipo,
+          orden: ord,
+          fecha: op.fecha || null,
+          hora: op.hora || null,
+          direccion: op.direccion || null,
+          notas: op.notas || null,
+          items: (op.items || []).map(it => ({
+            material_id: it.material_id || null,
+            nombre_manual: it.nombre_manual || null,
+            cantidad: it.cantidad ?? 1,
+            notas: it.notas || null,
+            foto_url: it.foto_url || null,
+          })),
+        });
+        await Promise.all([
+          api.put(`/api/gestor/transporte-material/operaciones/${a.id}`, buildPayload(a, idx + 1)),
+          api.put(`/api/gestor/transporte-material/operaciones/${b.id}`, buildPayload(b, j + 1)),
+        ]);
+        await recargarOperaciones();
+      } catch (e) {
+        setMsg({ type: 'error', text: e.response?.data?.detail || e.message });
+      } finally {
+        setOpSavingId(null);
+      }
+    }
+  };
   const cargarFavoritaEnOperacion = (lista, opIdx) => {
     const itemsLista = (lista.items || []).map(it => ({
       material_id: it.material_id || null,
@@ -415,6 +459,18 @@ const MontajeRiderSection = ({ evento, api, onEventChange }) => {
                 <input type="time" value={op.hora || ''} onChange={(e) => opPatch(idx, { hora: e.target.value })}
                        data-testid={`op-hora-${idx}`}
                        className={`${fieldCls} text-xs w-24`} />
+                <button type="button"
+                        onClick={() => reordenarOperacion(idx, 'up')}
+                        disabled={idx === 0 || opSavingId !== null}
+                        data-testid={`btn-mover-up-${idx}`}
+                        title="Subir"
+                        className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded disabled:opacity-30 disabled:cursor-not-allowed">↑</button>
+                <button type="button"
+                        onClick={() => reordenarOperacion(idx, 'down')}
+                        disabled={idx === operaciones.length - 1 || opSavingId !== null}
+                        data-testid={`btn-mover-down-${idx}`}
+                        title="Bajar"
+                        className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded disabled:opacity-30 disabled:cursor-not-allowed">↓</button>
                 <button type="button" onClick={() => removeOperacion(idx)}
                         data-testid={`btn-eliminar-op-${idx}`}
                         className="px-2 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100">

@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Iter F2.1 · 2026-05-03 · Reordenar operaciones de transporte con flechas ↑↓
+
+- **1 archivo tocado**: `MontajeRiderSection.js`. Sin SQL, sin backend nuevo (reusa `PUT /operaciones/{id}`).
+- Función `reordenarOperacion(idx, direccion)`: swap local + 2 PUT al servidor con `orden` intercambiado si ambas operaciones están persistidas. Si alguna es nueva (sin id), solo cambia el local y se guardará al pulsar 💾.
+- Botones `[btn-mover-up-{idx}]` y `[btn-mover-down-{idx}]` en cabecera de cada tarjeta. `disabled` en extremos y durante guardado en curso.
+- Self-test: backend respeta el campo `orden` correctamente (verificado vía curl); endpoint `PUT /operaciones/{id}` ya testeado 21/21 en Iter F2.
+
+
+
 ## Iter F2 · 2026-05-03 · Transporte de Material multi-operación + Listas favoritas
 
 ### 🎯 Cambios (2 archivos, sin SQL adicional — tablas ya creadas)
