@@ -3,16 +3,19 @@ from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File,
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from supabase_client import supabase, create_user_profile
-from auth_utils import get_current_user, get_current_gestor
+from auth_utils import get_current_user, get_current_gestor, is_super_admin
 from typing import List, Optional, Literal, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO, StringIO
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import csv
+import logging
 import secrets
 import string
 from email_service import send_musico_credentials_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/gestor", tags=["gestor"])
 
@@ -732,8 +735,9 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
     """
     try:
         # Asignaciones confirmadas
+        # Iter E1 — añadidos campos de cierre de plantilla.
         a_res = supabase.table('asignaciones') \
-            .select('id,usuario_id,evento_id,estado,cache_presupuestado,importe,numero_atril,letra,comentarios,nivel_estudios,porcentaje_asistencia') \
+            .select('id,usuario_id,evento_id,estado,cache_presupuestado,importe,numero_atril,letra,comentarios,nivel_estudios,porcentaje_asistencia,estado_cierre,cerrado_plantilla_por,cerrado_plantilla_at') \
             .eq('estado', 'confirmado') \
             .execute()
         confirmadas = a_res.data or []
@@ -743,18 +747,59 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
         evento_ids = list({a['evento_id'] for a in confirmadas})
         usuario_ids = list({a['usuario_id'] for a in confirmadas})
 
-        # Bloque 3: solo eventos publicados (estado='abierto')
+        # Iter E1 — Eventos visibles:
+        # 1) estado='abierto' (comportamiento original, plantilla editable).
+        # 2) Cualquier evento cuyas asignaciones tengan estado_cierre IN
+        #    ('cerrado_plantilla','cerrado_economico') — plantilla en modo solo lectura.
+        eventos_cerrados_ids = {
+            a['evento_id'] for a in confirmadas
+            if (a.get('estado_cierre') or 'abierto') in ('cerrado_plantilla', 'cerrado_economico')
+        }
         eventos_res = supabase.table('eventos') \
             .select('*') \
             .in_('id', evento_ids) \
-            .eq('estado', 'abierto') \
             .order('fecha_inicio', desc=False) \
             .execute()
-        eventos_raw = eventos_res.data or []
+        eventos_raw = [
+            e for e in (eventos_res.data or [])
+            if e.get('estado') == 'abierto' or e['id'] in eventos_cerrados_ids
+        ]
         # Recalcular evento_ids después del filtro (puede haber quedado vacío)
         evento_ids = [e['id'] for e in eventos_raw]
         if not evento_ids:
             return {"eventos": [], "total_temporada": 0}
+
+        # Iter E1 — Mapa de cierre por evento. Si cualquier asignacion del evento
+        # tiene estado_cierre != 'abierto', consideramos el evento como cerrado.
+        cierre_by_evento: Dict[str, Dict] = {}
+        for a in confirmadas:
+            evid = a['evento_id']
+            if evid not in evento_ids:
+                continue
+            ec = a.get('estado_cierre') or 'abierto'
+            cur = cierre_by_evento.get(evid)
+            if cur is None or (cur.get('estado_cierre') == 'abierto' and ec != 'abierto'):
+                cierre_by_evento[evid] = {
+                    "estado_cierre": ec,
+                    "cerrado_plantilla_por": a.get('cerrado_plantilla_por'),
+                    "cerrado_plantilla_at": a.get('cerrado_plantilla_at'),
+                }
+        # Resolver nombre del gestor que cerró cada evento.
+        gestor_ids_cierre = list({
+            v.get('cerrado_plantilla_por') for v in cierre_by_evento.values()
+            if v.get('cerrado_plantilla_por')
+        })
+        gestores_cierre_by_id: Dict[str, str] = {}
+        if gestor_ids_cierre:
+            try:
+                gres = supabase.table('usuarios').select('id,nombre,apellidos') \
+                    .in_('id', gestor_ids_cierre).execute().data or []
+                gestores_cierre_by_id = {
+                    g['id']: f"{g.get('nombre','')} {g.get('apellidos','')}".strip() or g.get('id')
+                    for g in gres
+                }
+            except Exception:
+                pass
 
         ens_res = supabase.table('ensayos') \
             .select('id,evento_id,tipo,fecha,hora,obligatorio,lugar') \
@@ -994,16 +1039,24 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                     "totales": {k: round(v, 2) for k, v in sec_totals.items()},
                 })
 
+            cierre_info = cierre_by_evento.get(ev['id']) or {}
             eventos_out.append({
                 "id": ev['id'],
                 "nombre": ev.get('nombre'),
                 "estado": ev.get('estado'),
+                "fecha_inicio": ev.get('fecha_inicio'),
                 "fechas": _funciones_del_evento(ev),
                 "lugar": ev.get('lugar'),
                 "ensayos": ensayos,
                 "total_musicos": len(asigs_ev),
                 "totales": {k: round(v, 2) for k, v in total_ev.items()},
                 "secciones": secciones_out,
+                # Iter E1 — info de cierre de plantilla
+                "estado_cierre": cierre_info.get("estado_cierre") or "abierto",
+                "cerrado_plantilla_at": cierre_info.get("cerrado_plantilla_at"),
+                "cerrado_plantilla_por_nombre": gestores_cierre_by_id.get(
+                    cierre_info.get("cerrado_plantilla_por")
+                ) if cierre_info.get("cerrado_plantilla_por") else None,
             })
 
         return {"eventos": eventos_out}
@@ -1059,6 +1112,54 @@ async def guardar_plantillas_definitivas(
     now = datetime.now().isoformat()
     resumen = {"asistencias": 0, "gastos": 0, "anotaciones": 0}
     try:
+        # ============================================================
+        # Iter E1 — Defensa backend: bloquear cambios sobre eventos
+        # cuya plantilla esté concluida (estado_cierre != 'abierto').
+        # ============================================================
+        evento_ids_tocados = set()
+        for g in data.gastos:
+            if g.evento_id:
+                evento_ids_tocados.add(g.evento_id)
+        ensayo_ids_payload = list({a.ensayo_id for a in data.asistencias if a.ensayo_id})
+        if ensayo_ids_payload:
+            er = supabase.table('ensayos').select('id,evento_id') \
+                .in_('id', ensayo_ids_payload).execute().data or []
+            for e in er:
+                if e.get('evento_id'):
+                    evento_ids_tocados.add(e['evento_id'])
+        asig_ids_payload = [n.asignacion_id for n in data.anotaciones if n.asignacion_id]
+        if asig_ids_payload:
+            ar = supabase.table('asignaciones').select('id,evento_id') \
+                .in_('id', asig_ids_payload).execute().data or []
+            for a in ar:
+                if a.get('evento_id'):
+                    evento_ids_tocados.add(a['evento_id'])
+        if evento_ids_tocados:
+            cerr = supabase.table('asignaciones').select('evento_id,estado_cierre') \
+                .in_('evento_id', list(evento_ids_tocados)).execute().data or []
+            evs_cerrados = {
+                c['evento_id'] for c in cerr
+                if (c.get('estado_cierre') or 'abierto') != 'abierto'
+            }
+            if evs_cerrados:
+                # Cargar nombres para mensaje claro
+                names = {}
+                try:
+                    nr = supabase.table('eventos').select('id,nombre') \
+                        .in_('id', list(evs_cerrados)).execute().data or []
+                    names = {n['id']: n.get('nombre') for n in nr}
+                except Exception:
+                    pass
+                etiquetas = ", ".join(
+                    f"'{names.get(eid, eid)}'" for eid in evs_cerrados
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"No se permiten cambios: el evento {etiquetas} está concluido. "
+                        f"Para editar, un administrador debe reabrir la plantilla."
+                    ),
+                )
         # 1) Asistencias
         for a in data.asistencias:
             if a.disponibilidad_id:
@@ -1143,8 +1244,237 @@ async def guardar_plantillas_definitivas(
                     }).eq('usuario_id', uid).eq('evento_id', evid).execute()
 
         return {"ok": True, "resumen": resumen}
+    except HTTPException:
+        # Iter E1 — Re-elevar 403 (evento concluido) sin convertir a 500.
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar: {str(e)}")
+
+
+# ============================================================
+# Iter E1 — Concluir / Reabrir plantilla del evento
+# ============================================================
+
+@router.post("/eventos/{evento_id}/concluir-plantilla")
+async def concluir_plantilla(
+    evento_id: str,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Marca todas las asignaciones del evento con estado_cierre='cerrado_plantilla'.
+
+    Cualquier gestor puede concluir un evento. Notifica vía push y notificaciones_gestor.
+    Si existían recibos con regenerar_pendiente=TRUE, los regenera y notifica a admins.
+    """
+    profile = current_user.get('profile') or {}
+    gestor_id = profile.get('id')
+    gestor_nombre = (
+        f"{profile.get('nombre','')} {profile.get('apellidos','')}".strip()
+        or (profile.get('email') or 'Gestor')
+    )
+
+    ev_row = supabase.table('eventos').select('id,nombre').eq('id', evento_id).limit(1).execute().data or []
+    if not ev_row:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    evento = ev_row[0]
+
+    # 1) UPDATE asignaciones
+    now_iso = datetime.now(timezone.utc).isoformat()
+    upd = supabase.table('asignaciones').update({
+        "estado_cierre": "cerrado_plantilla",
+        "cerrado_plantilla_por": gestor_id,
+        "cerrado_plantilla_at": now_iso,
+        "updated_at": now_iso,
+    }).eq('evento_id', evento_id).execute()
+    actualizadas = len(upd.data or [])
+
+    # 2) Regenerar recibos marcados como pendientes (tras una reapertura previa).
+    regenerados = 0
+    try:
+        recibos_pend = supabase.table('recibos').select('id,asignacion_id') \
+            .eq('evento_id', evento_id).eq('regenerar_pendiente', True).execute().data or []
+    except Exception:
+        recibos_pend = []
+    if recibos_pend:
+        try:
+            from routes_documentos import generar_recibo as _gen_recibo
+        except Exception as e:
+            _gen_recibo = None
+            logger.warning(f"concluir_plantilla: generar_recibo no disponible: {e}")
+        for r in recibos_pend:
+            try:
+                if _gen_recibo:
+                    _gen_recibo(r['asignacion_id'], force=True)
+                supabase.table('recibos').update({
+                    "regenerar_pendiente": False,
+                    "actualizado_at": now_iso,
+                }).eq('id', r['id']).execute()
+                regenerados += 1
+            except Exception as e:
+                logger.warning(f"Error regenerando recibo {r['id']}: {e}")
+
+    # 3) Notificar a todos los gestores (push + notificaciones_gestor)
+    try:
+        gestores_rows = supabase.table('usuarios').select('id') \
+            .in_('rol', ['gestor', 'archivero', 'director_general', 'admin']) \
+            .execute().data or []
+    except Exception:
+        gestores_rows = []
+    titulo = "🏁 Evento concluido"
+    body = (
+        f"La plantilla de {evento.get('nombre','evento')} ha sido concluida. "
+        f"Ya puedes procesar los pagos en Gestión Económica."
+    )
+    try:
+        from routes_push import notify_push as _notify_push
+    except Exception:
+        _notify_push = None
+    for g in gestores_rows:
+        gid = g.get('id')
+        if not gid:
+            continue
+        try:
+            supabase.table('notificaciones_gestor').insert({
+                "gestor_id": gid,
+                "tipo": "evento_concluido",
+                "titulo": titulo,
+                "descripcion": body,
+                "entidad_tipo": "evento",
+                "entidad_id": evento_id,
+                "leida": False,
+            }).execute()
+        except Exception:
+            pass
+        if _notify_push:
+            try:
+                _notify_push(gid, titulo, body, '/admin/asistencia-pagos', tipo='general')
+            except Exception:
+                pass
+
+    # 4) Si se regeneraron recibos, notificar a admins/director.
+    if regenerados > 0:
+        try:
+            admins_rows = supabase.table('usuarios').select('id') \
+                .in_('rol', ['admin', 'director_general']).execute().data or []
+        except Exception:
+            admins_rows = []
+        rt = "📄 Recibos regenerados"
+        rb = (
+            f"Se han regenerado {regenerados} recibo"
+            f"{'s' if regenerados != 1 else ''} del evento "
+            f"{evento.get('nombre','evento')} tras la reapertura."
+        )
+        for a in admins_rows:
+            aid = a.get('id')
+            if not aid:
+                continue
+            try:
+                supabase.table('notificaciones_gestor').insert({
+                    "gestor_id": aid,
+                    "tipo": "recibos_regenerados",
+                    "titulo": rt,
+                    "descripcion": rb,
+                    "entidad_tipo": "evento",
+                    "entidad_id": evento_id,
+                    "leida": False,
+                }).execute()
+            except Exception:
+                pass
+            if _notify_push:
+                try:
+                    _notify_push(aid, rt, rb, '/admin/recibos', tipo='general')
+                except Exception:
+                    pass
+
+    # 5) Registro de actividad
+    try:
+        supabase.table('registro_actividad').insert({
+            "tipo": "evento_concluido",
+            "descripcion": f"Plantilla del evento '{evento.get('nombre','')}' concluida por {gestor_nombre}",
+            "usuario_id": gestor_id,
+            "usuario_nombre": gestor_nombre,
+            "entidad_tipo": "evento",
+            "entidad_id": evento_id,
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "evento_id": evento_id,
+        "actualizadas": actualizadas,
+        "recibos_regenerados": regenerados,
+        "cerrado_plantilla_at": now_iso,
+        "cerrado_plantilla_por_nombre": gestor_nombre,
+    }
+
+
+@router.post("/eventos/{evento_id}/reabrir-plantilla")
+async def reabrir_plantilla(
+    evento_id: str,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Reabre una plantilla concluida. Solo super admins (director_general / admin /
+    admin@convocatorias.com) pueden ejecutar esto.
+
+    Si existen recibos para el evento, los marca con regenerar_pendiente=TRUE
+    para que se regeneren automáticamente al volver a concluir.
+    """
+    if not is_super_admin(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo el director general o administradores pueden reabrir plantillas.",
+        )
+    profile = current_user.get('profile') or {}
+    gestor_id = profile.get('id')
+    gestor_nombre = (
+        f"{profile.get('nombre','')} {profile.get('apellidos','')}".strip()
+        or (profile.get('email') or 'Admin')
+    )
+
+    ev_row = supabase.table('eventos').select('id,nombre').eq('id', evento_id).limit(1).execute().data or []
+    if not ev_row:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    evento = ev_row[0]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    upd = supabase.table('asignaciones').update({
+        "estado_cierre": "abierto",
+        "cerrado_plantilla_por": None,
+        "cerrado_plantilla_at": None,
+        "updated_at": now_iso,
+    }).eq('evento_id', evento_id).execute()
+    actualizadas = len(upd.data or [])
+
+    # Marcar recibos para regenerar si existen.
+    recibos_marcados = 0
+    try:
+        rec = supabase.table('recibos').update({
+            "regenerar_pendiente": True,
+            "actualizado_at": now_iso,
+        }).eq('evento_id', evento_id).execute()
+        recibos_marcados = len(rec.data or [])
+    except Exception as e:
+        logger.warning(f"Error marcando recibos para regenerar: {e}")
+
+    # Registro de actividad
+    try:
+        supabase.table('registro_actividad').insert({
+            "tipo": "evento_reabierto",
+            "descripcion": f"Plantilla del evento '{evento.get('nombre','')}' reabierta por {gestor_nombre}",
+            "usuario_id": gestor_id,
+            "usuario_nombre": gestor_nombre,
+            "entidad_tipo": "evento",
+            "entidad_id": evento_id,
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "evento_id": evento_id,
+        "actualizadas": actualizadas,
+        "recibos_marcados_regenerar": recibos_marcados,
+    }
 
 
 # ==================== Cachets Config & Upload justificantes ====================

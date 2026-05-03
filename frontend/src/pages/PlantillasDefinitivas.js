@@ -35,6 +35,37 @@ const BoolDot = ({ v }) => {
   return <span title="Sin datos" className="inline-block w-4 h-4 rounded-full bg-slate-200" />;
 };
 
+// Iter E1 — Helpers de fecha y permisos.
+const eventoYaPasado = (ev) => {
+  // Toma fecha_inicio del evento, devuelve true si esa fecha < hoy (00:00).
+  const raw = ev?.fecha_inicio;
+  if (!raw) return false;
+  try {
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return false;
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    return d < hoy;
+  } catch {
+    return false;
+  }
+};
+const isSuperAdminUser = (user) => {
+  if (!user) return false;
+  const rol = user.rol || user.profile?.rol;
+  if (rol === 'admin' || rol === 'director_general') return true;
+  const email = (user.email || user.profile?.email || '').toLowerCase();
+  return email === 'admin@convocatorias.com';
+};
+const fmtFechaCierre = (iso) => {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('es-ES', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return iso; }
+};
+
 // Badge para ensayos a los que el instrumento del músico NO está convocado
 const NoConvBadge = () => (
   <span
@@ -46,7 +77,7 @@ const NoConvBadge = () => (
 
 // Select Sí / No / — para asistencia real editable
 // Input numérico 0..100 para asistencia real (%). NULL = vacío.
-const PctInput = ({ value, onChange, dataTestId }) => (
+const PctInput = ({ value, onChange, dataTestId, disabled }) => (
   <input
     type="number"
     min="0"
@@ -64,7 +95,8 @@ const PctInput = ({ value, onChange, dataTestId }) => (
     }}
     placeholder="—"
     data-testid={dataTestId}
-    className="text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white w-14 text-right"
+    disabled={disabled}
+    className="text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white w-14 text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
     title="% asistencia real (0–100)"
   />
 );
@@ -72,7 +104,7 @@ const PctInput = ({ value, onChange, dataTestId }) => (
 // ==========================================================================
 // Tabla de una sección de un evento
 // ==========================================================================
-const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajesByUser, mostrarQR }) => {
+const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajesByUser, mostrarQR, cerrado }) => {
   const ensayos = evento.ensayos || [];
   return (
     <div className="overflow-x-auto border-t border-slate-200" data-testid={`seccion-${evento.id}-${seccion.key}`}>
@@ -178,7 +210,8 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                     value={nAtril ?? ''}
                     onChange={(e) => onChange(m, evento.id, { numero_atril: e.target.value === '' ? null : parseInt(e.target.value, 10) })}
                     data-testid={`numero-atril-${m.usuario_id}-${evento.id}`}
-                    className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs"
+                    disabled={cerrado}
+                    className="w-12 px-1 py-0.5 border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                   />
                 </td>
                 <td className="px-1 py-1">
@@ -187,7 +220,8 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                     value={letra ?? ''}
                     onChange={(e) => onChange(m, evento.id, { letra: e.target.value.toUpperCase() || null })}
                     data-testid={`letra-${m.usuario_id}-${evento.id}`}
-                    className="w-10 px-1 py-0.5 border border-slate-300 rounded text-xs uppercase"
+                    disabled={cerrado}
+                    className="w-10 px-1 py-0.5 border border-slate-300 rounded text-xs uppercase disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                   />
                 </td>
                 <td className="px-1 py-1 border-r-2 border-slate-300">
@@ -196,7 +230,8 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                     value={comentario ?? ''}
                     onChange={(e) => onChange(m, evento.id, { comentario: e.target.value })}
                     data-testid={`comentario-${m.usuario_id}-${evento.id}`}
-                    className="w-full px-1 py-0.5 border border-slate-300 rounded text-xs"
+                    disabled={cerrado}
+                    className="w-full px-1 py-0.5 border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                   />
                 </td>
                 {ensayos.map(e => {
@@ -221,6 +256,7 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                           value={asistActual}
                           onChange={(v) => onChange(m, evento.id, { asistenciaEnsayoId: e.id, asistenciaValor: v })}
                           dataTestId={`asist-${m.usuario_id}-${e.id}`}
+                          disabled={cerrado}
                         />
                         {mostrarQR && (() => {
                           const f = (fichajesByUser || {})[m.usuario_id]?.[e.id];
@@ -264,7 +300,8 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                     value={extra || ''}
                     onChange={(e) => onChange(m, evento.id, { cache_extra: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
                     data-testid={`extra-${m.usuario_id}-${evento.id}`}
-                    className="w-16 px-1 py-0.5 border border-slate-300 rounded text-xs text-right"
+                    disabled={cerrado}
+                    className="w-16 px-1 py-0.5 border border-slate-300 rounded text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                   />
                 </td>
                 <td className="px-1 py-1 bg-amber-50/40">
@@ -272,7 +309,8 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                     type="text"
                     value={motivo || ''}
                     onChange={(e) => onChange(m, evento.id, { motivo_extra: e.target.value })}
-                    className="w-full px-1 py-0.5 border border-slate-300 rounded text-xs"
+                    disabled={cerrado}
+                    className="w-full px-1 py-0.5 border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                   />
                 </td>
                 <td className="px-1 py-1 bg-amber-50/40">
@@ -281,12 +319,14 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                       type="number" step="0.01" min="0"
                       value={transp || ''}
                       onChange={(e) => onChange(m, evento.id, { transporte_importe: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
-                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right"
+                      disabled={cerrado}
+                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                     />
                     <FileButton
                       url={transpUrl}
                       onFile={(f) => onUploadJust(m.usuario_id, evento.id, 'transporte', f)}
                       testId={`file-transp-${m.usuario_id}-${evento.id}`}
+                      disabled={cerrado}
                     />
                   </div>
                 </td>
@@ -296,12 +336,14 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                       type="number" step="0.01" min="0"
                       value={aloj || ''}
                       onChange={(e) => onChange(m, evento.id, { alojamiento_importe: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
-                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right"
+                      disabled={cerrado}
+                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                     />
                     <FileButton
                       url={alojUrl}
                       onFile={(f) => onUploadJust(m.usuario_id, evento.id, 'alojamiento', f)}
                       testId={`file-aloj-${m.usuario_id}-${evento.id}`}
+                      disabled={cerrado}
                     />
                   </div>
                 </td>
@@ -311,12 +353,14 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                       type="number" step="0.01" min="0"
                       value={otros || ''}
                       onChange={(e) => onChange(m, evento.id, { otros_importe: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
-                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right"
+                      disabled={cerrado}
+                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                     />
                     <FileButton
                       url={otrosUrl}
                       onFile={(f) => onUploadJust(m.usuario_id, evento.id, 'otros', f)}
                       testId={`file-otros-${m.usuario_id}-${evento.id}`}
+                      disabled={cerrado}
                     />
                   </div>
                 </td>
@@ -337,16 +381,17 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
 // ==========================================================================
 // Botón de subida + enlace "Ver"
 // ==========================================================================
-const FileButton = ({ url, onFile, testId }) => {
+const FileButton = ({ url, onFile, testId, disabled }) => {
   const inputRef = useRef();
   return (
     <div className="inline-flex items-center gap-1">
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
+        onClick={() => { if (!disabled) inputRef.current?.click(); }}
         data-testid={testId}
-        className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-[10px] whitespace-nowrap"
-        title={url ? 'Reemplazar justificante' : 'Subir justificante'}
+        disabled={disabled}
+        className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-[10px] whitespace-nowrap disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed disabled:hover:bg-slate-50"
+        title={disabled ? 'Plantilla concluida — solo lectura' : (url ? 'Reemplazar justificante' : 'Subir justificante')}
       >
         📎
       </button>
@@ -360,9 +405,10 @@ const FileButton = ({ url, onFile, testId }) => {
         ref={inputRef}
         type="file"
         className="hidden"
+        disabled={disabled}
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) onFile(f);
+          if (f && !disabled) onFile(f);
           e.target.value = '';
         }}
       />
@@ -374,7 +420,8 @@ const FileButton = ({ url, onFile, testId }) => {
 // Componente principal
 // ==========================================================================
 const PlantillasDefinitivas = () => {
-  const { api } = useGestorAuth();
+  const { api, user } = useGestorAuth();
+  const isSuperAdmin = isSuperAdminUser(user);
   const [data, setData] = useState({ eventos: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -390,6 +437,10 @@ const PlantillasDefinitivas = () => {
   const [saving, setSaving] = useState(false);
   const [mostrarQR, setMostrarQR] = useState(false);
   const [fichajesPorEvento, setFichajesPorEvento] = useState({});
+  // Iter E1 — modales de cierre / reapertura
+  const [concluirModal, setConcluirModal] = useState(null); // {ev}
+  const [reabrirModal, setReabrirModal] = useState(null);   // {ev}
+  const [cierreBusy, setCierreBusy] = useState(false);
 
   const showFeedback = (type, text) => {
     setFeedback({ type, text });
@@ -559,6 +610,43 @@ const PlantillasDefinitivas = () => {
     } finally { setSaving(false); }
   };
 
+  // ============================================================
+  // Iter E1 — Concluir / Reabrir plantilla del evento
+  // ============================================================
+  const concluirEvento = async (ev) => {
+    try {
+      setCierreBusy(true);
+      const r = await api.post(`/api/gestor/eventos/${ev.id}/concluir-plantilla`);
+      const regenerados = r.data?.recibos_regenerados || 0;
+      showFeedback(
+        'success',
+        regenerados > 0
+          ? `Evento "${ev.nombre}" concluido. ${regenerados} recibo${regenerados !== 1 ? 's' : ''} regenerado${regenerados !== 1 ? 's' : ''}.`
+          : `Evento "${ev.nombre}" concluido. Equipo económico notificado.`,
+      );
+      setConcluirModal(null);
+      await cargar();
+    } catch (err) {
+      showFeedback('error', err.response?.data?.detail || err.message);
+    } finally {
+      setCierreBusy(false);
+    }
+  };
+
+  const reabrirEvento = async (ev) => {
+    try {
+      setCierreBusy(true);
+      await api.post(`/api/gestor/eventos/${ev.id}/reabrir-plantilla`);
+      showFeedback('success', `Plantilla de "${ev.nombre}" reabierta. Ya puedes editar de nuevo.`);
+      setReabrirModal(null);
+      await cargar();
+    } catch (err) {
+      showFeedback('error', err.response?.data?.detail || err.message);
+    } finally {
+      setCierreBusy(false);
+    }
+  };
+
   if (loading) return <div className="p-6" data-testid="plantillas-page"><p className="text-slate-500">Cargando...</p></div>;
 
   return (
@@ -632,6 +720,11 @@ const PlantillasDefinitivas = () => {
             const totEv = totalesEvento[ev.id] || { musicos: 0 };
             const open = !!openEvents[ev.id];
             const fichajesByUser = fichajesPorEvento[ev.id] || {};
+            // Iter E1 — estado de cierre del evento
+            const eventoCerrado = (ev.estado_cierre || 'abierto') !== 'abierto';
+            const yaPasado = eventoYaPasado(ev);
+            const puedeConcluir = !eventoCerrado && yaPasado;
+            const puedeReabrir = eventoCerrado && isSuperAdmin;
             return (
               <div key={ev.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid={`evento-acordeon-${ev.id}`}
                    {...(open ? {
@@ -640,32 +733,75 @@ const PlantillasDefinitivas = () => {
                      'data-entidad-id': ev.id || '',
                    } : {})}>
                 {/* Cabecera del acordeón de evento */}
-                <button
-                  onClick={() => setOpenEvents(p => ({ ...p, [ev.id]: !p[ev.id] }))}
-                  className="w-full px-4 py-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between gap-3 hover:from-slate-800 hover:to-slate-700"
-                  data-testid={`toggle-evento-${ev.id}`}
-                >
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-base font-semibold">{ev.nombre}</h2>
-                      {ev.fechas.map((f, idx) => (
-                        <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-700 text-slate-100">
-                          {fmtFecha(f.fecha)}{f.hora ? ` ${fmtHora(f.hora)}` : ''}
-                        </span>
-                      ))}
+                <div className="w-full px-4 py-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between gap-3 hover:from-slate-800 hover:to-slate-700">
+                  <button
+                    onClick={() => setOpenEvents(p => ({ ...p, [ev.id]: !p[ev.id] }))}
+                    className="flex-1 text-left flex items-start gap-3"
+                    data-testid={`toggle-evento-${ev.id}`}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-base font-semibold">{ev.nombre}</h2>
+                        {eventoCerrado && (
+                          <span
+                            data-testid={`badge-cerrado-${ev.id}`}
+                            title={ev.cerrado_plantilla_at
+                              ? `Concluido por ${ev.cerrado_plantilla_por_nombre || '—'} el ${fmtFechaCierre(ev.cerrado_plantilla_at)}`
+                              : 'Plantilla concluida'}
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30"
+                          >
+                            🏁 Concluido
+                          </span>
+                        )}
+                        {ev.fechas.map((f, idx) => (
+                          <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-700 text-slate-100">
+                            {fmtFecha(f.fecha)}{f.hora ? ` ${fmtHora(f.hora)}` : ''}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="text-xs text-slate-300 mt-1 flex items-center gap-4 flex-wrap">
+                        <span>👥 {totEv.musicos} confirmados</span>
+                        <span>💶 Previsto: <strong className="text-white">{fmtEuro(totEv.cache_previsto)}</strong></span>
+                        <span>💶 Real: <strong className="text-white">{fmtEuro(totEv.cache_real)}</strong></span>
+                        <span>➕ Extras: <strong className="text-white">{fmtEuro(totEv.extras + totEv.transporte + totEv.alojamiento + totEv.otros)}</strong></span>
+                        <span>💰 TOTAL: <strong className="text-amber-300">{fmtEuro(totEv.total)}</strong></span>
+                        {eventoCerrado && ev.cerrado_plantilla_at && (
+                          <span className="text-emerald-200">
+                            🏁 Concluido por {ev.cerrado_plantilla_por_nombre || '—'} · {fmtFechaCierre(ev.cerrado_plantilla_at)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-300 mt-1 flex items-center gap-4 flex-wrap">
-                      <span>👥 {totEv.musicos} confirmados</span>
-                      <span>💶 Previsto: <strong className="text-white">{fmtEuro(totEv.cache_previsto)}</strong></span>
-                      <span>💶 Real: <strong className="text-white">{fmtEuro(totEv.cache_real)}</strong></span>
-                      <span>➕ Extras: <strong className="text-white">{fmtEuro(totEv.extras + totEv.transporte + totEv.alojamiento + totEv.otros)}</strong></span>
-                      <span>💰 TOTAL: <strong className="text-amber-300">{fmtEuro(totEv.total)}</strong></span>
-                    </div>
+                    <svg className={`w-5 h-5 transition-transform mt-0.5 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+                    </svg>
+                  </button>
+                  {/* Iter E1 — Botones de cierre/reapertura */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {puedeConcluir && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setConcluirModal({ ev }); }}
+                        data-testid={`btn-concluir-${ev.id}`}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-xs font-semibold whitespace-nowrap shadow"
+                        title="Marcar el evento como concluido y notificar al equipo económico"
+                      >
+                        🏁 Concluir Evento
+                      </button>
+                    )}
+                    {puedeReabrir && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setReabrirModal({ ev }); }}
+                        data-testid={`btn-reabrir-${ev.id}`}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-md text-xs font-semibold whitespace-nowrap shadow"
+                        title="Reabrir la plantilla para volver a editar (solo administradores)"
+                      >
+                        🔓 Reabrir plantilla
+                      </button>
+                    )}
                   </div>
-                  <svg className={`w-5 h-5 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
-                  </svg>
-                </button>
+                </div>
 
                 {open && ev.secciones.map(sec => {
                   const secKey = ev.id + '_' + sec.key;
@@ -701,6 +837,7 @@ const PlantillasDefinitivas = () => {
                             onUploadJust={onUploadJust}
                             fichajesByUser={fichajesByUser}
                             mostrarQR={mostrarQR}
+                            cerrado={eventoCerrado}
                           />
                           {/* Fila de totales por sección */}
                           <div className="bg-slate-100 border-t border-slate-300 px-4 py-2 flex items-center justify-end gap-6 flex-wrap text-xs">
@@ -736,6 +873,74 @@ const PlantillasDefinitivas = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Iter E1 — Modal: Concluir evento */}
+      {concluirModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="modal-concluir-evento">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200">
+            <h3 className="text-base font-bold text-slate-900 mb-2">🏁 Concluir evento</h3>
+            <p className="text-sm text-slate-700 mb-5 leading-relaxed">
+              ¿Dar por concluido el evento <strong>{concluirModal.ev.nombre}</strong>?
+              Los datos de asistencia quedarán bloqueados y el equipo económico será
+              notificado para procesar los pagos.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConcluirModal(null)}
+                disabled={cierreBusy}
+                data-testid="btn-cancelar-concluir"
+                className="px-3 py-1.5 text-sm rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => concluirEvento(concluirModal.ev)}
+                disabled={cierreBusy}
+                data-testid="btn-confirmar-concluir"
+                className="px-3 py-1.5 text-sm font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
+              >
+                {cierreBusy ? 'Concluyendo…' : '🏁 Sí, concluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Iter E1 — Modal: Reabrir plantilla (solo super admins) */}
+      {reabrirModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="modal-reabrir-evento">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200">
+            <h3 className="text-base font-bold text-slate-900 mb-2">🔓 Reabrir plantilla</h3>
+            <p className="text-sm text-slate-700 mb-5 leading-relaxed">
+              ¿Reabrir la plantilla de <strong>{reabrirModal.ev.nombre}</strong>?
+              Podrás volver a editar los datos de asistencia. Si existen recibos
+              emitidos para este evento, se regenerarán automáticamente al volver a concluirlo.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReabrirModal(null)}
+                disabled={cierreBusy}
+                data-testid="btn-cancelar-reabrir"
+                className="px-3 py-1.5 text-sm rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => reabrirEvento(reabrirModal.ev)}
+                disabled={cierreBusy}
+                data-testid="btn-confirmar-reabrir"
+                className="px-3 py-1.5 text-sm font-semibold rounded bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50"
+              >
+                {cierreBusy ? 'Reabriendo…' : '🔓 Sí, reabrir'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

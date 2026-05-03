@@ -53,6 +53,14 @@ def _dias_tareas() -> int:
         return 1
 
 
+def _dias_concluir_evento() -> int:
+    """Iter E1 — Días después de fecha_inicio sin concluir antes de avisar a gestores."""
+    try:
+        return int(os.environ.get("DIAS_DESPUES_CONCLUIR_EVENTO", "3"))
+    except Exception:
+        return 3
+
+
 # Buffer en memoria para los últimos errores de push (suscripciones purgadas, fallos).
 # No persiste tras reinicio, pero es suficiente para diagnosticar el día actual.
 _PUSH_ERRORS = []  # [{when, kind, message, usuario_id}]
@@ -254,11 +262,16 @@ def run_all_jobs() -> Dict:
     rl = job_logistica()
     rc = job_comidas()
     rt = job_tareas()
+    rce = job_concluir_evento()
     return {
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
-        "results": [rj, rl, rc, rt],
-        "total_enviados": rj.get('enviados', 0) + rl.get('enviados', 0) + rc.get('enviados', 0) + rt.get('enviados', 0),
+        "results": [rj, rl, rc, rt, rce],
+        "total_enviados": (
+            rj.get('enviados', 0) + rl.get('enviados', 0) +
+            rc.get('enviados', 0) + rt.get('enviados', 0) +
+            rce.get('enviados', 0)
+        ),
     }
 
 
@@ -365,6 +378,74 @@ def job_tareas() -> Dict:
     return {"job": "tareas", "enviados": enviados, "revisados": revisados, "dias_antes": dias}
 
 
+# ============ Job: aviso "concluir evento" (Iter E1) ============
+
+def job_concluir_evento(force_dias_antes: Optional[int] = None) -> Dict:
+    """Aviso a gestores cuando un evento terminó hace más de N días y sigue sin concluir.
+
+    Detecta eventos donde:
+      - fecha_inicio < hoy - N días (N por env DIAS_DESPUES_CONCLUIR_EVENTO, default 3)
+      - existen asignaciones confirmadas con estado_cierre='abierto' (no concluidas)
+
+    Idempotente: usa `recordatorios_enviados` con tipo='concluir_evento'.
+    Cada gestor recibe el aviso una sola vez por evento.
+    """
+    dias = force_dias_antes if force_dias_antes is not None else _dias_concluir_evento()
+    today = date.today()
+    cutoff = today - timedelta(days=dias)
+    cutoff_iso = cutoff.isoformat()
+    enviados = 0
+    revisados = 0
+    try:
+        # Eventos con fecha_inicio anterior al cutoff.
+        evs = supabase.table('eventos').select('id,nombre,fecha_inicio,estado') \
+            .lt('fecha_inicio', cutoff_iso).execute().data or []
+        if not evs:
+            return {"job": "concluir_evento", "enviados": 0, "revisados": 0, "dias_antes": dias}
+        ev_ids = [e['id'] for e in evs]
+        # Asignaciones confirmadas con estado_cierre='abierto'
+        asigs = supabase.table('asignaciones').select('evento_id,estado_cierre,estado') \
+            .in_('evento_id', ev_ids).eq('estado', 'confirmado').execute().data or []
+        evs_pendientes = set()
+        for a in asigs:
+            if (a.get('estado_cierre') or 'abierto') == 'abierto':
+                evs_pendientes.add(a['evento_id'])
+        if not evs_pendientes:
+            return {"job": "concluir_evento", "enviados": 0, "revisados": 0, "dias_antes": dias}
+        # Cargar gestores (todos los que pueden concluir).
+        try:
+            gestores = supabase.table('usuarios').select('id') \
+                .in_('rol', ['gestor', 'archivero', 'director_general', 'admin']) \
+                .execute().data or []
+        except Exception:
+            gestores = []
+        evs_by_id = {e['id']: e for e in evs}
+        for ev_id in evs_pendientes:
+            ev_nombre = (evs_by_id.get(ev_id) or {}).get('nombre', 'evento')
+            for g in gestores:
+                gid = g.get('id')
+                if not gid:
+                    continue
+                revisados += 1
+                if _ya_enviado(gid, 'concluir_evento', ev_id, 0):
+                    continue
+                titulo = "⚠️ Evento pendiente de concluir"
+                body = (
+                    f"El evento {ev_nombre} terminó hace más de {dias} días. "
+                    f"Recuerda concluirlo en Plantillas Definitivas."
+                )
+                try:
+                    from routes_push import notify_push
+                    notify_push(gid, titulo, body, '/admin/plantillas-definitivas', tipo='general')
+                except Exception:
+                    pass
+                _marcar_enviado(gid, 'concluir_evento', ev_id, 0, today.isoformat())
+                enviados += 1
+    except Exception as e:
+        logger.error(f"Job concluir_evento error: {e}")
+    return {"job": "concluir_evento", "enviados": enviados, "revisados": revisados, "dias_antes": dias}
+
+
 # ============ APScheduler bootstrap ============
 
 _scheduler = None
@@ -384,6 +465,12 @@ def init_scheduler():
         sched.add_job(
             run_all_jobs, CronTrigger(hour=9, minute=0, timezone=tz),
             id="recordatorios_diarios", replace_existing=True, max_instances=1,
+        )
+        # Iter E1 — Aviso "concluir evento" diario @ 09:30 (separado de run_all_jobs
+        # para tener su propia traza, además de quedar incluido en run_all_jobs).
+        sched.add_job(
+            job_concluir_evento, CronTrigger(hour=9, minute=30, timezone=tz),
+            id="concluir_evento_alert", replace_existing=True, max_instances=1,
         )
         # Segundo recordatorio: "última llamada" el mismo día del deadline @ 12:00
         sched.add_job(
