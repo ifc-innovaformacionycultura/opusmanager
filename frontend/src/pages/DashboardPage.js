@@ -11,6 +11,18 @@ const DashboardPage = () => {
   const [recentEvents, setRecentEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [pendientes, setPendientes] = useState(null);
+  // Iter 30 · Colapsar/expandir bloques con persistencia en localStorage
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const raw = localStorage.getItem('dashboard_bloques_collapsed');
+      if (raw) return JSON.parse(raw);
+    } catch { /* noop */ }
+    return { 'bloque-1': false, 'bloque-2': false, 'bloque-3': false, 'bloque-4': false };
+  });
+  useEffect(() => {
+    try { localStorage.setItem('dashboard_bloques_collapsed', JSON.stringify(collapsed)); } catch { /* noop */ }
+  }, [collapsed]);
+  const toggle = (key) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
   const { api } = useGestorAuth();
   const navigate = useNavigate();
   const loadedRef = useRef(false);
@@ -81,8 +93,21 @@ const DashboardPage = () => {
 
       {/* ═══════════ BLOQUE 1 — Resumen de actividad ═══════════ */}
       <section className="bg-blue-50 rounded-xl p-4 mb-4" data-testid="bloque-resumen-actividad">
-        <h2 className="text-base font-bold text-gray-800">Resumen de actividad</h2>
-        <p className="text-xs text-gray-500 mb-3">Estado general de la temporada en curso</p>
+        <button
+          type="button"
+          onClick={() => toggle('bloque-1')}
+          data-testid="toggle-bloque-1"
+          className="w-full flex items-center justify-between text-left mb-3 hover:opacity-80 transition"
+          aria-expanded={!collapsed['bloque-1']}
+        >
+          <div>
+            <h2 className="text-base font-bold text-gray-800">Resumen de actividad</h2>
+            <p className="text-xs text-gray-500">Estado general de la temporada en curso</p>
+          </div>
+          <span className={`text-gray-500 text-sm transform transition-transform ${collapsed['bloque-1'] ? '' : 'rotate-90'}`}>▶</span>
+        </button>
+
+        {!collapsed['bloque-1'] && (<>
 
         {/* Pendientes de atención (tiles) */}
         {pendientes && (pendientes.reclamaciones_pendientes + pendientes.perfiles_actualizados + pendientes.respuestas_nuevas + pendientes.tareas_proximas) > 0 && (
@@ -168,20 +193,44 @@ const DashboardPage = () => {
             </div>
           </div>
         </div>
+        </>)}
       </section>
 
       {/* ═══════════ BLOQUE 2 — Pendientes de tu atención ═══════════ */}
       <section className="bg-amber-50 rounded-xl p-4 mb-4" data-testid="bloque-pendientes-atencion">
-        <h2 className="text-base font-bold text-gray-800">Pendientes de tu atención</h2>
-        <p className="text-xs text-gray-500 mb-3">Elementos que requieren acción por tu parte hoy</p>
-        <ActividadPendiente />
+        <button
+          type="button"
+          onClick={() => toggle('bloque-2')}
+          data-testid="toggle-bloque-2"
+          className="w-full flex items-center justify-between text-left mb-3 hover:opacity-80 transition"
+          aria-expanded={!collapsed['bloque-2']}
+        >
+          <div>
+            <h2 className="text-base font-bold text-gray-800">Pendientes de tu atención</h2>
+            <p className="text-xs text-gray-500">Elementos que requieren acción por tu parte hoy</p>
+          </div>
+          <span className={`text-gray-500 text-sm transform transition-transform ${collapsed['bloque-2'] ? '' : 'rotate-90'}`}>▶</span>
+        </button>
+        {!collapsed['bloque-2'] && <ActividadPendiente />}
       </section>
 
       {/* ═══════════ BLOQUE 3 — Próximos 15 días ═══════════ */}
       <section className="bg-green-50 rounded-xl p-4 mb-4" data-testid="bloque-proximos-15-dias">
-        <h2 className="text-base font-bold text-gray-800">Próximos 15 días</h2>
-        <p className="text-xs text-gray-500 mb-3">Ensayos, funciones y desplazamientos programados</p>
+        <button
+          type="button"
+          onClick={() => toggle('bloque-3')}
+          data-testid="toggle-bloque-3"
+          className="w-full flex items-center justify-between text-left mb-3 hover:opacity-80 transition"
+          aria-expanded={!collapsed['bloque-3']}
+        >
+          <div>
+            <h2 className="text-base font-bold text-gray-800">Próximos 15 días</h2>
+            <p className="text-xs text-gray-500">Ensayos, funciones y desplazamientos programados</p>
+          </div>
+          <span className={`text-gray-500 text-sm transform transition-transform ${collapsed['bloque-3'] ? '' : 'rotate-90'}`}>▶</span>
+        </button>
 
+        {!collapsed['bloque-3'] && (
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-4 border-b border-slate-200">
             <h3 className="font-cabinet text-lg font-semibold text-slate-900">Próximos eventos</h3>
@@ -231,13 +280,26 @@ const DashboardPage = () => {
             )}
           </div>
         </div>
+        )}
       </section>
 
       {/* ═══════════ BLOQUE 4 — Estado del sistema ═══════════ */}
       <section className="bg-gray-50 rounded-xl p-4 mb-4" data-testid="bloque-estado-sistema">
-        <h2 className="text-base font-bold text-gray-800">Estado del sistema</h2>
-        <p className="text-xs text-gray-500 mb-3">Monitorización de notificaciones y comunicaciones</p>
+        <button
+          type="button"
+          onClick={() => toggle('bloque-4')}
+          data-testid="toggle-bloque-4"
+          className="w-full flex items-center justify-between text-left mb-3 hover:opacity-80 transition"
+          aria-expanded={!collapsed['bloque-4']}
+        >
+          <div>
+            <h2 className="text-base font-bold text-gray-800">Estado del sistema</h2>
+            <p className="text-xs text-gray-500">Monitorización de notificaciones y comunicaciones</p>
+          </div>
+          <span className={`text-gray-500 text-sm transform transition-transform ${collapsed['bloque-4'] ? '' : 'rotate-90'}`}>▶</span>
+        </button>
 
+        {!collapsed['bloque-4'] && (
         <div className="bg-white rounded-lg border border-slate-200 p-4 text-sm text-slate-600 flex items-start gap-3">
           <span className="text-2xl">🔔</span>
           <div className="flex-1">
@@ -254,6 +316,7 @@ const DashboardPage = () => {
             </button>
           </div>
         </div>
+        )}
       </section>
     </div>
   );

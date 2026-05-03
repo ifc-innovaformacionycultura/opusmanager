@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## Iter 30 · 2026-05-03 · Dashboard bloques colapsables
+
+### 🎨 Cambio visual único
+- `/app/frontend/src/pages/DashboardPage.js` (**único archivo tocado**):
+  - Nuevo estado `collapsed` inicializado desde `localStorage` key `dashboard_bloques_collapsed`.
+  - `useEffect` persiste cambios en `localStorage`.
+  - Función `toggle(key)` cambia el estado de cada bloque.
+  - Cada `<h2>` + descripción envueltos en `<button type="button" data-testid="toggle-bloque-{1..4}">` con chevron `▶` que rota `90deg` cuando el bloque está expandido.
+  - Contenido de cada bloque bajo `{!collapsed['bloque-N'] && ( ... )}`.
+  - Encabezado siempre visible.
+
+### ✅ Validación
+- Lint OK · Screenshot funcional: bloques colapsados/expandidos muestran/ocultan contenido correctamente.
+- Persistencia `localStorage` verificada tras recarga: los 4 estados se restauran exactamente.
+- **0 regresiones** (ningún otro archivo modificado).
+
+
+
 ## Iter 29 · 2026-05-03 · Solo estética (4 puntos)
 
 ### 🎨 Cambios visuales
