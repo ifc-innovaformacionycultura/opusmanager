@@ -600,6 +600,15 @@ const FichajeConfigPanel = ({ ensayoId, eventoId, isSuperAdmin, currentUserId })
         >
           <span>⏱️ Reglas de fichaje</span>
           <span className="text-[10px] font-normal normal-case text-slate-500">({resumen})</span>
+          {c.es_configuracion_global === false && (
+            <span
+              className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-orange-100 text-orange-700 border border-orange-200"
+              data-testid={`fichaje-badge-especifica-${ensayoId}`}
+              title="Esta config sobrescribe los valores globales"
+            >
+              ⚠️ Regla específica
+            </span>
+          )}
           <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
         </button>
         <div className="flex items-center gap-2">

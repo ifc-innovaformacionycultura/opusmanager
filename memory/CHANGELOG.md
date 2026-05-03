@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## Iter F4.1 · 2026-05-03 · Fix routing 404 + badge "Regla específica"
+
+### 🎯 Cambios (2 archivos · 0 SQL)
+
+#### Frontend `App.js` (Fix routing)
+- Añadido alias `<Route path="/gestor/*" element={<Navigate to="/" replace />} />` para compatibilidad con URLs legacy `/gestor/...`.
+- Añadido catch-all `<Route path="*" element={<NotFound inline />} />` con mensaje "Página no encontrada · Volver al Dashboard" (data-testid `not-found-page`).
+- **Causa real del "race condition" reportado por testing**: la URL `/gestor/configuracion-eventos` **NO existía** en el routing (era `/configuracion/eventos`). El layout se renderizaba pero el `<Routes>` interno quedaba sin match → main vacío. NO era un problema del AuthProvider.
+- Verificado E2E: `/gestor/configuracion-eventos` → redirect a `/`; `/ruta-invalida` → 404 amigable; `/configuracion/eventos` → carga normal.
+
+#### Frontend `ConfiguracionEventos.js` (Badge "Regla específica")
+- En `FichajeConfigPanel`, junto al resumen del toggle, badge naranja `⚠️ Regla específica` cuando `cfg.es_configuracion_global === false` (data-testid `fichaje-badge-especifica-{ensayoId}`).
+- Sólo se muestra cuando hay override; cuando se usa la global no hay badge (limpieza visual).
+
+### ✅ Tests
+- Lint OK en ambos archivos.
+- Self-test E2E del fix de routing: 3 escenarios verificados con Playwright (alias, catch-all, ruta válida).
+- Self-test backend: ensayo con `es_configuracion_global=false` confirmado en `/api/gestor/registro-asistencia`.
+
+---
+
 ## Iter F4 · 2026-05-03 · Reglas de fichaje por ensayo + plantillas globales
 
 ### 🎯 Cambios (3 archivos · 0 SQL adicional — tabla `fichaje_plantillas` ya existía con columnas planas)
