@@ -1,5 +1,42 @@
 # CHANGELOG
 
+## Iter F2 · 2026-05-03 · Transporte de Material multi-operación + Listas favoritas
+
+### 🎯 Cambios (2 archivos, sin SQL adicional — tablas ya creadas)
+
+#### Backend (`routes_montaje.py`)
+- Modelos Pydantic Iter F2: `TransporteOperacionItemIn`, `TransporteOperacionIn` (Literal con 5 tipos), `TransporteCabeceraIn` (campos vivos), `ListaFavoritaItem`, `ListaFavoritaIn`.
+- Helper `_ensure_transporte_id(evento_id)` crea/recupera fila de cabecera.
+- Endpoints nuevos:
+  - `GET /api/gestor/transporte-material/{evento_id}/operaciones` → `{cabecera, operaciones:[{...,items:[]}]}` ordenadas por orden + created_at.
+  - `PUT /api/gestor/transporte-material/{evento_id}/cabecera` → solo campos vivos (empresa/contacto/teléfono/presupuesto/estado/notas), `exclude_unset=True` para no sobreescribir con None.
+  - `POST /api/gestor/transporte-material/{evento_id}/operaciones` → crea op + items (insert bulk).
+  - `PUT /api/gestor/transporte-material/operaciones/{op_id}` → REPLACE items (delete-all-insert-all).
+  - `DELETE /api/gestor/transporte-material/operaciones/{op_id}` → cascada manual de items.
+  - `GET/POST/PUT/DELETE /api/gestor/listas-material-favoritas[/{id}]` → globales, items JSONB. DELETE solo super admin (`_is_super_admin_local` reusa auth_utils).
+- **Endpoints legacy GET/PUT `/transporte-material/{evento_id}` (21 campos planos) intactos.**
+
+#### Frontend (`MontajeRiderSection.js`)
+- `useAuth` + `isSuperAdminUser` (copia exacta).
+- 5 tipos con `TIPOS_OPERACION` (etiquetas user-friendly): 📦 Carga inicial, 🏛️ Entrega en destino, 📦 Recogida en destino, 🏠 Devolución, ➕ Otro.
+- Sustituida sección 3B (Transporte) por: **Cabecera** + **Lista de operaciones** con tarjetas individuales (selector tipo, fecha, hora, dirección, notas, items), botón ➕ Añadir operación, botón ⭐ Listas favoritas con modal global.
+- Cada tarjeta-operación tiene su propio botón "💾 Guardar operación" (granular, evita conflictos al editar varias a la vez).
+- Items con select sobre catálogo de `materiales` ya cargado (sin endpoint nuevo) o nombre manual + cantidad + notas. **Items repetidos permitidos.**
+- 3 modales: `modal-listas-fav` (lista global), `modal-cargar-fav` (añade items a operación actual sin reemplazar), `modal-guardar-fav` (crea favorita global).
+- Botón eliminar lista favorita visible **solo si super admin**.
+- **NO se han tocado** secciones 3A (Espacio), 3C/3D (Montaje) ni handlers existentes (`generar`, `guardar`, `guardarTransporte` legacy permanece).
+
+### ✅ Validación (`iteration_40.json`)
+- Backend: 21/21 PASS (`/app/backend/tests/test_iter_f2_transporte_ops.py`) — CRUD operaciones, items REPLACE, 5 tipos válidos, 422 inválidos, items repetidos OK, 403 gestor borrando lista, regresión legacy GET/PUT intactos.
+- Regresión: Iter D 6/6, E1 9/9, E2 9/9, F1 11/11 — todos PASS.
+- Frontend code review: data-testids correctos, isSuperAdmin gate, modales, useEffect carga ops + listasFav.
+- Cleanup automático en fixture pytest. Limpieza manual aplicada: cabecera evento c4409142 reseteada.
+
+### ⚠️ Acciones futuras
+- Investigar por qué `/configuracion-eventos` aparece vacío al entrar como admin en runtime test del agent (no es regresión de Iter F2 — `ConfiguracionEventos.js` NO se modificó). Probable issue de routing/menú lateral no relacionado.
+
+
+
 ## Iter F1 · 2026-05-03 · Importes provisionales (cache_extra + transporte)
 
 ### 🎯 Cambios (3 archivos, sin SQL adicional — ya existía)
