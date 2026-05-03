@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Iter C+G · 2026-05-03 · QR fichaje portal + Preview responsivo + Seed docs
+
+### 🎯 Cambios (solo frontend + 1 dependencia + SQL manual)
+- **3A · `PreviewMusico.js`**: frame iPhone ahora responsivo (375×812 en <1400px, 414×896 en ≥1400px). Sidebar colapsable con botón `preview-toggle-sidebar` (`☰ Músicos`) en viewports <1200px. `overflow: hidden` + `max-height: calc(100vh - 120px)` evitan recortes.
+- **3B · `PortalPreviewFrame.js`** `ConvocatoriasTab`: tarjetas de eventos ahora click-to-expand con estado `expandedEventId` — solo 1 abierta a la vez. Detalle se renderiza **inline justo debajo** de la tarjeta con transición `maxHeight: 0 → 2000`.
+- **18 · Datos de prueba** (SQL ejecutado por usuario): 1 recibo (300€ bruto / 45€ IRPF / 255€ neto) + 1 certificado (8h temporada 2025-2026) publicados para `jesusalonsodirector@gmail.com`.
+- **1B · Portal músico**: nuevo panel `fichaje-qr-panel` con botón prominente por ensayo. Componentes:
+  - `components/portal/EscanerQRModal.js` (NUEVO): cámara trasera + `jsQR` 1.4.0 decodificando frames + envío automático al backend (`/api/fichaje/{entrada|salida}/{token}`).
+  - `components/portal/BotonFichajeQR.js` (NUEVO): consulta `/api/fichaje/estado/{ensayo}/{musico}` → botón verde (entrada) / azul (salida) / caja verde "completo". Alerta naranja si salida pendiente >30 min del fin + botón "Fichar sin QR" (POST `/api/fichaje/salida-manual/{ensayo_id}`).
+  - `pages/portal/PortalDashboard.js`: integración del panel iterando los ensayos del evento seleccionado.
+
+### ✅ Validación
+- Backend: **5/5 pytest PASS** (admin GET /recibos Jesús 300/45/255, admin GET /certificados 8h 2025-2026, portal mi-historial recibos+certificados, fichaje entrada token inválido 400/404).
+- Frontend: **100% 3A+3B Playwright** (toggle, viewport 1100 vs 1920, frame width, tarjetas click-to-expand inline).
+- Frontend 1B verificado via **code review + jsQR instalado** (no E2E por falta de ensayos reales asignados a Jesús en BD, pero código es correcto).
+- **0 regresiones** iter28/29/30/31/Iter B.
+
+### 📦 Dependencia añadida
+- `jsqr@1.4.0` (~36KB, BSD, sin deps transitivas).
+
+
+
 ## Iter 31 · 2026-05-03 · Preferencias UI en servidor (prefs_ui)
 
 ### 🆕 Backend
