@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## Iter F1 · 2026-05-03 · Importes provisionales (cache_extra + transporte)
+
+### 🎯 Cambios (3 archivos, sin SQL adicional — ya existía)
+
+#### Backend (`routes_gestor.py`)
+- **GET `/plantillas-definitivas`**: SELECT añade `cache_extra_provisional, cache_extra_validado_por, cache_extra_validado_at, transporte_provisional, transporte_validado_por, transporte_validado_at` de `gastos_adicionales`. Lookup nombres de validadores. TOTAL = `cache_real + extras_efectivos + transporte_efectivo + aloj + otros − comedor` donde efectivos=0 si provisional. Subtotales por sección coherentes con TOTAL (suma de efectivos). Respuesta por músico añade `gasto_id, cache_extra_provisional, cache_extra_validado_por_nombre, cache_extra_validado_at, transporte_provisional, transporte_validado_por_nombre, transporte_validado_at` y conserva `cache_extra`/`transporte_importe` como visibles.
+- **PUT `/plantillas-definitivas/guardar`**: en UPSERT de `gastos_adicionales`, lectura previa de la fila actual; si el valor cambia para `cache_extra` o `transporte_importe`:
+  - `is_super_admin` → `<campo>_provisional=FALSE`, `<campo>_validado_por=user_id`, `<campo>_validado_at=NOW`.
+  - gestor normal → `<campo>_provisional=TRUE`, `validado_por=NULL`, `validado_at=NULL`. Inserta `registro_actividad tipo='importe_provisional_creado'` (entidad_tipo='gasto', entidad_id=gasto_id, usuario_id=gestor_id) y push+notificaciones_gestor a admins+director_general (tipo='importe_pendiente_validacion').
+  - Idempotencia: si valor no cambia, NO toca provisional.
+- **POST `/gastos/{gasto_id}/validar`** (NUEVO, solo `is_super_admin`): body `{campo:'cache_extra'|'transporte'}`. Validaciones: 403 gestor normal, 400 campo inválido, 404 gasto inexistente, 400 ya validado. UPDATE: `<campo>_provisional=FALSE`, `<campo>_validado_por=admin_id`, `<campo>_validado_at=NOW`. Busca último `registro_actividad tipo='importe_provisional_creado'` para ese gasto y notifica al gestor original (tipo='importe_validado', push + notificacion_gestor; logger.warning si falla). Inserta `registro_actividad tipo='importe_validado'`.
+- **GET `/pendientes`**: añade `importes_pendientes_validacion` (count `gastos_adicionales` con `cache_extra_provisional OR transporte_provisional`); 0 para gestores no super-admin.
+- **GET `/gestion-economica`**: aplica misma lógica que plantillas-definitivas (provisionales NO suman al TOTAL ni a subtotales). Devuelve `cache_extra_provisional` y `transporte_provisional` por músico.
+
+#### Frontend (`PlantillasDefinitivas.js`)
+- `SeccionTable` con props `isSuperAdmin`, `onValidarImporte`.
+- Celda `extra`: input naranja (`border-orange-400 bg-orange-50`) + badge `[badge-extra-prov-{uid}-{eid}]` "⏳ Pendiente validación" si `cache_extra_provisional`. Botón verde `[btn-validar-extra-{uid}-{eid}]` "✓" solo para super admin && !cerrado. Check ✓ verde si validado y >0.
+- Celda `transporte`: misma lógica (`[badge-transp-prov-*]`, `[btn-validar-transp-*]`).
+- Función `validarImporte(gasto_id, campo)` → POST + cargar.
+
+#### Frontend (`DashboardPage.js`)
+- `useGestorAuth` con `user`, helper `isSuperAdminUser` (copia exacta).
+- Tile `[data-testid=tile-importes-pendientes]` "⏳ N · Importes pendientes validar" en el grid del Bloque 1, visible solo si super admin && >0. Click → `/plantillas-definitivas`.
+- Condición de visibilidad de `pendientes-section` ampliada para incluir el nuevo contador.
+
+### ✅ Validación (`iteration_39.json`)
+- Backend: 11/11 PASS + 24/24 regresión (Iter D 6/6, E1 9/9, E2 9/9).
+- Frontend: 5/5 escenarios UI clave PASS (badge, botón validar admin, click oculta badge, tile dashboard, gestor no ve tile ni botones).
+- Test pytest persistente: `/app/backend/tests/test_iter_f1_provisionales.py`.
+- Cleanup automático: `Concierto de Navidad` queda con `cache_extra=0`, `transporte_importe=0`, no-provisional.
+
+
+
 ## Iter E3 · 2026-05-03 · Bloque "Estado de cierres" en Dashboard
 
 ### 🎯 Cambios (1 archivo único, sin SQL, sin backend)

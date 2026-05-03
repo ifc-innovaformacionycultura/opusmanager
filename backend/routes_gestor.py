@@ -2521,15 +2521,15 @@ async def validar_importe_provisional(
                         "entidad_id": gasto_id,
                         "leida": False,
                     }).execute()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Iter F1 validar: error insertando notificacion_gestor: {e}")
                 try:
                     from routes_push import notify_push as _notify_push
                     _notify_push(gestor_id, titulo, body, '/plantillas-definitivas', tipo='general')
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except Exception as e:
+                    logger.warning(f"Iter F1 validar: error notify_push: {e}")
+    except Exception as e:
+        logger.warning(f"Iter F1 validar: error buscando gestor original: {e}")
 
     # Registro de actividad de la validación.
     try:
