@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## Iter E3 · 2026-05-03 · Bloque "Estado de cierres" en Dashboard
+
+### 🎯 Cambios (1 archivo único, sin SQL, sin backend)
+- `DashboardPage.js`: nuevo bloque colapsable `[data-testid=bloque-estado-cierres]` insertado entre Bloque 3 y Bloque 4. Default expandido (`bloque-cierres: false`) con merge seguro contra localStorage existente. Datos vienen de GET /api/gestor/gestion-economica (reuso, sin endpoint nuevo).
+- 3 columnas: 🟠 Pendientes de concluir (estado_cierre='abierto' && fecha pasada), 🟡 Pendientes de cerrar económico (estado_cierre='cerrado_plantilla'), ✅ Económico cerrado.
+- Alertas visuales (border rojo + 🚨) si abierto >3 días o plantilla >7 días.
+- Cabecera con contadores `🟠 N · 🟡 M · ✅ K` y badge `⚠️ X alertas` cuando aplica.
+- Items clicables → navegan a `/plantillas-definitivas` (col 1) o `/asistencia/pagos` (col 2/3).
+- Empty/loading/error states robustos: si el GET falla, mensaje gris, no rompe el resto.
+- Tope 10 items en col 1/2 y 5 en col 3 con link "…y X más →".
+- Orden DESC por días (más urgentes arriba).
+
+### ✅ Validación (`iteration_38.json`)
+- Frontend 100% PASS (16/16 ejecutables): default expandido, persistencia toggle, contadores, badge alertas, 3 columnas, empty states, alertas visuales, navegación, regresión bloques previos + localStorage merge, fallback de error.
+- Sin tocar backend, sin tocar otros archivos del frontend.
+
+
+
 ## Iter E2 · 2026-05-03 · Cerrar / Reabrir Económico
 
 ### 🎯 Cambios (solo 3 archivos como pidió el usuario)
