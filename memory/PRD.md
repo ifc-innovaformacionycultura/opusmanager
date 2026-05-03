@@ -46,6 +46,12 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 - [x] **Iter 22 — Badge solicitudes pendientes** en "Base de Datos de Músicos"
 - [x] **Iter 23 — Command Palette ⌘K** (búsqueda rápida estilo Notion/Linear para gestores)
 - [x] **Iter 24 — Acciones rápidas ⚡ en ⌘K** (crear evento / invitar músico / nueva tarea / nuevo contacto CRM / ver solicitudes)
+- [x] **Iter E1/E1.1/E2/E3 — Cierre de plantilla + Cierre económico + Estado de cierres** (super-admin re-apertura, historiales, recibos automáticos)
+- [x] **Iter F1 — Importes provisionales** (caché extra/transporte; no suman al total hasta validación admin)
+- [x] **Iter F2 — Transporte de Material multi-operación + Listas favoritas globales**
+- [x] **Iter F2.1 — Reordenar operaciones de transporte con flechas ↑↓**
+- [x] **Iter F3 — Programa Musical conectado con Archivo + Listas obras favoritas globales** (2026-05-03)
+- [ ] **Iter F4 — Reglas Fichaje por ensayo + plantillas** (PRÓXIMO P0)
 
 > Ver `/app/memory/CHANGELOG.md` para el detalle del sprint Iter 20.
 

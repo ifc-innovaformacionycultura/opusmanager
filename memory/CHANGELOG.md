@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Iter F3 · 2026-05-03 · Programa Musical conectado con Archivo + Listas favoritas
+
+### 🎯 Cambios (2 archivos · 1 SQL: `listas_obras_favoritas` + cols display en `evento_obras`)
+
+#### Backend (`routes_archivo.py`)
+- Modelos Pydantic Iter F3: `EventoObraIn` ampliado con `duracion_display`/`autor_display`; nuevos `EventoObraPatch`, `ListaObrasFavoritaItem`, `ListaObrasFavoritaIn`.
+- Helper `_archivo_is_super_admin` (mismo patrón que `routes_montaje._is_super_admin_local`).
+- Endpoints nuevos:
+  - `PATCH /evento/{evento_id}/obras/{eo_id}` → patch parcial; re-matchea catálogo si cambia `titulo_provisional`; notifica archiveros sólo si transición a provisional o cambio real de título.
+  - `DELETE /evento/{evento_id}/obras/{eo_id}` → borra fila (botón 🗑 fila).
+  - `POST /evento/{evento_id}/programa/migrar` → migración silenciosa idempotente del `eventos.program` JSON legacy a `evento_obras` reales. Salidas tempranas: `ya_tiene_filas`, `evento_no_encontrado`, `sin_legacy`. **No borra `eventos.program`** (rollback seguro). Notifica archiveros para títulos provisionales nuevos.
+  - `GET/POST/PUT/DELETE /listas-obras-favoritas[/{id}]` → globales, `obras` en JSONB. Permisos: creador o super-admin para PUT/DELETE.
+  - `POST /evento/{evento_id}/programa/aplicar-lista/{lista_id}` → vuelca items al final del orden actual; re-matchea catálogo en cada inserción (por si la obra se añadió posteriormente).
+- **Endpoints legacy GET `/evento/{id}/programa` y POST `/evento/{id}/obras` intactos.**
+
+#### Frontend (`ConfiguracionEventos.js`)
+- Nuevo subcomponente `ProgramaMusicalBackend` (líneas 132-460):
+  - Carga vía `GET /evento/{id}/programa`.
+  - **Migración silenciosa al montar**: si filas==0 y `legacyProgram` no vacío, llama `/migrar` y refresca; try/catch garantiza no bloquear la carga.
+  - Edición inline con debounce 500ms (timers en `useRef` indexados por `${eo_id}:${field}`).
+  - Botón borrar fila (🗑) por fila con confirm.
+  - Panel listas favoritas globales: ver, aplicar, guardar programa actual como lista, eliminar (con permisos).
+  - Visual: filas confirmadas (catálogo) → autor/título read-only en verde; provisionales → editables en ámbar.
+- Helpers legacy `addProgramItem`/`updateProgramItem` marcados deprecated (preservados como compat por si se usa modo creación sin event.id).
+- Sección Programa Musical (líneas ~1290-1300) ahora renderiza únicamente `<ProgramaMusicalBackend>` (`ProgramaArchivoCell` antiguo queda definido pero ya no se invoca).
+
+### ✅ Tests
+- Backend: 17/17 PASS (CRUD listas, PATCH/DELETE/MIGRAR/APLICAR, permisos, 404). Regresión Iter F1+F2: 32/32 PASS.
+- Frontend code review: 100% (todos los `data-testid` del spec presentes, lógica de debounce, gates de permisos, cancel-flag pattern, manejo de errores).
+- Test file: `/app/backend/tests/test_iter_f3_programa.py` (autosuficiente, cleanup TEST_F3 prefix).
+- Reporte: `/app/test_reports/iteration_41.json`.
+
+---
+
 ## Iter F2.1 · 2026-05-03 · Reordenar operaciones de transporte con flechas ↑↓
 
 - **1 archivo tocado**: `MontajeRiderSection.js`. Sin SQL, sin backend nuevo (reusa `PUT /operaciones/{id}`).
