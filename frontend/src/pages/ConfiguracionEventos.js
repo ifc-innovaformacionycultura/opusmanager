@@ -537,7 +537,10 @@ const FichajeConfigPanel = ({ ensayoId, eventoId, isSuperAdmin, currentUserId })
     const nombre = (savingPlantillaName || '').trim();
     if (!nombre) { alert('Indica un nombre para la plantilla.'); return; }
     if (!cfg) return;
-    const reglas = {
+    // Iter F4 — La tabla fichaje_plantillas usa columnas planas, no JSONB.
+    const payload = {
+      nombre,
+      descripcion: null,
       minutos_antes_apertura: parseInt(cfg.minutos_antes_apertura) || 30,
       minutos_despues_cierre: parseInt(cfg.minutos_despues_cierre) || 30,
       minutos_retraso_aviso: parseInt(cfg.minutos_retraso_aviso) || 5,
@@ -553,9 +556,7 @@ const FichajeConfigPanel = ({ ensayoId, eventoId, isSuperAdmin, currentUserId })
       mensaje_aviso_gestor: cfg.mensaje_aviso_gestor || '',
     };
     try {
-      await api.post('/api/gestor/fichaje-plantillas', {
-        nombre, descripcion: null, reglas,
-      });
+      await api.post('/api/gestor/fichaje-plantillas', payload);
       setSavingPlantillaName('');
       fetchPlantillas();
       alert('Plantilla guardada ✅');

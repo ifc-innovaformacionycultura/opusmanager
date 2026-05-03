@@ -1,0 +1,73 @@
+{
+  "summary": "Iter F4 — Reglas de fichaje por ensayo + plantillas globales. Backend: 17/17 PASS (GET/PUT fichaje-config con 13 campos, CRUD fichaje-plantillas con columnas planas, permisos 403 gestor normal vs admin super-admin, 404 UUIDs inexistentes, aplicar-plantilla por ensayo y por evento filtrando solo tipo='ensayo'). Regresión F1+F2+F3: 49/50 PASS + 1 SKIP pre-existente. Frontend code-review: PASS 100% — todos los data-testid del spec presentes, gates correctos (rehearsal.id && tipo==='ensayo'; if (!eventoId) return null), FichajeConfigEditor totalmente eliminado de RegistroAsistencia. Frontend runtime E2E bloqueado por el mismo issue pre-existente reportado en iter 40/41 (/gestor/configuracion-eventos solo renderiza spinner al navegar directamente post-login — 'No user in session'). Per spec ('si pasa, hacer fallback al code-review'), fallback aplicado.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "/gestor/configuracion-eventos (admin, acceso directo)", "issue": "Página renderiza solo spinner tras login (HTML=200KB pero sin <h1>/headings/ensayo-wrapper). Consola: 'INITIAL_SESSION user: undefined' → '❌ No user in session'. MISMO bug pre-existente reportado en iter 40 y 41, ANTES de los cambios de F4. NO es regresión introducida por F4. Per spec del usuario, fallback a code-review aplicado.", "affected_selectors": ["body main", "[data-testid^=ensayo-wrapper-]"]}
+    ],
+    "design_issues": []
+  },
+  "test_results_detail": {
+    "BE_T1_GET_fichaje_config_13_campos": "PASS — devuelve {config:{...}} con los 13 campos (global fallback funciona).",
+    "BE_T2_PUT_fichaje_config_5_campos_legacy": "PASS — regresión OK, PUT con solo los 5 campos antiguos persiste correctamente.",
+    "BE_T3_PUT_fichaje_config_8_campos_notif": "PASS — los 8 campos nuevos de notificaciones (notif_musico_push/email/whatsapp, notif_gestor_push/email/dashboard, mensaje_aviso_musico/gestor) se persisten y se reflejan en GET subsiguiente.",
+    "BE_T10_GET_fichaje_plantillas": "PASS — {plantillas:[]} con admin auth.",
+    "BE_T11_POST_plantilla_columnas_planas": "PASS — los 15 campos (nombre+descripcion+13 reglas) se guardan como columnas planas (verificado en GET subsiguiente, ningún campo JSONB 'reglas' usado). creado_por se rellena desde perfil autenticado.",
+    "BE_T12_PUT_plantilla_admin_edita": "PASS — admin edita plantilla propia.",
+    "BE_T13_gestor_403_PUT_plantilla_admin": "PASS — gestor palvarez recibe 403 al editar plantilla creada por admin.",
+    "BE_T14_gestor_403_DELETE_plantilla_admin": "PASS — gestor palvarez recibe 403 al borrar plantilla creada por admin.",
+    "BE_T15_DELETE_404": "PASS — UUID 0...0 → 404.",
+    "BE_T16_PUT_404": "PASS — UUID 0...0 → 404.",
+    "BE_T20_aplicar_plantilla_ensayo": "PASS — los 13 campos de la plantilla se aplican a fichaje_config del ensayo (upsert). Verificado por GET: valores coinciden 1:1 con plantilla (minutos_antes=45, minutos_despues=55, retraso=9, computa_tiempo_extra=false, computa_mas_alla_fin=true, notifs, mensajes).",
+    "BE_T21_aplicar_plantilla_ensayo_404_plantilla": "PASS — plantilla_id=0...0 → 404.",
+    "BE_T22_aplicar_plantilla_ensayo_404_ensayo": "PASS — ensayo_id=0...0 → 404.",
+    "BE_T23_aplicar_plantilla_evento": "PASS — devuelve {ok:true, aplicados, total_ensayos} y aplicados<=total_ensayos. Filtro por tipo='ensayo' verificado en código (línea 373: continue si tipo != 'ensayo').",
+    "BE_T24_aplicar_plantilla_evento_404": "PASS — plantilla_id=0...0 → 404.",
+    "BE_T30_regresion_listas_obras_favoritas": "PASS.",
+    "BE_T31_regresion_eventos": "PASS.",
+    "BE_REGRESION_F1_provisionales": "PASS 11/11.",
+    "BE_REGRESION_F2_transporte_ops": "PASS 21/21.",
+    "BE_REGRESION_F3_programa": "PASS 17/18 + 1 SKIP (test_15_migrar_sin_legacy skip pre-existente iter 41).",
+    "FE_CODE_REVIEW_data_testids": "PASS — confirmados en ConfiguracionEventos.js: fichaje-panel-{id} (L593), btn-toggle-fichaje-panel-{id} (L599), btn-toggle-fichaje-plantillas-{id} (L611), btn-save-fichaje-{id} (L618), fichaje-min-antes/despues/retraso-{id} (L679/686/693), fichaje-computa-pre/post-{id} (L700/706), fichaje-notif-mus-push/email/wa-{id} (L718/724/730), fichaje-msg-mus-{id} (L740), fichaje-notif-ges-push/email/dash-{id} (L750/756/762), fichaje-msg-ges-{id} (L772), btn-aplicar-plantilla-fichaje-evento (L824), dropdown-plantillas-fichaje-evento (L829), btn-aplicar-plantilla-fichaje-{ensayoId}-{plantillaId} (L638), btn-eliminar-plantilla-fichaje-{plantillaId} (L645), input-plantilla-fichaje-name-{ensayoId} (L657), btn-guardar-plantilla-fichaje-{ensayoId} (L663). En RegistroAsistencia.js: fichaje-reglas-badge (L29).",
+    "FE_CODE_REVIEW_gates": "PASS — L1629: rehearsal.id && (tipo==='ensayo') bloquea panel para ensayos nuevos sin id y para conciertos/funciones (spec punto 18). L816 FichajePlantillaEventoButton: if(!eventoId) return null (spec punto 14).",
+    "FE_CODE_REVIEW_FichajeConfigEditor_removed": "PASS — grep global en /app/frontend/src/ no encuentra ninguna ocurrencia de 'FichajeConfigEditor' (spec punto 19).",
+    "FE_CODE_REVIEW_eliminar_plantilla_gate": "PASS — L645 solo se renderiza si admin/creador (verificado en FichajeConfigPanel).",
+    "FE_RUNTIME_E2E": "BLOQUEADO por issue pre-existente (iter 40/41) — /gestor/configuracion-eventos no renderiza main tras navegación directa post-login. NO es regresión de F4."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter_f4_fichaje_plantillas.py",
+    "/app/test_reports/pytest/iter_f4.xml",
+    "/app/test_reports/pytest/iter_f4_regression.xml"
+  ],
+  "action_items": [
+    "(Pre-existente iter 40/41, NO de F4) Fix routing/auth race condition en /gestor/configuracion-eventos: al navegar directamente post-login, AuthProvider lee INITIAL_SESSION antes de que las cookies Supabase estén propagadas, resultando en 'user undefined' y main vacío. Mitigación: guard esperar loading=true antes de decidir, o reintentar sync-profile una vez tras INITIAL_SESSION con user=null.",
+    "(Sugerencia menor) En POST /gestor/fichaje-plantillas, profile.get('id') puede ser None en casos edge; si la columna creado_por es NOT NULL daría 500. Con admin y gestor normal funciona OK.",
+    "(Sugerencia menor) FichajePlantillaIn tiene todos los 13 campos como Optional. Un POST con solo {nombre:'x'} crearía una plantilla sin reglas y al aplicarse no modificaría nada (función _extraer_reglas_de_plantilla filtra None). Comportamiento correcto pero quizás añadir validación mínima en backend."
+  ],
+  "critical_code_review_comments": [
+    "OK — FichajeConfigUpdate incluye los 8 campos de notificaciones como Optional, manteniendo retro-compat con los 5 antiguos (payload usa exclude_unset=True y filtra None, L212).",
+    "OK — _PLANTILLA_FIELDS define exactamente las 13 columnas planas; _extraer_reglas_de_plantilla filtra None para no sobreescribir valores con null al aplicar plantilla.",
+    "OK — aplicar_plantilla_evento filtra tipo='ensayo' (L373: `if (e.get('tipo') or 'ensayo') != 'ensayo': continue`) — conciertos/funciones no se afectan.",
+    "OK — aplicar_plantilla_evento tiene try/except por cada ensayo para no abortar batch si uno falla; devuelve {aplicados, total_ensayos}.",
+    "OK — _fichaje_is_super_admin con fallback robusto: usa auth_utils.is_super_admin si existe, si no chequea rol+email.",
+    "OK — Backend GET /fichaje-config/{ensayo_id} usa _config_for_ensayo que cae en get_fichaje_global() si no hay fila específica, cumpliendo spec punto 1.",
+    "OK — PUT /fichaje-config hace upsert correcto: update si existe, insert con es_configuracion_global=false + evento_id asociado si es nuevo.",
+    "OK — Permisos PUT/DELETE plantilla: creado_por != profile.id Y no super-admin → 403 (idéntico patrón a listas-obras-favoritas iter F3, consistente).",
+    "Sugerencia menor: La validación 404 de plantilla se hace antes que la de ensayo en aplicar_plantilla_ensayo (L351-356). Consistente con test_21 (plantilla 0...0 + ensayo real → 404 plantilla). OK.",
+    "Sugerencia menor: No se valida nombre no vacío en POST /fichaje-plantillas (Pydantic permite str vacío). Frontend valida con trim+alert. Aceptable.",
+    "OK — Frontend FichajeConfigPanel (L455-770) usa estado local config + botón btn-save-fichaje para hacer PUT; refresca datos tras guardar (resumen X′/Y′·aviso Z′ se actualiza).",
+    "OK — FichajePlantillaEventoButton (L770-825) usa confirm() antes de aplicar a todos los ensayos del evento (destructivo).",
+    "OK — RegistroAsistencia.js: FichajeReglasBadge (L~29) es read-only, sin botones de guardar (spec punto 19)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_f4_fichaje_plantillas.py (NUEVO — 17 tests pytest + regresión, autosuficiente con cleanup autouse TEST_F4 prefix)"
+  ],
+  "success_rate": {"backend": "100% (17/17 nuevos + 49/50 regresión — 1 SKIP pre-existente iter 41)", "frontend": "100% code review · runtime E2E bloqueado por issue pre-existente NO-F4"},
+  "test_credentials": "admin@convocatorias.com / Admin123! · palvarez@netmetrix.es / Opus2026!",
+  "seed_data_creation": "Durante test se crean fichaje_plantillas y fichaje_config rows con prefijo TEST_F4; CLEANUP automático en fixture autouse module-scoped (DELETE como admin) — sin residuos TEST_F4 al finalizar.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter F4 backend 100% PASS (17/17). Test file test_iter_f4_fichaje_plantillas.py es autosuficiente (cleanup auto). El issue pre-existente de /gestor/configuracion-eventos sigue sin resolverse (iter 40, 41, 42 consecutivas lo reproducen) — fixture_scope='class' del AuthProvider parece la causa probable (race INITIAL_SESSION vs cookies). Recomiendo añadir un test de runtime E2E más robusto: login → click en link sidebar 'Configuración' (en lugar de page.goto directo) — no pude validar ese path por falta de selector visible en el Dashboard tras login. La tabla fichaje_plantillas tiene columnas planas; el código NO usa columna 'reglas' JSONB residual. El fichaje_config tiene una fila es_configuracion_global=true que se devuelve como fallback cuando no hay config específica de ensayo.",
+  "rca of the issue": "N/A para F4 — sin bugs detectados en los 9 endpoints nuevos/ampliados. RCA del bloqueo runtime FE: idéntico a iter 40/41 — navegación directa post-login provoca que AuthProvider lea INITIAL_SESSION antes de que las cookies Supabase estén hidratadas, dejando main=vacío. Mitigación sugerida (fuera de scope F4): el guard de ruta debe esperar loading=true y reintentar la carga del perfil una vez tras INITIAL_SESSION con user=null."
+}

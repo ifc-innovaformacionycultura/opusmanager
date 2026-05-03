@@ -223,6 +223,7 @@ async def upsert_config_ensayo(ensayo_id: str, data: FichajeConfigUpdate, curren
 
 # ============================================================================
 # Iter F4 — Plantillas de reglas de fichaje (globales)
+# Tabla `fichaje_plantillas` con columnas planas (no JSONB).
 # ============================================================================
 
 # Las 13 reglas que componen una plantilla (subset de fichaje_config sin
@@ -249,17 +250,27 @@ def _fichaje_is_super_admin(current_user: dict) -> bool:
         return email == 'admin@convocatorias.com'
 
 
-def _normalizar_reglas(reglas: Dict[str, Any]) -> Dict[str, Any]:
-    """Filtra el dict de entrada a sólo las claves válidas de plantilla."""
-    if not isinstance(reglas, dict):
-        return {}
-    return {k: v for k, v in reglas.items() if k in _PLANTILLA_FIELDS}
+def _extraer_reglas_de_plantilla(plantilla: Dict[str, Any]) -> Dict[str, Any]:
+    """Extrae las 13 columnas planas de una fila de fichaje_plantillas."""
+    return {k: plantilla.get(k) for k in _PLANTILLA_FIELDS if plantilla.get(k) is not None}
 
 
 class FichajePlantillaIn(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
-    reglas: Dict[str, Any] = {}
+    minutos_antes_apertura: Optional[int] = None
+    minutos_despues_cierre: Optional[int] = None
+    minutos_retraso_aviso: Optional[int] = None
+    computa_tiempo_extra: Optional[bool] = None
+    computa_mas_alla_fin: Optional[bool] = None
+    notif_musico_push: Optional[bool] = None
+    notif_musico_email: Optional[bool] = None
+    notif_musico_whatsapp: Optional[bool] = None
+    notif_gestor_push: Optional[bool] = None
+    notif_gestor_email: Optional[bool] = None
+    notif_gestor_dashboard: Optional[bool] = None
+    mensaje_aviso_musico: Optional[str] = None
+    mensaje_aviso_gestor: Optional[str] = None
 
 
 @router.get("/gestor/fichaje-plantillas")
@@ -272,13 +283,9 @@ async def listar_plantillas_fichaje(current_user: dict = Depends(get_current_ges
 async def crear_plantilla_fichaje(data: FichajePlantillaIn,
                                     current_user: dict = Depends(get_current_gestor)):
     profile = current_user.get("profile") or {}
-    payload = {
-        "nombre": data.nombre,
-        "descripcion": data.descripcion,
-        "reglas": _normalizar_reglas(data.reglas),
-        "creado_por": profile.get("id"),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    payload = data.model_dump(exclude_unset=True)
+    payload["creado_por"] = profile.get("id")
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
     res = supabase.table("fichaje_plantillas").insert(payload).execute()
     return {"plantilla": (res.data or [None])[0]}
 
@@ -294,12 +301,8 @@ async def actualizar_plantilla_fichaje(plantilla_id: str, data: FichajePlantilla
     if row[0].get("creado_por") and row[0]["creado_por"] != profile.get("id"):
         if not _fichaje_is_super_admin(current_user):
             raise HTTPException(status_code=403, detail="Solo el creador o un administrador puede editar esta plantilla.")
-    payload = {
-        "nombre": data.nombre,
-        "descripcion": data.descripcion,
-        "reglas": _normalizar_reglas(data.reglas),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    payload = data.model_dump(exclude_unset=True)
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
     supabase.table("fichaje_plantillas").update(payload).eq("id", plantilla_id).execute()
     return {"ok": True, "plantilla_id": plantilla_id}
 
@@ -321,7 +324,7 @@ async def eliminar_plantilla_fichaje(plantilla_id: str,
 
 def _aplicar_plantilla_a_ensayo(plantilla: Dict[str, Any], ensayo_id: str) -> None:
     """Aplica las reglas de la plantilla a un ensayo (upsert en fichaje_config)."""
-    reglas = _normalizar_reglas(plantilla.get("reglas") or {})
+    reglas = _extraer_reglas_de_plantilla(plantilla)
     if not reglas:
         return
     payload = dict(reglas)
