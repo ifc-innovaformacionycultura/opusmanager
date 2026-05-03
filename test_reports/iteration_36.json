@@ -1,0 +1,30 @@
+{
+  "summary": "Iter E1 — 'Concluir Evento' en Plantillas Definitivas — testing both backend + frontend. BACKEND 9/9 PASS (test_iter_e1_concluir.py): GET /api/gestor/plantillas-definitivas devuelve estado_cierre, cerrado_plantilla_at, cerrado_plantilla_por_nombre, fecha_inicio en cada evento; eventos abiertos siguen apareciendo (regresión); 404 en concluir/reabrir con UUID inexistente; gestor normal (palvarez@netmetrix.es) recibe 403 al intentar reabrir con mensaje 'Solo el director general o administradores pueden reabrir plantillas.'; admin@convocatorias.com puede concluir → respuesta {ok:true, actualizadas, recibos_regenerados, cerrado_plantilla_at, cerrado_plantilla_por_nombre} y GET refleja estado_cierre='cerrado_plantilla'; PUT guardar bloqueado 403 con mensaje 'No se permiten cambios: el evento ... está concluido' al tocar asignacion del evento cerrado; admin reabre OK → estado_cierre vuelve a 'abierto', cerrado_plantilla_at/por NULL; PUT guardar regresión OK con payload vacío. routes_recordatorios.job_concluir_evento se importa sin errores y devuelve dict {job:'concluir_evento', enviados, revisados, dias_antes}. FRONTEND PASS (Playwright admin login + /plantillas-definitivas): página carga sin errores, 4 btn-concluir-{evento_id} buttons visibles para eventos pasados con estado_cierre='abierto'; modal-concluir-evento aparece tras click con texto 'Los datos de asistencia quedarán bloqueados'; tras concluir vía API + reload: badge-cerrado-{evento_id} muestra '🏁 Concluido' + subtítulo 'Concluido por Admin OPUS · 03 may 2026, 15:59', btn-concluir desaparece, btn-reabrir-{evento_id} aparece para super admin, modal-reabrir-evento abre con texto '¿Reabrir la plantilla...' y mención de regeneración de recibos; 78/78 inputs (100%) DISABLED en panel del evento concluido. Cleanup: el evento de pruebas (Concierto de Navidad, c4409142...) quedó reabierto vía API (estado_cierre='abierto').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter_e1_concluir.py",
+    "/app/test_reports/pytest/iter_e1.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes_gestor.py L1258-1408 (concluir_plantilla): UPDATE asignaciones estado_cierre+cerrado_plantilla_por+cerrado_plantilla_at correctamente; regeneración de recibos pendientes envuelta en try/except por recibo (no rompe flujo si uno falla); notificaciones_gestor para roles ['gestor','archivero','director_general','admin'] — coherente con get_current_gestor.",
+    "routes_gestor.py L1411-1495 (reabrir_plantilla): is_super_admin gate correcto (admin/director_general/admin@convocatorias.com); marca recibos.regenerar_pendiente=TRUE para regeneración al volver a concluir — flujo asimétrico bien diseñado.",
+    "routes_gestor.py L1115-1162 (PUT guardar bloqueo defensivo): construye evento_ids_tocados desde gastos.evento_id + ensayos.evento_id (vía join asistencias.ensayo_id) + asignaciones.evento_id (vía anotaciones.asignacion_id). Cubre los 3 vectores. Mensaje 403 incluye nombres de eventos cerrados — UX correcta.",
+    "routes_recordatorios.py L383-446 (job_concluir_evento): cutoff = today - DIAS_DESPUES_CONCLUIR_EVENTO (default 3); idempotente vía recordatorios_enviados con tipo='concluir_evento'; cron @ 09:30 Europe/Madrid añadido en init_scheduler L471-474. Correcto.",
+    "PlantillasDefinitivas.js L424,725-727: isSuperAdmin = isSuperAdminUser(user); puedeReabrir = eventoCerrado && isSuperAdmin — coherente con backend is_super_admin.",
+    "PlantillasDefinitivas.js: data-testids correctos en TODOS los elementos del flujo (btn-concluir-{id}, btn-reabrir-{id}, badge-cerrado-{id}, modal-concluir-evento, modal-reabrir-evento). Inputs disabled propagados correctamente al SeccionTable (verificado: 78/78 inputs disabled en panel cerrado).",
+    "[INFO no-bug] El test 'gestor normal cannot reabrir' ejecuta el 403 ANTES de concluir el evento (sobre estado_cierre='abierto'), pero el endpoint reabrir-plantilla NO valida estado actual del evento — siempre permite la operación si super admin y siempre rechaza con 403 si no super admin. Esto está bien (idempotencia: reabrir un evento abierto es no-op funcional)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_e1_concluir.py (NUEVO)",
+    "/app/test_reports/pytest/iter_e1.xml (NUEVO)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (botones, modal, badge, disabled inputs, super admin reabrir)"},
+  "test_credentials": "admin@convocatorias.com/Admin123! OK; palvarez@netmetrix.es/Opus2026! OK (gestor normal, devuelve 403 esperado al intentar reabrir).",
+  "seed_data_creation": "Ninguna seed creada. Se reutilizó evento existente 'Concierto de Navidad' (c4409142-8ca9-4a98-8c59-e9bd88b5d529) para el flujo concluir→guardar 403→reabrir. Tras testing, el evento queda con estado_cierre='abierto' (verificado vía API reabrir-plantilla y vía test_guardar_evento_abierto_ok_regresion).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter E1 100% pasada. test_iter_e1_concluir.py es regresión completa: 9 tests (3 schema + 5 flujo + 1 job recordatorio). El test test_concluir_then_reabrir_flow es self-cleaning (reabre al final). Si próxima iter modifica bloqueo backend o flujo super admin, este suite debe seguir pasando. NO se han tocado cálculos económicos ni AsistenciaPagos.js — todo el código modificado en Iter E1 está aislado en routes_gestor.py + routes_recordatorios.py + PlantillasDefinitivas.js.",
+  "rca of the issue": "No hay bugs. Iter E1 implementado correctamente y verificado 100% backend + frontend."
+}
