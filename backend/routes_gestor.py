@@ -801,6 +801,21 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
             except Exception:
                 pass
 
+        # Iter E1.1 — Eventos que tienen al menos una entrada en registro_actividad
+        # con tipo IN ('evento_concluido','evento_reabierto'). El frontend usa este
+        # flag para mostrar el botón "🕒 Historial" solo cuando aporta valor.
+        eventos_con_historial: set = set()
+        try:
+            ra = supabase.table('registro_actividad').select('entidad_id,tipo') \
+                .eq('entidad_tipo', 'evento') \
+                .in_('tipo', ['evento_concluido', 'evento_reabierto']) \
+                .in_('entidad_id', evento_ids).execute().data or []
+            for r in ra:
+                if r.get('entidad_id'):
+                    eventos_con_historial.add(r['entidad_id'])
+        except Exception:
+            pass
+
         ens_res = supabase.table('ensayos') \
             .select('id,evento_id,tipo,fecha,hora,obligatorio,lugar') \
             .in_('evento_id', evento_ids) \
@@ -1057,6 +1072,8 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 "cerrado_plantilla_por_nombre": gestores_cierre_by_id.get(
                     cierre_info.get("cerrado_plantilla_por")
                 ) if cierre_info.get("cerrado_plantilla_por") else None,
+                # Iter E1.1 — flag de historial (botón visible si True)
+                "tiene_historial_cierre": ev['id'] in eventos_con_historial,
             })
 
         return {"eventos": eventos_out}
@@ -1475,6 +1492,30 @@ async def reabrir_plantilla(
         "actualizadas": actualizadas,
         "recibos_marcados_regenerar": recibos_marcados,
     }
+
+
+@router.get("/eventos/{evento_id}/historial-cierres")
+async def get_historial_cierres(
+    evento_id: str,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Iter E1.1 — Historial de cierres y reaperturas del evento.
+
+    Devuelve las entradas de `registro_actividad` con
+    `entidad_tipo='evento'`, `entidad_id={evento_id}` y
+    `tipo IN ('evento_concluido','evento_reabierto')` ordenadas DESC.
+    """
+    try:
+        rows = supabase.table('registro_actividad') \
+            .select('id,tipo,descripcion,usuario_nombre,created_at') \
+            .eq('entidad_tipo', 'evento') \
+            .eq('entidad_id', evento_id) \
+            .in_('tipo', ['evento_concluido', 'evento_reabierto']) \
+            .order('created_at', desc=True) \
+            .execute().data or []
+        return {"evento_id": evento_id, "entries": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error cargando historial: {str(e)}")
 
 
 # ==================== Cachets Config & Upload justificantes ====================

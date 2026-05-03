@@ -441,6 +441,8 @@ const PlantillasDefinitivas = () => {
   const [concluirModal, setConcluirModal] = useState(null); // {ev}
   const [reabrirModal, setReabrirModal] = useState(null);   // {ev}
   const [cierreBusy, setCierreBusy] = useState(false);
+  // Iter E1.1 — modal historial de cierres/reaperturas
+  const [historialModal, setHistorialModal] = useState(null); // {ev, loading, entries, error}
 
   const showFeedback = (type, text) => {
     setFeedback({ type, text });
@@ -647,6 +649,22 @@ const PlantillasDefinitivas = () => {
     }
   };
 
+  // Iter E1.1 — Cargar historial de cierres/reaperturas (lazy al abrir).
+  const abrirHistorial = async (ev) => {
+    setHistorialModal({ ev, loading: true, entries: [], error: null });
+    try {
+      const r = await api.get(`/api/gestor/eventos/${ev.id}/historial-cierres`);
+      setHistorialModal({ ev, loading: false, entries: r.data?.entries || [], error: null });
+    } catch (err) {
+      setHistorialModal({
+        ev,
+        loading: false,
+        entries: [],
+        error: err.response?.data?.detail || err.message,
+      });
+    }
+  };
+
   if (loading) return <div className="p-6" data-testid="plantillas-page"><p className="text-slate-500">Cargando...</p></div>;
 
   return (
@@ -778,6 +796,17 @@ const PlantillasDefinitivas = () => {
                   </button>
                   {/* Iter E1 — Botones de cierre/reapertura */}
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {ev.tiene_historial_cierre && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); abrirHistorial(ev); }}
+                        data-testid={`btn-historial-${ev.id}`}
+                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-md text-xs font-semibold whitespace-nowrap shadow border border-slate-500"
+                        title="Ver historial de cierres y reaperturas"
+                      >
+                        🕒 Historial
+                      </button>
+                    )}
                     {puedeConcluir && (
                       <button
                         type="button"
@@ -938,6 +967,84 @@ const PlantillasDefinitivas = () => {
                 className="px-3 py-1.5 text-sm font-semibold rounded bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50"
               >
                 {cierreBusy ? 'Reabriendo…' : '🔓 Sí, reabrir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Iter E1.1 — Modal: Historial de cierres/reaperturas */}
+      {historialModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="modal-historial-cierres">
+          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full p-5 border border-slate-200 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-start justify-between mb-3 gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">🕒 Historial de cierres</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{historialModal.ev.nombre}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistorialModal(null)}
+                data-testid="btn-cerrar-historial"
+                className="text-slate-400 hover:text-slate-700 text-lg leading-none"
+                title="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 -mx-5 px-5">
+              {historialModal.loading && (
+                <p className="text-sm text-slate-500 py-4 text-center" data-testid="historial-loading">Cargando historial…</p>
+              )}
+              {!historialModal.loading && historialModal.error && (
+                <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3" data-testid="historial-error">
+                  {historialModal.error}
+                </p>
+              )}
+              {!historialModal.loading && !historialModal.error && historialModal.entries.length === 0 && (
+                <p className="text-sm text-slate-500 py-4 text-center" data-testid="historial-empty">
+                  Sin actividad de cierre/reapertura registrada.
+                </p>
+              )}
+              {!historialModal.loading && !historialModal.error && historialModal.entries.length > 0 && (
+                <ol className="relative border-l-2 border-slate-200 ml-2 pl-5 space-y-4 py-1" data-testid="historial-timeline">
+                  {historialModal.entries.map((entry) => {
+                    const concluido = entry.tipo === 'evento_concluido';
+                    return (
+                      <li key={entry.id} className="relative" data-testid={`historial-entry-${entry.id}`}>
+                        <span
+                          className={`absolute -left-[1.7rem] top-0.5 flex items-center justify-center w-6 h-6 rounded-full text-xs ring-4 ring-white ${
+                            concluido ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
+                          }`}
+                          aria-hidden
+                        >
+                          {concluido ? '🏁' : '🔓'}
+                        </span>
+                        <div className="text-sm">
+                          <div className={`font-semibold ${concluido ? 'text-emerald-700' : 'text-amber-700'}`}>
+                            {concluido ? 'Concluido' : 'Reabierto'}
+                          </div>
+                          <div className="text-slate-700">
+                            por <strong>{entry.usuario_nombre || '—'}</strong>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">{fmtFechaCierre(entry.created_at)}</div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setHistorialModal(null)}
+                data-testid="btn-cerrar-historial-footer"
+                className="px-3 py-1.5 text-sm rounded border border-slate-300 hover:bg-slate-50"
+              >
+                Cerrar
               </button>
             </div>
           </div>
