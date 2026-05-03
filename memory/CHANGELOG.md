@@ -1,5 +1,71 @@
 # CHANGELOG
 
+## Iter E1 · 2026-05-03 · Concluir / Reabrir plantilla del evento
+
+### 🎯 Cambios (solo 3 archivos como pidió el usuario)
+
+#### SQL ejecutado por el usuario
+```sql
+ALTER TABLE asignaciones
+  ADD COLUMN estado_cierre TEXT NOT NULL DEFAULT 'abierto'
+    CHECK (estado_cierre IN ('abierto','cerrado_plantilla','cerrado_economico')),
+  ADD COLUMN cerrado_plantilla_por UUID REFERENCES usuarios(id) ON DELETE SET NULL,
+  ADD COLUMN cerrado_plantilla_at  TIMESTAMPTZ,
+  ADD COLUMN cerrado_economico_por UUID REFERENCES usuarios(id) ON DELETE SET NULL,
+  ADD COLUMN cerrado_economico_at  TIMESTAMPTZ;
+CREATE INDEX idx_asignaciones_estado_cierre ON asignaciones(evento_id, estado_cierre);
+ALTER TABLE recibos ADD COLUMN regenerar_pendiente BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX idx_recibos_regenerar_pendiente ON recibos(evento_id) WHERE regenerar_pendiente = TRUE;
+```
+
+#### Backend (`routes_gestor.py`)
+- `GET /plantillas-definitivas`: filtro ampliado para incluir eventos con asignaciones en `estado_cierre IN ('cerrado_plantilla','cerrado_economico')` (modo solo lectura). Cada evento devuelve además `estado_cierre`, `cerrado_plantilla_at`, `cerrado_plantilla_por_nombre`, `fecha_inicio`. Se preserva el comportamiento original para eventos `estado='abierto'`.
+- `PUT /plantillas-definitivas/guardar`: nuevo bloqueo defensivo. Si cualquier `evento_id` tocado (vía gastos.evento_id, ensayos.evento_id desde asistencias.ensayo_id, o asignaciones.evento_id desde anotaciones.asignacion_id) tiene `estado_cierre != 'abierto'` → `403` con mensaje claro listando los eventos cerrados. `HTTPException` re-elevada para no convertirse en 500.
+- `POST /eventos/{id}/concluir-plantilla` (NUEVO, cualquier gestor):
+  - UPDATE asignaciones SET estado_cierre='cerrado_plantilla', cerrado_plantilla_por=gestor_id, cerrado_plantilla_at=NOW().
+  - Inserta `notificaciones_gestor` para todos los gestores (rol IN gestor/archivero/director_general/admin) con tipo='evento_concluido'.
+  - `notify_push` a todos los gestores con `tipo='general'`.
+  - Si hay recibos del evento con `regenerar_pendiente=TRUE` → invoca `generar_recibo(force=True)` por cada uno y marca `regenerar_pendiente=FALSE`. Notifica a admins/director_general con tipo='recibos_regenerados'.
+  - Inserta entrada en `registro_actividad`.
+- `POST /eventos/{id}/reabrir-plantilla` (NUEVO, solo super admins via `is_super_admin`):
+  - UPDATE asignaciones SET estado_cierre='abierto', cerrado_plantilla_por=NULL, cerrado_plantilla_at=NULL.
+  - Marca todos los recibos del evento (si existen) con `regenerar_pendiente=TRUE` para regenerar al volver a concluir.
+  - `403` con mensaje "Solo el director general o administradores pueden reabrir plantillas." si no super admin.
+  - Inserta entrada en `registro_actividad`.
+
+#### Backend (`routes_recordatorios.py`)
+- `_dias_concluir_evento()` lee `DIAS_DESPUES_CONCLUIR_EVENTO` (default 3).
+- `job_concluir_evento()`: detecta eventos con `fecha_inicio < hoy − N días` y asignaciones confirmadas con `estado_cierre='abierto'` → push idempotente a todos los gestores vía `recordatorios_enviados (tipo='concluir_evento', dias_antes=0)`. Cada gestor recibe el aviso una sola vez por evento.
+- Registrado en `init_scheduler()` como cron diario `@ 09:30 Europe/Madrid` (id `concluir_evento_alert`) y también incluido en `run_all_jobs()`.
+
+#### Frontend (`PlantillasDefinitivas.js`)
+- Helpers nuevos: `eventoYaPasado(ev)`, `isSuperAdminUser(user)`, `fmtFechaCierre(iso)`.
+- Componente principal lee `user` de `useGestorAuth()` y deriva `isSuperAdmin`.
+- Cabecera del acordeón de cada evento:
+  - Botón `[data-testid=btn-concluir-{id}]` "🏁 Concluir Evento" si `fecha_inicio < hoy && estado_cierre === 'abierto'`.
+  - Badge `[data-testid=badge-cerrado-{id}]` "🏁 Concluido" si concluido. Tooltip con autor y fecha.
+  - Botón `[data-testid=btn-reabrir-{id}]` "🔓 Reabrir plantilla" si concluido && super admin.
+- Modales de confirmación `[data-testid=modal-concluir-evento]` y `[data-testid=modal-reabrir-evento]` con textos exactos del usuario.
+- `SeccionTable` recibe prop `cerrado={eventoCerrado}`. Inputs propagados con `disabled`: numero-atril, letra, comentario, asistencia (`PctInput`), extra, motivo, transporte, alojamiento, otros, y `FileButton` (botón 📎). Estilo Tailwind `disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed`.
+- **NO se han modificado los cálculos económicos** (TOTAL = caché real + extras − comedor).
+
+### ✅ Validación (testing_agent_v3_fork — `iteration_36.json`)
+- **Backend 9/9 PASS** (`/app/backend/tests/test_iter_e1_concluir.py`):
+  - Schema: GET devuelve campos nuevos; eventos abiertos siguen apareciendo (regresión); eventos cerrados sin asignaciones cerradas siguen ocultos.
+  - Permisos: 403 a gestor normal en reabrir; 404 con UUID inexistente; super admin puede concluir y reabrir.
+  - Bloqueo PUT 403 al guardar sobre evento concluido; PUT regresión OK con evento abierto.
+  - `routes_recordatorios.job_concluir_evento` se importa y ejecuta sin errores.
+- **Frontend 100% PASS** (Playwright):
+  - 4 botones `btn-concluir-*` visibles para eventos pasados; modal aparece con texto correcto.
+  - Tras concluir + reload: badge "🏁 Concluido", subtítulo con autor + fecha, btn-concluir desaparece, btn-reabrir aparece (solo super admin).
+  - **78/78 inputs (100%) DISABLED** en panel de evento concluido.
+- **0 regresiones**. Cleanup: el evento de pruebas ("Concierto de Navidad") quedó reabierto vía API.
+
+### ⚠️ Pendiente
+- **Iter E2** — Cierre económico (botón en `AsistenciaPagos.js`, `estado_cierre='cerrado_economico'`). Pospuesto para iteración separada.
+
+
+
 ## Iter D · 2026-05-03 · Comedor descontable en Plantilla Definitiva
 
 ### 🎯 Cambios (solo 2 archivos como pidió el usuario)
