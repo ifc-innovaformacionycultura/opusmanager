@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Iter 29 · 2026-05-03 · Solo estética (4 puntos)
+
+### 🎨 Cambios visuales
+- **Punto 6 — Dashboard en 4 bloques coloreados**: Se extrajo `DashboardPage` de `App.js` a un archivo propio `/app/frontend/src/pages/DashboardPage.js`. Se envolvieron las secciones en 4 bloques con encabezado (título bold + descripción text-xs) y fondos distintivos:
+  - 🔵 `bloque-resumen-actividad` (bg-blue-50) · stats + tiles pendientes
+  - 🟡 `bloque-pendientes-atencion` (bg-amber-50) · `<ActividadPendiente />`
+  - 🟢 `bloque-proximos-15-dias` (bg-green-50) · listado Próximos eventos
+  - ⚪ `bloque-estado-sistema` (bg-gray-50) · link a `/admin/recordatorios`
+- **Punto 8 — Ayuda push colapsable** en `/admin/recordatorios`: `<details data-testid="ayuda-notificaciones-push">` con el texto literal solicitado (cómo funcionan, para qué sirven, por qué no llegan).
+- **Punto 9 — Barras verticales sticky por sección**: Cada `Section` de `ConfiguracionEventos.js` ahora lleva un `<aside sticky top-0 w-7>` con `writing-mode: vertical-rl` + `rotate(180deg)`. Colores por sección vía `SECCION_BAR` (blue-500 / green-500 / yellow-500 / orange-500 / purple-500 / red-500 / pink-500 / gray-400 / teal-500 / indigo-500). Se quitó `overflow-hidden` del contenedor para permitir sticky.
+- **Punto 14 — Dropdown verificación con `position:fixed`**: `VerificacionBadge` reposicionado con `useRef` + `getBoundingClientRect()`. Detecta proximidad al borde derecho (align right) e inferior (open upwards). `z-index: 9999`.
+
+### ✅ Validación
+- **100% PASS** en testing_agent (iter 29 + regresión iter28). 0 bugs, 0 regresiones.
+- Archivos tocados (EXACTAMENTE los 4 acordados con el usuario):
+  - `App.js` (2 líneas: import + eliminación del bloque inline)
+  - `DashboardPage.js` (NUEVO)
+  - `RecordatoriosAdmin.js` (1 inserción)
+  - `ConfiguracionEventos.js` (3 cambios quirúrgicos: useRef import + SECCION_BAR/aside + fixed dropdown)
+
+
+
 ## Iter 28 · 2026-05-02 · Fix UX loading /admin/musicos + regresión completa
 
 ### 🐛 Bug fix quirúrgico
