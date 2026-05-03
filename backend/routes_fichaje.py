@@ -190,6 +190,21 @@ class FichajeConfigUpdate(BaseModel):
     minutos_retraso_aviso: Optional[int] = None
     computa_tiempo_extra: Optional[bool] = None
     computa_mas_alla_fin: Optional[bool] = None
+    # Iter F4 — Notificaciones (columnas existentes en fichaje_config)
+    notif_musico_push: Optional[bool] = None
+    notif_musico_email: Optional[bool] = None
+    notif_musico_whatsapp: Optional[bool] = None
+    notif_gestor_push: Optional[bool] = None
+    notif_gestor_email: Optional[bool] = None
+    notif_gestor_dashboard: Optional[bool] = None
+    mensaje_aviso_musico: Optional[str] = None
+    mensaje_aviso_gestor: Optional[str] = None
+
+
+@router.get("/gestor/fichaje-config/{ensayo_id}")
+async def get_config_ensayo(ensayo_id: str, current_user: dict = Depends(get_current_gestor)):
+    """Iter F4 — GET aislado de las reglas resueltas para un ensayo (específicas si existen, si no las globales)."""
+    return {"config": _config_for_ensayo(ensayo_id)}
 
 
 @router.put("/gestor/fichaje-config/{ensayo_id}")
@@ -204,6 +219,162 @@ async def upsert_config_ensayo(ensayo_id: str, data: FichajeConfigUpdate, curren
         payload.update({"ensayo_id": ensayo_id, "es_configuracion_global": False, "evento_id": (ev[0] if ev else {}).get("evento_id")})
         supabase.table("fichaje_config").insert(payload).execute()
     return {"ok": True, "config": _config_for_ensayo(ensayo_id)}
+
+
+# ============================================================================
+# Iter F4 — Plantillas de reglas de fichaje (globales)
+# ============================================================================
+
+# Las 13 reglas que componen una plantilla (subset de fichaje_config sin
+# campos identitarios como id/ensayo_id/evento_id/timestamps).
+_PLANTILLA_FIELDS = (
+    "minutos_antes_apertura", "minutos_despues_cierre", "minutos_retraso_aviso",
+    "computa_tiempo_extra", "computa_mas_alla_fin",
+    "notif_musico_push", "notif_musico_email", "notif_musico_whatsapp",
+    "notif_gestor_push", "notif_gestor_email", "notif_gestor_dashboard",
+    "mensaje_aviso_musico", "mensaje_aviso_gestor",
+)
+
+
+def _fichaje_is_super_admin(current_user: dict) -> bool:
+    try:
+        from auth_utils import is_super_admin as _isa
+        return _isa(current_user)
+    except Exception:
+        profile = current_user.get('profile') or {}
+        rol = profile.get('rol')
+        if rol in ('admin', 'director_general'):
+            return True
+        email = (profile.get('email') or '').lower()
+        return email == 'admin@convocatorias.com'
+
+
+def _normalizar_reglas(reglas: Dict[str, Any]) -> Dict[str, Any]:
+    """Filtra el dict de entrada a sólo las claves válidas de plantilla."""
+    if not isinstance(reglas, dict):
+        return {}
+    return {k: v for k, v in reglas.items() if k in _PLANTILLA_FIELDS}
+
+
+class FichajePlantillaIn(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = None
+    reglas: Dict[str, Any] = {}
+
+
+@router.get("/gestor/fichaje-plantillas")
+async def listar_plantillas_fichaje(current_user: dict = Depends(get_current_gestor)):
+    rows = supabase.table("fichaje_plantillas").select("*").order("nombre").execute().data or []
+    return {"plantillas": rows}
+
+
+@router.post("/gestor/fichaje-plantillas")
+async def crear_plantilla_fichaje(data: FichajePlantillaIn,
+                                    current_user: dict = Depends(get_current_gestor)):
+    profile = current_user.get("profile") or {}
+    payload = {
+        "nombre": data.nombre,
+        "descripcion": data.descripcion,
+        "reglas": _normalizar_reglas(data.reglas),
+        "creado_por": profile.get("id"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = supabase.table("fichaje_plantillas").insert(payload).execute()
+    return {"plantilla": (res.data or [None])[0]}
+
+
+@router.put("/gestor/fichaje-plantillas/{plantilla_id}")
+async def actualizar_plantilla_fichaje(plantilla_id: str, data: FichajePlantillaIn,
+                                         current_user: dict = Depends(get_current_gestor)):
+    profile = current_user.get("profile") or {}
+    row = supabase.table("fichaje_plantillas").select("id,creado_por") \
+        .eq("id", plantilla_id).limit(1).execute().data or []
+    if not row:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    if row[0].get("creado_por") and row[0]["creado_por"] != profile.get("id"):
+        if not _fichaje_is_super_admin(current_user):
+            raise HTTPException(status_code=403, detail="Solo el creador o un administrador puede editar esta plantilla.")
+    payload = {
+        "nombre": data.nombre,
+        "descripcion": data.descripcion,
+        "reglas": _normalizar_reglas(data.reglas),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    supabase.table("fichaje_plantillas").update(payload).eq("id", plantilla_id).execute()
+    return {"ok": True, "plantilla_id": plantilla_id}
+
+
+@router.delete("/gestor/fichaje-plantillas/{plantilla_id}")
+async def eliminar_plantilla_fichaje(plantilla_id: str,
+                                       current_user: dict = Depends(get_current_gestor)):
+    profile = current_user.get("profile") or {}
+    row = supabase.table("fichaje_plantillas").select("id,creado_por") \
+        .eq("id", plantilla_id).limit(1).execute().data or []
+    if not row:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    if row[0].get("creado_por") and row[0]["creado_por"] != profile.get("id"):
+        if not _fichaje_is_super_admin(current_user):
+            raise HTTPException(status_code=403, detail="Solo el creador o un administrador puede eliminar esta plantilla.")
+    supabase.table("fichaje_plantillas").delete().eq("id", plantilla_id).execute()
+    return {"ok": True}
+
+
+def _aplicar_plantilla_a_ensayo(plantilla: Dict[str, Any], ensayo_id: str) -> None:
+    """Aplica las reglas de la plantilla a un ensayo (upsert en fichaje_config)."""
+    reglas = _normalizar_reglas(plantilla.get("reglas") or {})
+    if not reglas:
+        return
+    payload = dict(reglas)
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    existing = supabase.table("fichaje_config").select("id") \
+        .eq("ensayo_id", ensayo_id).limit(1).execute().data or []
+    if existing:
+        supabase.table("fichaje_config").update(payload).eq("id", existing[0]["id"]).execute()
+    else:
+        ev = supabase.table("ensayos").select("evento_id") \
+            .eq("id", ensayo_id).limit(1).execute().data or []
+        payload.update({
+            "ensayo_id": ensayo_id,
+            "es_configuracion_global": False,
+            "evento_id": (ev[0] if ev else {}).get("evento_id"),
+        })
+        supabase.table("fichaje_config").insert(payload).execute()
+
+
+@router.post("/gestor/fichaje-config/{ensayo_id}/aplicar-plantilla/{plantilla_id}")
+async def aplicar_plantilla_ensayo(ensayo_id: str, plantilla_id: str,
+                                     current_user: dict = Depends(get_current_gestor)):
+    plantilla = supabase.table("fichaje_plantillas").select("*") \
+        .eq("id", plantilla_id).limit(1).execute().data or []
+    if not plantilla:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    ensayo = supabase.table("ensayos").select("id").eq("id", ensayo_id).limit(1).execute().data or []
+    if not ensayo:
+        raise HTTPException(status_code=404, detail="Ensayo no encontrado")
+    _aplicar_plantilla_a_ensayo(plantilla[0], ensayo_id)
+    return {"ok": True, "config": _config_for_ensayo(ensayo_id)}
+
+
+@router.post("/gestor/eventos/{evento_id}/fichaje/aplicar-plantilla/{plantilla_id}")
+async def aplicar_plantilla_evento(evento_id: str, plantilla_id: str,
+                                     current_user: dict = Depends(get_current_gestor)):
+    """Aplica la plantilla a TODOS los ensayos del evento (no a conciertos/funciones)."""
+    plantilla = supabase.table("fichaje_plantillas").select("*") \
+        .eq("id", plantilla_id).limit(1).execute().data or []
+    if not plantilla:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    ensayos = supabase.table("ensayos").select("id,tipo") \
+        .eq("evento_id", evento_id).execute().data or []
+    aplicados = 0
+    for e in ensayos:
+        if (e.get("tipo") or "ensayo") != "ensayo":
+            continue
+        try:
+            _aplicar_plantilla_a_ensayo(plantilla[0], e["id"])
+            aplicados += 1
+        except Exception:
+            continue
+    return {"ok": True, "aplicados": aplicados, "total_ensayos": len([e for e in ensayos if (e.get('tipo') or 'ensayo') == 'ensayo'])}
 
 
 # ============================================================================

@@ -1,77 +1,41 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { QrCode, Download, RefreshCw, ChevronDown, ChevronRight, Save } from "lucide-react";
+import { QrCode, Download, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 
-const fmt = (s) => s ? new Date(s).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "—";
 const fmtH = (s) => s ? new Date(s).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—";
 
-const FichajeConfigEditor = ({ ensayoId, initial, api }) => {
-  const [cfg, setCfg] = useState(initial || {});
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState(null);
 
-  const set = (k, v) => setCfg((p) => ({ ...p, [k]: v }));
-
-  const guardar = async () => {
-    setSaving(true);
-    try {
-      await api.put(`/api/gestor/fichaje-config/${ensayoId}`, {
-        minutos_antes_apertura: parseInt(cfg.minutos_antes_apertura) || 30,
-        minutos_despues_cierre: parseInt(cfg.minutos_despues_cierre) || 30,
-        minutos_retraso_aviso: parseInt(cfg.minutos_retraso_aviso) || 5,
-        computa_tiempo_extra: !!cfg.computa_tiempo_extra,
-        computa_mas_alla_fin: !!cfg.computa_mas_alla_fin,
-      });
-      setMsg("✓ Guardado");
-      setTimeout(() => setMsg(null), 2500);
-    } catch (e) {
-      setMsg(e?.response?.data?.detail || e.message);
-    } finally { setSaving(false); }
-  };
-
+// Iter F4 — Badge read-only de las reglas de fichaje aplicadas al ensayo.
+// Las reglas se editan desde Configuración de Eventos (subpanel por ensayo).
+const FichajeReglasBadge = ({ cfg }) => {
+  if (!cfg) return null;
+  const ant = cfg.minutos_antes_apertura ?? 30;
+  const desp = cfg.minutos_despues_cierre ?? 30;
+  const ret = cfg.minutos_retraso_aviso ?? 5;
+  const computaPre = !!cfg.computa_tiempo_extra;
+  const computaPost = !!cfg.computa_mas_alla_fin;
+  const notifMusico = [
+    cfg.notif_musico_push && "push",
+    cfg.notif_musico_email && "email",
+    cfg.notif_musico_whatsapp && "whatsapp",
+  ].filter(Boolean);
+  const notifGestor = [
+    cfg.notif_gestor_push && "push",
+    cfg.notif_gestor_email && "email",
+    cfg.notif_gestor_dashboard && "dashboard",
+  ].filter(Boolean);
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded p-3 space-y-2 text-xs">
-      <div className="flex items-center justify-between">
-        <span className="font-semibold uppercase text-slate-700">Reglas para este ensayo</span>
-        <div className="flex items-center gap-2">
-          {msg && <span className="text-emerald-700">{msg}</span>}
-          <button onClick={guardar} disabled={saving}
-                  data-testid={`btn-save-cfg-${ensayoId}`}
-                  className="px-2 py-1 bg-slate-900 text-white rounded inline-flex items-center gap-1 disabled:opacity-50">
-            <Save className="w-3 h-3"/> {saving ? "…" : "Guardar"}
-          </button>
-        </div>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        <label className="flex flex-col gap-0.5">
-          <span className="text-slate-600">Min antes apertura</span>
-          <input type="number" min="0" value={cfg.minutos_antes_apertura ?? 30}
-                 onChange={(e) => set("minutos_antes_apertura", e.target.value)}
-                 className="px-1.5 py-1 border border-slate-200 rounded"/>
-        </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-slate-600">Min después fin</span>
-          <input type="number" min="0" value={cfg.minutos_despues_cierre ?? 30}
-                 onChange={(e) => set("minutos_despues_cierre", e.target.value)}
-                 className="px-1.5 py-1 border border-slate-200 rounded"/>
-        </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-slate-600">Min retraso aviso</span>
-          <input type="number" min="0" value={cfg.minutos_retraso_aviso ?? 5}
-                 onChange={(e) => set("minutos_retraso_aviso", e.target.value)}
-                 className="px-1.5 py-1 border border-slate-200 rounded"/>
-        </label>
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <label className="flex items-center gap-1 cursor-pointer">
-          <input type="checkbox" checked={!!cfg.computa_tiempo_extra} onChange={(e) => set("computa_tiempo_extra", e.target.checked)}/>
-          <span>Computar antes</span>
-        </label>
-        <label className="flex items-center gap-1 cursor-pointer">
-          <input type="checkbox" checked={!!cfg.computa_mas_alla_fin} onChange={(e) => set("computa_mas_alla_fin", e.target.checked)}/>
-          <span>Computar más allá del fin</span>
-        </label>
-      </div>
+    <div className="bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-700 flex items-center gap-3 flex-wrap"
+         data-testid="fichaje-reglas-badge"
+         title="Reglas read-only. Edita desde Configuración de Eventos.">
+      <span className="font-semibold uppercase tracking-wide text-slate-500">Reglas:</span>
+      <span><b>{ant}</b>′ antes · <b>{desp}</b>′ después · aviso si retraso ≥ <b>{ret}</b>′</span>
+      <span className="text-slate-400">|</span>
+      <span>Computa pre: <b>{computaPre ? "✓" : "✗"}</b></span>
+      <span>Computa post: <b>{computaPost ? "✓" : "✗"}</b></span>
+      <span className="text-slate-400">|</span>
+      <span>Músico → <b>{notifMusico.length ? notifMusico.join(", ") : "ninguna"}</b></span>
+      <span>Gestor → <b>{notifGestor.length ? notifGestor.join(", ") : "ninguna"}</b></span>
     </div>
   );
 };
@@ -125,7 +89,7 @@ const EnsayoBlock = ({ ensayo, api, onRefresh }) => {
         </div>
       </div>
 
-      <FichajeConfigEditor ensayoId={ensayo.id} initial={ensayo.config_fichaje} api={api}/>
+      <FichajeReglasBadge cfg={ensayo.config_fichaje}/>
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
@@ -234,7 +198,7 @@ const RegistroAsistencia = () => {
           <QrCode className="w-7 h-7 text-slate-700"/>
           <div>
             <h1 className="font-cabinet text-2xl font-bold text-slate-900">Registro de Asistencia</h1>
-            <p className="text-sm text-slate-600">QR por ensayo y función · fichajes con cálculo automático de horas computadas.</p>
+            <p className="text-sm text-slate-600">QR por ensayo y función · fichajes con cálculo automático de horas computadas. Las reglas se editan desde Configuración de Eventos.</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
