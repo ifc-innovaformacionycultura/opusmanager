@@ -1,0 +1,60 @@
+{
+  "summary": "RE-TEST iter31/32 bug fix (eliminación del guard mountedRef en useServerPref). Fix confirmado y 4 flujos del hook + spot-check backend PASS al 100%. El bug de hidratación reportado en iter32 está resuelto: tras el fix el useEffect solo usa `cancelled` per-scope (patrón React estándar StrictMode-safe), y la segunda ejecución del effect en dev ya setea correctamente el estado.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_prefs.py",
+    "/app/test_reports/pytest/iter31_prefs.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix aplicado es mínimo y correcto: `cancelled` por scope ya es suficiente bajo StrictMode; el comentario del hook documenta el comportamiento dual-mount. Ningún otro cambio necesario.",
+    "routes_prefs.py sigue siendo read-merge-write no atómico (comentario informativo — no bloqueante para el uso actual)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (spot-check GET/PUT partial merge/null delete/sin auth 403)",
+    "frontend": "100% (4/4 flujos: hidratación server→UI, migración LS→servidor, click ocultar → PUT, mostrar-todos → PUT [])"
+  },
+  "test_credentials": "admin@convocatorias.com / Admin123!",
+  "seed_data_creation": "Durante los tests se escribió/limpió la clave seguimiento_eventos_ocultos en prefs_ui del admin. Estado final: prefs={} (limpio).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bug de hidratación StrictMode×mountedRef reportado en iter32 quedó RESUELTO en iter33 tras eliminar líneas 49-52 (mountedRef guard) de /app/frontend/src/hooks/usePrefsUI.js. El hook ahora usa sólo el patrón estándar `let cancelled = false; ... return () => { cancelled = true; };`. Test de regresión backend en /app/backend/tests/test_iter31_prefs.py (10 tests, aún válidos).",
+  "validation_evidence": {
+    "flow_a_server_to_ui": {
+      "setup": "PUT servidor {seguimiento_eventos_ocultos:[bfac4411-...]} + localStorage vacío",
+      "result": "tras navegar /seguimiento: block-evento-{uuid}-collapsed visible, btn-mostrar-todos-eventos visible, LS repoblado con el array",
+      "status": "PASS"
+    },
+    "flow_b_ls_to_server_migration": {
+      "setup": "PUT servidor null + LS poblado con JSON [uuid]",
+      "result": "tras navegar /seguimiento: evento colapsa, 1 PUT automático con body {prefs:{seguimiento_eventos_ocultos:[uuid]}} y GET vía curl devuelve el array",
+      "status": "PASS"
+    },
+    "flow_c_click_ocultar": {
+      "setup": "Click en btn-ocultar-evento-{otroUuid}",
+      "result": "tras ~1.2s, 1 PUT con array acumulado [uuid1, uuid2]; curl GET de otra 'pestaña' devuelve el array actualizado",
+      "status": "PASS"
+    },
+    "flow_d_mostrar_todos": {
+      "setup": "Click btn-mostrar-todos-eventos",
+      "result": "1 PUT con body {prefs:{seguimiento_eventos_ocultos:[]}}, UI sin bloques colapsados, servidor con array vacío",
+      "status": "PASS"
+    },
+    "backend_spot_check": {
+      "get_initial_200": true,
+      "put_partial_merge_keeps_existing": true,
+      "put_null_deletes_key": true,
+      "sin_auth_403": true
+    }
+  },
+  "rca of the issue": "Resuelto en iter33. Causa raíz (iter32): React.StrictMode doble-montaba el useEffect; el primer mount seteaba mountedRef=true y lanzaba fetch-A, cuyo cleanup marcaba cancelled(A)=true; el segundo mount veía mountedRef=true y hacía return sin relanzar fetch. Al resolver fetch-A, el check `if (cancelled) return` descartaba la respuesta → setValueState nunca corría. Fix: eliminar `if (mountedRef.current) return; mountedRef.current = true;`. Ahora el segundo mount sí lanza fetch-B cuya respuesta llega con cancelled=false y setea el estado. Validado end-to-end con Playwright + curl de otra pestaña."
+}

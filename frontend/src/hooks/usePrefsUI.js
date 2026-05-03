@@ -44,12 +44,11 @@ export function useServerPref(key, defaultValue) {
   const [ready, setReady] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const timerRef = useRef(null);
-  const mountedRef = useRef(false);
 
-  // Carga inicial desde el servidor (una sola vez)
+  // Carga inicial desde el servidor. En React.StrictMode (dev) este effect se
+  // monta dos veces; el cleanup del primero marca cancelled y el segundo hace
+  // el fetch que finalmente aplica setValueState.
   useEffect(() => {
-    if (mountedRef.current) return;
-    mountedRef.current = true;
     let cancelled = false;
     (async () => {
       try {
