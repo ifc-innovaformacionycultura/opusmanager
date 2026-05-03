@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Iter D · 2026-05-03 · Comedor descontable en Plantilla Definitiva
+
+### 🎯 Cambios (solo 2 archivos como pidió el usuario)
+
+#### Backend (`routes_gestor.py`, endpoint `/plantillas-definitivas`)
+- Nueva consulta a `evento_comidas` + `confirmaciones_comida` filtrada por `evento_ids` y `usuario_ids`.
+- Construcción de `comida_by_pair[(usuario_id, evento_id)] = Σ (precio_menu + precio_cafe·toma_cafe)` para confirmaciones con `confirmado=true`.
+- Cada músico devuelve `comida_importe: float`.
+- Cada evento en `totales` devuelve `comida: float`.
+- TOTAL = `cache_real + extras + transp + aloj + otros − comida` (descuento).
+
+#### Frontend (`PlantillasDefinitivas.js`)
+- Nueva columna `<th>🍽️ Comedor</th>` entre Otros y TOTAL.
+- Celda read-only por fila con testid `comida-{usuario_id}-{evento_id}`:
+  - `comida = 0` → muestra `—` en gris.
+  - `comida > 0` → muestra `−{importe}` en rojo.
+- Recálculo de subtotales por sección y por evento incluye `comida`.
+- Footer de sección añade `<span>Comedor: −X €</span>` en rosa.
+
+### ✅ Validación
+- Backend: **6/6 pytest PASS** — schema, 29 músicos × 7 eventos coherentes (`cache_real+extras+transp+aloj+otros−comida == total`), agregación `totales.comida == Σ comida_importe`, regresión POST guardar.
+- Frontend: header (9×) + 29 celdas `comida-*` + 29 celdas `total-*` + 9 subtotales footer `Comedor:` — sin errores.
+- **0 regresiones**.
+
+### ℹ️ Nota cobertura
+La BD seed no tiene filas en `confirmaciones_comida`, por lo que todos los `comida_importe` son 0 y todas las celdas muestran `—`. El path `−X,XX €` en rojo está validado vía revisión de código (L324-326 PlantillasDefinitivas.js), no via E2E con datos reales. Para validarlo real, basta con que un músico confirme una comida en su portal y el descuento aparecerá automáticamente.
+
+
+
 ## Iter C+G · 2026-05-03 · QR fichaje portal + Preview responsivo + Seed docs
 
 ### 🎯 Cambios (solo frontend + 1 dependencia + SQL manual)
