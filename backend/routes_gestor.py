@@ -789,6 +789,34 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
             .execute()
         gastos_by_pair = {(g['usuario_id'], g['evento_id']): g for g in (gastos_res.data or [])}
 
+        # Iter D · Comedor descontable: importe a descontar del TOTAL por (usuario, evento)
+        # Suma de las comidas confirmadas (precio_menu + precio_cafe si toma_cafe) por músico.
+        comida_by_pair: Dict[tuple, float] = {}
+        try:
+            com_rows = supabase.table('evento_comidas') \
+                .select('id,evento_id,incluye_cafe,precio_menu,precio_cafe') \
+                .in_('evento_id', evento_ids).execute().data or []
+            comida_ids = [c['id'] for c in com_rows]
+            if comida_ids:
+                comida_meta = {c['id']: c for c in com_rows}
+                conf_rows = supabase.table('confirmaciones_comida') \
+                    .select('comida_id,usuario_id,confirmado,toma_cafe') \
+                    .in_('comida_id', comida_ids) \
+                    .in_('usuario_id', usuario_ids).execute().data or []
+                for cr in conf_rows:
+                    if cr.get('confirmado') is not True:
+                        continue
+                    meta = comida_meta.get(cr.get('comida_id'))
+                    if not meta:
+                        continue
+                    importe = float(meta.get('precio_menu') or 0)
+                    if meta.get('incluye_cafe') and cr.get('toma_cafe'):
+                        importe += float(meta.get('precio_cafe') or 0)
+                    key = (cr['usuario_id'], meta['evento_id'])
+                    comida_by_pair[key] = comida_by_pair.get(key, 0.0) + importe
+        except Exception as e:
+            print(f"[WARN] plantillas-definitivas: no se pudo calcular comida_importe: {e}")
+
         # Convocatoria por instrumento por ensayo
         ensayo_instr_map = {}
         if ensayo_ids:
@@ -822,7 +850,7 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
             sin_seccion = []
             total_ev = {
                 "cache_previsto": 0.0, "cache_real": 0.0, "extras": 0.0,
-                "transporte": 0.0, "alojamiento": 0.0, "otros": 0.0, "total": 0.0,
+                "transporte": 0.0, "alojamiento": 0.0, "otros": 0.0, "comida": 0.0, "total": 0.0,
             }
             for a in asigs_ev:
                 u = usuarios_by_id.get(a['usuario_id'])
@@ -875,7 +903,8 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 transp = float(g.get('transporte_importe') or 0)
                 aloj = float(g.get('alojamiento_importe') or 0)
                 otros = float(g.get('otros_importe') or 0)
-                total = round(cache_real + extras + transp + aloj + otros, 2)
+                comida = float(comida_by_pair.get((u['id'], ev['id'])) or 0)
+                total = round(cache_real + extras + transp + aloj + otros - comida, 2)
 
                 total_ev["cache_previsto"] += cache_prev
                 total_ev["cache_real"]     += cache_real
@@ -883,6 +912,7 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 total_ev["transporte"]     += transp
                 total_ev["alojamiento"]    += aloj
                 total_ev["otros"]          += otros
+                total_ev["comida"]         += comida
                 total_ev["total"]          += total
 
                 musico_row = {
@@ -912,6 +942,7 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                     "alojamiento_justificante_url": g.get('alojamiento_justificante_url'),
                     "otros_importe": otros,
                     "otros_justificante_url": g.get('otros_justificante_url'),
+                    "comida_importe": comida,
                     "total": total,
                 }
                 sec_key = seccion_de_instrumento(u.get('instrumento'))

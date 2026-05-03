@@ -123,6 +123,7 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
             <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[80px]">Transporte</th>
             <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[80px]">Alojam.</th>
             <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[80px]">Otros</th>
+            <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-50 min-w-[80px]" title="Descuento por servicio de comedor confirmado por el músico desde su portal">🍽️ Comedor</th>
             <th className="px-1 py-1 text-right text-[10px] text-amber-900 border-b border-slate-200 bg-amber-100 min-w-[90px]">TOTAL</th>
           </tr>
         </thead>
@@ -152,7 +153,8 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
             const transp = st.transporte_importe !== undefined ? +st.transporte_importe || 0 : +m.transporte_importe || 0;
             const aloj = st.alojamiento_importe !== undefined ? +st.alojamiento_importe || 0 : +m.alojamiento_importe || 0;
             const otros = st.otros_importe !== undefined ? +st.otros_importe || 0 : +m.otros_importe || 0;
-            const total = +(cacheReal + extra + transp + aloj + otros).toFixed(2);
+            const comida = +m.comida_importe || 0;
+            const total = +(cacheReal + extra + transp + aloj + otros - comida).toFixed(2);
 
             const transpUrl = st.transporte_justificante_url ?? m.transporte_justificante_url;
             const alojUrl   = st.alojamiento_justificante_url ?? m.alojamiento_justificante_url;
@@ -318,6 +320,9 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                     />
                   </div>
                 </td>
+                <td className="px-1 py-1 text-right bg-amber-50/40 text-xs text-slate-700" title="Descuento por servicio de comedor confirmado por el músico" data-testid={`comida-${m.usuario_id}-${evento.id}`}>
+                  {comida > 0 ? <span className="text-rose-700 font-medium">−{fmtEuro(comida)}</span> : <span className="text-slate-300">—</span>}
+                </td>
                 <td className="px-1 py-1 text-right bg-amber-100 font-bold text-amber-900" data-testid={`total-${m.usuario_id}-${evento.id}`}>{fmtEuro(total)}</td>
               </tr>
             );
@@ -451,7 +456,7 @@ const PlantillasDefinitivas = () => {
 
   // Totales por sección/evento con edits aplicados
   const calcularTotalesSeccion = (evento, seccion) => {
-    const t = { cache_previsto: 0, cache_real: 0, extras: 0, transporte: 0, alojamiento: 0, otros: 0, total: 0 };
+    const t = { cache_previsto: 0, cache_real: 0, extras: 0, transporte: 0, alojamiento: 0, otros: 0, comida: 0, total: 0 };
     const ensayos = evento.ensayos || [];
     seccion.musicos.forEach(m => {
       const key = m.usuario_id + '_' + evento.id;
@@ -474,9 +479,10 @@ const PlantillasDefinitivas = () => {
       const transp = st.transporte_importe !== undefined ? +st.transporte_importe || 0 : +m.transporte_importe || 0;
       const aloj = st.alojamiento_importe !== undefined ? +st.alojamiento_importe || 0 : +m.alojamiento_importe || 0;
       const otros = st.otros_importe !== undefined ? +st.otros_importe || 0 : +m.otros_importe || 0;
-      const total = +(cacheReal + extra + transp + aloj + otros).toFixed(2);
+      const comida = +m.comida_importe || 0;
+      const total = +(cacheReal + extra + transp + aloj + otros - comida).toFixed(2);
       t.cache_previsto += cachePrev; t.cache_real += cacheReal; t.extras += extra;
-      t.transporte += transp; t.alojamiento += aloj; t.otros += otros; t.total += total;
+      t.transporte += transp; t.alojamiento += aloj; t.otros += otros; t.comida += comida; t.total += total;
     });
     return t;
   };
@@ -484,7 +490,7 @@ const PlantillasDefinitivas = () => {
   const totalesEvento = useMemo(() => {
     const out = {};
     data.eventos.forEach(ev => {
-      const tot = { cache_previsto: 0, cache_real: 0, extras: 0, transporte: 0, alojamiento: 0, otros: 0, total: 0, musicos: 0 };
+      const tot = { cache_previsto: 0, cache_real: 0, extras: 0, transporte: 0, alojamiento: 0, otros: 0, comida: 0, total: 0, musicos: 0 };
       ev.secciones.forEach(sec => {
         tot.musicos += sec.musicos.length;
         const st = calcularTotalesSeccion(ev, sec);
@@ -705,6 +711,7 @@ const PlantillasDefinitivas = () => {
                             <span>Transp: <strong>{fmtEuro(secTot.transporte)}</strong></span>
                             <span>Aloj: <strong>{fmtEuro(secTot.alojamiento)}</strong></span>
                             <span>Otros: <strong>{fmtEuro(secTot.otros)}</strong></span>
+                            <span>Comedor: <strong className="text-rose-700">{secTot.comida > 0 ? `−${fmtEuro(secTot.comida)}` : fmtEuro(0)}</strong></span>
                             <span>TOTAL: <strong className="text-amber-800">{fmtEuro(secTot.total)}</strong></span>
                           </div>
                         </>
