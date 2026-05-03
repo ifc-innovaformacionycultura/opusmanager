@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## Iter E2 · 2026-05-03 · Cerrar / Reabrir Económico
+
+### 🎯 Cambios (solo 3 archivos como pidió el usuario)
+
+#### SQL ejecutado
+**Ninguno.** Las columnas (`estado_cierre`, `cerrado_economico_por/at`, `cerrado_plantilla_por/at` en `asignaciones`; `regenerar_pendiente` en `recibos`) ya existen desde Iter E1.
+
+#### Backend (`routes_gestor.py`)
+- `GET /gestion-economica`: añade campos por evento `estado_cierre`, `cerrado_plantilla_at`, `cerrado_plantilla_por_nombre`, `cerrado_economico_at`, `cerrado_economico_por_nombre`, `tiene_historial_cierre`. Sin cambios en filtros (sigue mostrando todos los estados de evento).
+- `PUT /asignaciones/{id}/pago`: bloqueo defensivo `403` con mensaje claro ("No se permiten cambios: el económico del evento '...' está cerrado.") si `estado_cierre='cerrado_economico'`.
+- `POST /eventos/{id}/pagos-bulk`: mismo bloqueo `403`.
+- `POST /eventos/{id}/cerrar-economico` (NUEVO, solo `is_super_admin`):
+  - Pre-condición OBLIGATORIA: todas las asignaciones confirmadas deben estar en `cerrado_plantilla`. Si plantilla abierta → `400` con mensaje exacto: *"Debes concluir primero la plantilla del evento antes de cerrar el económico."* Si ya cerrado_economico → `400` *"El económico ya está cerrado."*.
+  - UPDATE asignaciones SET `estado_cierre='cerrado_economico'`, `cerrado_economico_por=user_id`, `cerrado_economico_at=NOW()`.
+  - Genera recibos faltantes: solo para `estado_pago='pagado'` que NO tienen recibo (NO duplica los existentes).
+  - `notify_push` + `notificaciones_gestor` con `tipo='economico_cerrado'` SOLO a admins + director_general.
+  - `registro_actividad` con `tipo='economico_cerrado'`.
+- `POST /eventos/{id}/reabrir-economico` (NUEVO, solo `is_super_admin`):
+  - UPDATE asignaciones SET `estado_cierre='cerrado_plantilla'` (NO 'abierto'), `cerrado_economico_por=NULL`, `cerrado_economico_at=NULL`.
+  - Marca `recibos.regenerar_pendiente=TRUE` del evento → al volver a cerrar se regenerarán.
+  - `registro_actividad` con `tipo='economico_reabierto'`.
+- `GET /eventos/{id}/historial-cierres`: ampliado a 4 tipos.
+- `tiene_historial_cierre` en `/plantillas-definitivas` y `/gestion-economica` también incluye los 4 tipos.
+
+#### Backend (`routes_recordatorios.py`)
+- `_dias_cerrar_economico()` lee env `DIAS_DESPUES_CERRAR_ECONOMICO` (default 7).
+- `job_cerrar_economico()`: detecta eventos con asignaciones en `cerrado_plantilla`, `cerrado_plantilla_at < hoy − 7 días` y NO `cerrado_economico` → push idempotente a super admins (rol IN admin/director_general) vía `recordatorios_enviados` con `tipo='cerrar_economico'`.
+- Cron diario `@ 09:35 Europe/Madrid` (id `cerrar_economico_alert`).
+
+#### Frontend (`AsistenciaPagos.js`)
+- `useAuth` + `isSuperAdminUser` (copia EXACTA de `PlantillasDefinitivas.js`).
+- Cabecera del evento: `[btn-historial-econ]`, `[btn-cerrar-econ]` (disabled con tooltip si plantilla no concluida), `[badge-econ-cerrado]`, `[btn-reabrir-econ]`.
+- Bloqueo de inputs cuando `econCerrado`: btn-pago-*, btn-bulk-*.
+- Modales: `modal-cerrar-econ`, `modal-reabrir-econ`, `modal-historial-econ` (timeline con 4 iconos).
+- **NO se han modificado cálculos económicos**.
+
+### ✅ Validación (`iteration_37.json`)
+- Backend 9/9 PASS (`/app/backend/tests/test_iter_e2_cerrar_economico.py`).
+- Frontend 100% PASS (badge, btn-reabrir, btn-historial, modal timeline 4 tipos, btn-pago/bulk disabled).
+- Regresión Iter E1 (9/9) sigue PASS.
+
+
+
 ## Iter E1 · 2026-05-03 · Concluir / Reabrir plantilla del evento
 
 ### 🎯 Cambios (solo 3 archivos como pidió el usuario)
