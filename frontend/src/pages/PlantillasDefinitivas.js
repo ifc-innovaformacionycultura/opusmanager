@@ -563,28 +563,33 @@ const PlantillasDefinitivas = () => {
           <h1 className="font-cabinet text-2xl font-bold text-slate-900">Plantillas definitivas</h1>
           <p className="text-xs text-slate-600">Confirmados por evento, con asistencia real, cachés y gastos adicionales.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer px-2 py-1 border border-slate-200 rounded hover:bg-slate-50">
-            <input type="checkbox" checked={mostrarQR}
-                   onChange={async (e) => {
-                     const on = e.target.checked;
-                     setMostrarQR(on);
-                     if (on) {
-                       const evIds = (data.eventos || []).map(ev => ev.id).filter(id => !fichajesPorEvento[id]);
-                       const news = {};
-                       for (const id of evIds) {
-                         try {
-                           const r = await api.get(`/api/gestor/fichajes-evento/${id}`);
-                           news[id] = r.data?.fichajes || {};
-                         } catch { news[id] = {}; }
+        <div className="flex items-start gap-2">
+          <div className="flex flex-col">
+            <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer px-2 py-1 border border-slate-200 rounded hover:bg-slate-50">
+              <input type="checkbox" checked={mostrarQR}
+                     onChange={async (e) => {
+                       const on = e.target.checked;
+                       setMostrarQR(on);
+                       if (on) {
+                         const evIds = (data.eventos || []).map(ev => ev.id).filter(id => !fichajesPorEvento[id]);
+                         const news = {};
+                         for (const id of evIds) {
+                           try {
+                             const r = await api.get(`/api/gestor/fichajes-evento/${id}`);
+                             news[id] = r.data?.fichajes || {};
+                           } catch { news[id] = {}; }
+                         }
+                         setFichajesPorEvento(prev => ({ ...prev, ...news }));
                        }
-                       setFichajesPorEvento(prev => ({ ...prev, ...news }));
-                     }
-                   }}
-                   data-testid="toggle-mostrar-qr"
-                   className="w-3.5 h-3.5 accent-emerald-600"/>
-            📊 Mostrar datos QR
-          </label>
+                     }}
+                     data-testid="toggle-mostrar-qr"
+                     className="w-3.5 h-3.5 accent-emerald-600"/>
+              📊 Mostrar datos de fichaje QR
+            </label>
+            <p className="text-xs text-gray-500 mt-1 max-w-[320px]" data-testid="qr-toggle-help">
+              Los datos de fichaje QR muestran la asistencia registrada por los músicos al escanear el código QR. Son datos informativos — el caché se calcula con el porcentaje manual del gestor.
+            </p>
+          </div>
           {dirty && <span className="text-xs text-amber-700 font-medium">● Cambios sin guardar</span>}
           <button
             onClick={guardar}

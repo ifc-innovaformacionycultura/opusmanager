@@ -9,7 +9,7 @@ const API_URL = window.location.hostname === "localhost"
   ? "http://localhost:8001/api"
   : `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-const NIVELES = ["Estudiante", "Profesional", "Amateur", "Profesor", "Otro"];
+const NIVELES = ["Superior finalizado", "Superior cursando", "Profesional finalizado", "Profesional cursando"];
 
 const PerfilCompletitudAlerts = ({ onPerfilTab }) => {
   const [estado, setEstado] = useState(null);

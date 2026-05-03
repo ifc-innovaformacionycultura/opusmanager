@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="6" time="16.387" timestamp="2026-05-03T12:28:56.891455+00:00" hostname="agent-env-55932bcb-dde9-4120-ad99-a7bd8bdf5775"><testcase classname="backend.tests.test_iter30_iterB" name="test_plantillas_definitivas_get" time="2.306" /><testcase classname="backend.tests.test_iter30_iterB" name="test_gestor_eventos_get" time="0.762" /><testcase classname="backend.tests.test_iter30_iterB" name="test_portal_perfil_acepta_nivel[Superior finalizado]" time="3.658" /><testcase classname="backend.tests.test_iter30_iterB" name="test_portal_perfil_acepta_nivel[Superior cursando]" time="3.166"><failure message="AssertionError: assert 'Superior finalizado' == 'Superior cursando'&#10;  &#10;  - Superior cursando&#10;  + Superior finalizado">backend/tests/test_iter30_iterB.py:91: in test_portal_perfil_acepta_nivel
+    assert profile.get("nivel_estudios") == nivel
+E   AssertionError: assert 'Superior finalizado' == 'Superior cursando'
+E     
+E     - Superior cursando
+E     + Superior finalizado</failure></testcase><testcase classname="backend.tests.test_iter30_iterB" name="test_portal_perfil_acepta_nivel[Profesional finalizado]" time="3.203"><failure message="AssertionError: assert 'Superior finalizado' == 'Profesional finalizado'&#10;  &#10;  - Profesional finalizado&#10;  + Superior finalizado">backend/tests/test_iter30_iterB.py:91: in test_portal_perfil_acepta_nivel
+    assert profile.get("nivel_estudios") == nivel
+E   AssertionError: assert 'Superior finalizado' == 'Profesional finalizado'
+E     
+E     - Profesional finalizado
+E     + Superior finalizado</failure></testcase><testcase classname="backend.tests.test_iter30_iterB" name="test_portal_perfil_acepta_nivel[Profesional cursando]" time="3.205"><failure message="AssertionError: assert 'Superior finalizado' == 'Profesional cursando'&#10;  &#10;  - Profesional cursando&#10;  + Superior finalizado">backend/tests/test_iter30_iterB.py:91: in test_portal_perfil_acepta_nivel
+    assert profile.get("nivel_estudios") == nivel
+E   AssertionError: assert 'Superior finalizado' == 'Profesional cursando'
+E     
+E     - Profesional cursando
+E     + Superior finalizado</failure></testcase></testsuite></testsuites>

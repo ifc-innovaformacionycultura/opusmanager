@@ -1,0 +1,46 @@
+{
+  "summary": "Iter B (5 puntos quirúrgicos) — 4 de 5 PASS. PUNTO 4 tiene un BUG CRÍTICO BACKEND: el modelo Pydantic MiPerfilUpdate (routes_portal.py L71-86) NO incluye el campo nivel_estudios, por lo que tanto el <select> nuevo de portal/MiPerfil.js como el <select> del modal PerfilCompletitudAlerts envían el valor pero el backend lo descarta silenciosamente. PUNTO 1A, 13, 15 y 16 verificados completamente. Regresión iter28/29 OK (admin/musicos=15, admin/comunicaciones=7 tabs).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PUT /api/portal/mi-perfil", "issue": "MiPerfilUpdate Pydantic model en /app/backend/routes_portal.py líneas 71-86 NO declara nivel_estudios → el campo se silencia. Reproducido con pytest: PUT con {nivel_estudios:'Profesional cursando'} devuelve 200 pero GET devuelve el valor previo (3/4 parametrize fallan, 1 coincidió por casualidad). Esto rompe PUNTO 4 entero (tanto el modal de primer login PerfilCompletitudAlerts como el nuevo Field de portal/MiPerfil son INÚTILES — los valores nunca persisten).", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "PUNTO 4 — Guardar Nivel de estudios en /portal/mi-perfil y modal PerfilCompletitudAlerts", "issue": "Frontend envía nivel_estudios en payload de PUT /api/portal/mi-perfil pero backend lo descarta. Fix: añadir 'nivel_estudios: Optional[str] = None' a MiPerfilUpdate en routes_portal.py.", "affected_selectors": ["[data-testid='perfil-nivel_estudios']", "[data-testid='modal-select-nivel']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_iterB.py",
+    "/app/test_reports/pytest/iter30.xml"
+  ],
+  "action_items": [
+    "[CRITICAL] Añadir 'nivel_estudios: Optional[str] = None' al modelo MiPerfilUpdate en /app/backend/routes_portal.py (línea ~86, junto al resto de campos opcionales). Sin esto, PUNTO 4 está roto: el dropdown se renderiza correctamente con 5 opciones pero al guardar NO persiste. Tras añadir el campo, re-ejecutar pytest /app/backend/tests/test_iter30_iterB.py para validar que los 4 valores persisten.",
+    "(Opcional) Considerar añadir `model_config = ConfigDict(extra='ignore')` o un test genérico que cubra que MiPerfilUpdate refleje todos los campos editables del frontend para evitar regresiones similares."
+  ],
+  "critical_code_review_comments": [
+    "PUNTO 1A ✓ /app/frontend/src/pages/PlantillasDefinitivas.js L585-590: data-testid='toggle-mostrar-qr' + label '📊 Mostrar datos de fichaje QR' + <p data-testid='qr-toggle-help'> con texto completo ('Los datos de fichaje QR muestran la asistencia registrada por los músicos al escanear el código QR. Son datos informativos — el caché se calcula con el porcentaje manual del gestor.'). El span 'Cambios sin guardar' sigue presente al lado (L594).",
+    "PUNTO 4 (NIVELES) ✓ /app/frontend/src/components/PerfilCompletitudAlerts.js L12: NIVELES = 4 valores correctos. <select data-testid='modal-select-nivel'> en L147 con 5 options (1 vacío + 4 NIVELES). Cero rastros de Estudiante/Amateur/Profesor/Otro.",
+    "PUNTO 4 (MiPerfil) FRONTEND ✓ BACKEND ✗ /app/frontend/src/pages/portal/MiPerfil.js L342-360: Field 'Nivel de estudios' con <select data-testid='perfil-nivel_estudios'> y opciones idénticas. handleSave envía form completo (L117) → payload incluye nivel_estudios. PERO routes_portal.py MiPerfilUpdate (L71-86) no declara nivel_estudios → descartado por Pydantic strict.",
+    "PUNTO 13 ✓ Búsqueda en ConfiguracionEventos.js para 'form_inscripcion'/'Formulario de Inscripción' = 0 matches. Verificado en runtime: page.locator('[data-testid=\"section-form_inscripcion\"]').count() = 0 antes y después de intentar expandir.",
+    "PUNTO 15 ✓ ConfiguracionEventos.js L1114-1130: el bloque condicional 'publicandoPorPrimeraVez = estadoOriginal===borrador && event.estado===abierto' + alert('No se puede publicar el evento. Faltan secciones por verificar: ...') sigue intacto, igual que window.confirm con override para puede_editar. Sin regresión.",
+    "PUNTO 16 ✓ SeguimientoConvocatorias.js: import EyeOff L19; estado eventosOcultos+localStorage L131-140; btn-mostrar-todos-eventos L479-484; btn-ocultar-evento-* en headers L753-757; render colapsado con block-evento-{id}-collapsed L689-705; cell-collapsed-{m.id}-{ev.id} L864; skip de fila2 L768. Runtime PASS: 8 events, 8 EyeOff buttons, click oculta → block-evento-{id}-collapsed=1, btn-mostrar-todos-eventos aparece (count=1), 15 cell-collapsed cells (15 músicos × 1 evento oculto), localStorage='[\"c4409142...\"]' tras reload, 'Mostrar todos' restaura todos.",
+    "Regresión iter28/29 ✓ admin/musicos count=15, admin/comunicaciones tabs=7. Dashboard /toggle-bloque-{1..4} no verificable runtime por timeout de carga pero iter29 ya lo cubrió y no se han tocado los archivos."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_iterB.py (nuevo)"
+  ],
+  "success_rate": {
+    "backend": "67% (2/3 endpoint groups OK — plantillas-definitivas GET 200, eventos GET 200, mi-perfil PUT acepta valor pero NO PERSISTE nivel_estudios)",
+    "frontend": "100% (todos los testids esperados presentes con la lógica correcta — la integración rompe en backend, no en frontend)"
+  },
+  "test_credentials": "admin@convocatorias.com/Admin123! ✓, jesusalonsodirector@gmail.com/Musico123! ✓ (login OK pero navegación a /portal/mi-perfil tras login programático tarda y a veces redirige; el endpoint backend sí responde)",
+  "seed_data_creation": "Ninguna nueva. Tests parametrizados modifican nivel_estudios del músico jesusalonsodirector (queda en 'Superior finalizado' tras la corrida — sin impacto funcional).",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Iter B (1A,4,13,15,16). El ÚNICO bug es backend: routes_portal.py línea 71-86 MiPerfilUpdate sin nivel_estudios. Tras añadirlo, pytest /app/backend/tests/test_iter30_iterB.py debe pasar 6/6. Frontend está perfecto en los 5 puntos. NO TOCAR ningún archivo de iter29 (DashboardPage.js, RecordatoriosAdmin.js, ConfiguracionEventos secciones, VerificacionBadge). Para validar PUNTO 4 visualmente: login músico → /portal/mi-perfil → seleccionar 'Profesional cursando' en el select [data-testid='perfil-nivel_estudios'] → Guardar → recargar → debe persistir (hoy NO persiste).",
+  "rca of the issue": "RCA PUNTO 4: El main agent añadió un <select> en el frontend pero NO actualizó el modelo Pydantic del PUT correspondiente. FastAPI con Pydantic v2 (default) ignora campos no declarados en el modelo del body, por lo que el JSON {nivel_estudios:'X'} llega al endpoint pero data.model_dump() no contiene nivel_estudios y nunca se incluye en el supabase.update(). Como la columna sí existe en la tabla usuarios (varios endpoints la leen — routes_economia, routes_informes), el fix es trivial: añadir la línea 'nivel_estudios: Optional[str] = None' a MiPerfilUpdate. Reproducción: 1) GET /api/portal/mi-perfil (anota nivel actual) 2) PUT /api/portal/mi-perfil con {nivel_estudios:'Profesional cursando'} → 200 OK 3) GET /api/portal/mi-perfil → nivel_estudios sigue siendo el anterior. Mitigación temporal: ninguna razonable desde frontend; requiere fix backend (1 línea)."
+}

@@ -1076,16 +1076,6 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
       </div>
       </Section>
 
-      {/* Formulario de inscripción */}
-      <Section titulo="Formulario de Inscripción" icono="📋" color="indigo" sectionKey="form_inscripcion">
-      <InputField
-        label="Enlace a Google Form"
-        value={event.form_url}
-        onChange={(v) => onChange({ ...event, form_url: v })}
-        placeholder="https://docs.google.com/forms/..."
-      />
-      </Section>
-
       {/* Notas internas del equipo */}
       {event.id && !String(event.id).startsWith('temp-') && (
         <Section titulo="Notas internas del equipo" icono="🗒️" color="gray" sectionKey="notas_internas">

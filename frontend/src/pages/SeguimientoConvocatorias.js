@@ -16,6 +16,7 @@
 //   POST /api/gestor/seguimiento/bulk-accion    {usuario_ids, evento_id, accion}
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
+import { Eye, EyeOff } from "lucide-react";
 import {
   CRMToggleButton, useCRMExpandidos, ContactosBadge, UltimoContactoCell,
   RegistrarContactoModal, HistorialPanel,
@@ -125,6 +126,24 @@ const SeguimientoConvocatorias = () => {
     try { localStorage.setItem('seguimiento_visible_cols', JSON.stringify(visibleCols)); } catch {}
   }, [visibleCols]);
   const toggleColumn = (key) => setVisibleCols(prev => ({ ...prev, [key]: !prev[key] }));
+
+  // Iter B · Punto 16 — Eventos ocultos/colapsados con persistencia en localStorage
+  const [eventosOcultos, setEventosOcultos] = useState(() => {
+    try {
+      const raw = localStorage.getItem('seguimiento_eventos_ocultos');
+      if (raw) return new Set(JSON.parse(raw));
+    } catch { /* noop */ }
+    return new Set();
+  });
+  useEffect(() => {
+    try { localStorage.setItem('seguimiento_eventos_ocultos', JSON.stringify(Array.from(eventosOcultos))); } catch { /* noop */ }
+  }, [eventosOcultos]);
+  const toggleEventoOculto = (evId) => setEventosOcultos((prev) => {
+    const next = new Set(prev);
+    if (next.has(evId)) next.delete(evId); else next.add(evId);
+    return next;
+  });
+  const mostrarTodosEventos = () => setEventosOcultos(new Set());
 
   const showFeedback = (type, text) => {
     setFeedback({ type, text });
@@ -452,7 +471,19 @@ const SeguimientoConvocatorias = () => {
           </select>
 
           {/* Botón Columnas (3B) */}
-          <div className="relative ml-auto">
+          <div className="relative ml-auto flex items-center gap-2">
+            {eventosOcultos.size > 0 && (
+              <button
+                type="button"
+                onClick={mostrarTodosEventos}
+                data-testid="btn-mostrar-todos-eventos"
+                className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white hover:bg-slate-50 flex items-center gap-1.5 text-slate-700"
+                title="Mostrar todos los eventos ocultos"
+              >
+                <Eye size={14} />
+                Mostrar todos ({eventosOcultos.size})
+              </button>
+            )}
             <button
               onClick={() => setShowColumnsMenu(v => !v)}
               data-testid="btn-columnas"
@@ -655,6 +686,38 @@ const SeguimientoConvocatorias = () => {
                   )}
                   {eventosVisibles.map(ev => {
                     const badge = ESTADO_EVENTO_BADGE[ev.estado] || { label: ev.estado, className: 'bg-slate-200 text-slate-700' };
+                    const isHidden = eventosOcultos.has(ev.id);
+                    if (isHidden) {
+                      // Evento colapsado: una sola columna estrecha con nombre vertical
+                      return (
+                        <th
+                          key={ev.id}
+                          colSpan={1}
+                          rowSpan={2}
+                          className="px-1 py-2 text-center border-b border-r-2 border-slate-400 bg-slate-100 align-middle"
+                          style={{ width: 28, minWidth: 28, maxWidth: 28 }}
+                          data-testid={`block-evento-${ev.id}-collapsed`}
+                        >
+                          <div className="flex flex-col items-center justify-center gap-1" style={{ height: 120 }}>
+                            <button
+                              type="button"
+                              onClick={() => toggleEventoOculto(ev.id)}
+                              data-testid={`btn-mostrar-evento-${ev.id}`}
+                              className="p-1 rounded hover:bg-slate-200 text-slate-600"
+                              title="Mostrar evento"
+                            >
+                              <Eye size={12} />
+                            </button>
+                            <span
+                              className="text-[10px] font-semibold text-slate-700"
+                              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap' }}
+                            >
+                              {ev.nombre}
+                            </span>
+                          </div>
+                        </th>
+                      );
+                    }
                     const crmOn = crmExpandidos.has(ev.id);
                     const subcols = ev.ensayos.length + 3 + (crmOn ? 3 : 0); // ensayos + %Disp + Publicado + Acción + (CRM 3)
                     // Total contactos del evento (sumatorio musicos.asignaciones[ev.id].crm.total_contactos)
@@ -669,17 +732,30 @@ const SeguimientoConvocatorias = () => {
                         className="px-2 py-2 text-center font-semibold text-slate-900 border-b border-r-2 border-slate-400 bg-slate-100"
                         data-testid={`block-evento-${ev.id}`}
                       >
-                        <div className="text-sm">{ev.nombre}</div>
-                        <div className="flex items-center justify-center gap-1.5 mt-1 flex-wrap">
-                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${badge.className}`}>
-                            {badge.label}
-                          </span>
-                          {ev.fechas.map((f, idx) => (
-                            <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded bg-white border border-slate-300 text-[10px] font-normal">
-                              {fmtFecha(f.fecha)}{f.hora ? ` ${fmtHora(f.hora)}` : ''}
-                            </span>
-                          ))}
-                          <CRMToggleButton expanded={crmOn} onClick={() => toggleCRM(ev.id)} total={totalCRM} eventoId={ev.id} />
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="flex-1 text-center">
+                            <div className="text-sm">{ev.nombre}</div>
+                            <div className="flex items-center justify-center gap-1.5 mt-1 flex-wrap">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${badge.className}`}>
+                                {badge.label}
+                              </span>
+                              {ev.fechas.map((f, idx) => (
+                                <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded bg-white border border-slate-300 text-[10px] font-normal">
+                                  {fmtFecha(f.fecha)}{f.hora ? ` ${fmtHora(f.hora)}` : ''}
+                                </span>
+                              ))}
+                              <CRMToggleButton expanded={crmOn} onClick={() => toggleCRM(ev.id)} total={totalCRM} eventoId={ev.id} />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleEventoOculto(ev.id)}
+                            data-testid={`btn-ocultar-evento-${ev.id}`}
+                            className="p-1 rounded hover:bg-slate-200 text-slate-500 shrink-0"
+                            title="Ocultar evento"
+                          >
+                            <EyeOff size={14} />
+                          </button>
                         </div>
                       </th>
                     );
@@ -688,6 +764,8 @@ const SeguimientoConvocatorias = () => {
                 {/* Fila 2: subcolumnas (ensayos + %Disp + Publicado + Acción + [CRM 3]) */}
                 <tr>
                   {eventosVisibles.map(ev => {
+                    // Iter B · Punto 16 — si evento oculto, su <th rowSpan=2> ya cubre esta fila
+                    if (eventosOcultos.has(ev.id)) return null;
                     // Contadores por tipo para numerar subcolumnas: Ens.1, Ens.2, Func.1...
                     const counters = { ensayo: 0, concierto: 0, funcion: 0 };
                     const tipoAbrev = (t) => {
@@ -776,6 +854,17 @@ const SeguimientoConvocatorias = () => {
                       <td className="px-2 py-1.5 text-slate-700 border-r-2 border-slate-300">{m.localidad || '—'}</td>
                     )}
                     {eventosVisibles.map(ev => {
+                      // Iter B · Punto 16 — si el evento está oculto, una sola celda con —
+                      if (eventosOcultos.has(ev.id)) {
+                        return (
+                          <td
+                            key={ev.id}
+                            className="px-1 py-1.5 text-center text-slate-300 border-r-2 border-slate-300"
+                            style={{ width: 28, minWidth: 28, maxWidth: 28 }}
+                            data-testid={`cell-collapsed-${m.id}-${ev.id}`}
+                          >—</td>
+                        );
+                      }
                       const asig = (Array.isArray(m.asignaciones)
                         ? m.asignaciones.find(a => a.evento_id === ev.id)
                         : (m.asignaciones || {})[ev.id])

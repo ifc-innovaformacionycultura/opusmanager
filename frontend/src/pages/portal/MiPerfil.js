@@ -339,6 +339,19 @@ const MiPerfil = () => {
             <Field label="Instrumento principal">{input('instrumento')}</Field>
             <Field label="Otros instrumentos">{input('otros_instrumentos', { placeholder: 'Ej: Viola, Violonchelo' })}</Field>
             <Field label="Especialidad/Categoría">{input('especialidad')}</Field>
+            <Field label="Nivel de estudios">
+              <select
+                value={form.nivel_estudios || ''}
+                onChange={(e) => setField('nivel_estudios', e.target.value)}
+                data-testid="perfil-nivel_estudios"
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white">
+                <option value="">— Selecciona —</option>
+                <option value="Superior finalizado">Superior finalizado</option>
+                <option value="Superior cursando">Superior cursando</option>
+                <option value="Profesional finalizado">Profesional finalizado</option>
+                <option value="Profesional cursando">Profesional cursando</option>
+              </select>
+            </Field>
             <Field label="Años de experiencia">
               <input type="number" min="0" value={form.anos_experiencia || ''} onChange={(e) => setField('anos_experiencia', e.target.value)}
                 data-testid="perfil-anos_experiencia"
