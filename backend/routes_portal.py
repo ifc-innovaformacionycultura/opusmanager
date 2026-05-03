@@ -84,6 +84,7 @@ class MiPerfilUpdate(BaseModel):
     iban: Optional[str] = None
     swift: Optional[str] = None
     titulaciones: Optional[List[TitulacionItem]] = None
+    nivel_estudios: Optional[str] = None
 
 class NuevaReclamacionRequest(BaseModel):
     evento_id: Optional[str] = None

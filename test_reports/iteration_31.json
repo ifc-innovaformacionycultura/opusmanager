@@ -1,0 +1,37 @@
+{
+  "summary": "RE-TEST Iter B (PUNTO 4 fix) — 7/7 PASS. Confirmado que la línea 'nivel_estudios: Optional[str] = None' añadida a MiPerfilUpdate (routes_portal.py L87) fija el bug: los 4 valores parametrizados ['Superior finalizado','Superior cursando','Profesional finalizado','Profesional cursando'] ahora persisten correctamente en la tabla usuarios. Verificación robusta vía dos vías: (a) lectura como admin en /api/gestor/musicos (relee DB), (b) re-login del músico para obtener JWT fresh y GET /api/portal/mi-perfil. Spot-check regresión 1A y 13 OK (plantillas-definitivas y eventos siguen 200).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/portal/mi-perfil", "issue": "Devuelve el profile cacheado del JWT y no relee DB. Comportamiento preexistente, NO es regresión, pero es contra-intuitivo: tras un PUT, el GET con el mismo token sigue devolviendo el valor previo hasta hacer logout/login. Considerar (futuro): tras update exitoso, releer DB y/o emitir un nuevo token, o documentar explícitamente."},
+      {"endpoint": "PUT /api/portal/mi-perfil", "issue": "No valida server-side los valores aceptados de nivel_estudios — acepta cualquier string (ej. 'Amateur' aunque la UI ya no lo ofrezca). Comportamiento esperado según contexto del main agent. Recomendación opcional: añadir validador Pydantic Literal['Superior finalizado','Superior cursando','Profesional finalizado','Profesional cursando'] o mantener libertad si se prevén nuevos valores."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_iterB.py",
+    "/app/test_reports/pytest/iter30_retest.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FIX confirmado: /app/backend/routes_portal.py L87 añade 'nivel_estudios: Optional[str] = None' al modelo MiPerfilUpdate. PUT correctamente serializa el campo y supabase.update lo persiste. Verificado leyendo desde admin (releé DB) en los 4 valores parametrizados.",
+    "(Code smell a vigilar) GET /api/portal/mi-perfil sirve un profile cacheado del JWT. Si en futuras iteraciones el frontend hace PUT y refresca con GET (sin recargar la página), el usuario verá el valor antiguo. Hoy esto se mitiga porque el frontend recarga o usa el valor local del form, pero merece un comentario en el código o un follow-up para releer DB tras update."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_iterB.py (corregido: ahora verifica persistencia vía admin /api/gestor/musicos y vía re-login, no vía GET /api/portal/mi-perfil que devuelve JWT cache)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 pytest: 1A plantillas-definitivas GET, 13 eventos GET, 4×PUT mi-perfil persistencia vía admin, 1×PUT mi-perfil persistencia vía re-login)",
+    "frontend": "no testeado (testing_type=backend; main agent indicó solo spot-check regresión backend)"
+  },
+  "test_credentials": "admin@convocatorias.com/Admin123! ✓, jesusalonsodirector@gmail.com/Musico123! ✓",
+  "seed_data_creation": "Ninguna. Tests dejan al músico jesusalonsodirector con nivel_estudios='Superior finalizado' tras la corrida (último valor del cross-check de re-login).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter30 PUNTO 4 cerrado: el fix de 1 línea en routes_portal.py L87 es suficiente. El test test_iter30_iterB.py ahora es la regresión correcta — usa admin /api/gestor/musicos y re-login para validar persistencia (NO usar GET /api/portal/mi-perfil porque devuelve JWT cache). Si en futuro se añaden más campos a MiPerfilUpdate, replicar este patrón. Frontend no re-validado en este iter; iter30.json original cubre 1A/13/15/16/PUNTO 4 frontend.",
+  "rca of the issue": "El bug original del iter30 (nivel_estudios silenciosamente descartado) se causaba por Pydantic v2 ignorando campos no declarados en el modelo del body. Fix: declarar el campo en MiPerfilUpdate. Adicionalmente, el test del iter30 daba falso negativo porque verificaba persistencia con GET /api/portal/mi-perfil que devuelve el profile del JWT (no relee DB), por lo que aunque el fix backend funcionaba, el test seguía fallando. Solución: este iteración corrige el test para leer vía admin endpoint y vía re-login, confirmando ambos paths. Reproducción: ver test parametrizado, los 4 valores ahora persisten. Mitigación: aplicada (fix de 1 línea + test corregido)."
+}
