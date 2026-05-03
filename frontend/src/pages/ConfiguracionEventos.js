@@ -129,6 +129,329 @@ const ProgramaArchivoCell = ({ item, eventoId }) => {
   );
 };
 
+// ============================================================
+// Iter F3 — Programa Musical conectado con Archivo + Listas favoritas
+// ============================================================
+const ProgramaMusicalBackend = ({ event, legacyProgram, isSuperAdmin, currentUserId }) => {
+  const { api } = useGestorAuth();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [listas, setListas] = useState([]);
+  const [showFavPanel, setShowFavPanel] = useState(false);
+  const [savingFavName, setSavingFavName] = useState('');
+  const eventoId = event?.id;
+
+  const fetchPrograma = React.useCallback(async () => {
+    if (!eventoId) { setRows([]); setLoading(false); return; }
+    try {
+      const r = await api.get(`/api/gestor/archivo/evento/${eventoId}/programa`);
+      setRows(r.data?.programa || []);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [api, eventoId]);
+
+  const fetchListas = React.useCallback(async () => {
+    try {
+      const r = await api.get('/api/gestor/archivo/listas-obras-favoritas');
+      setListas(r.data?.listas || []);
+    } catch {
+      setListas([]);
+    }
+  }, [api]);
+
+  // Carga inicial + migración silenciosa idempotente
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      if (!eventoId) { setLoading(false); return; }
+      setLoading(true);
+      try {
+        const r = await api.get(`/api/gestor/archivo/evento/${eventoId}/programa`);
+        const data = r.data?.programa || [];
+        if (cancel) return;
+        if (data.length === 0 && Array.isArray(legacyProgram) && legacyProgram.length > 0) {
+          // Migración silenciosa — si falla, no bloquea la carga
+          try {
+            await api.post(`/api/gestor/archivo/evento/${eventoId}/programa/migrar`);
+            const r2 = await api.get(`/api/gestor/archivo/evento/${eventoId}/programa`);
+            if (!cancel) setRows(r2.data?.programa || []);
+          } catch { if (!cancel) setRows([]); }
+        } else {
+          setRows(data);
+        }
+      } catch {
+        if (!cancel) setRows([]);
+      } finally {
+        if (!cancel) setLoading(false);
+      }
+    })();
+    return () => { cancel = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventoId]);
+
+  useEffect(() => { fetchListas(); }, [fetchListas]);
+
+  const addRow = async () => {
+    if (!eventoId) { alert('Guarda el evento antes de añadir obras.'); return; }
+    try {
+      const orden = (rows[rows.length - 1]?.orden_programa || rows.length) + 1;
+      await api.post(`/api/gestor/archivo/evento/${eventoId}/obras`, {
+        titulo_provisional: '',
+        orden_programa: orden,
+      });
+      fetchPrograma();
+    } catch (e) {
+      alert('No se pudo añadir: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  // Patch debounced por celda
+  const patchTimers = React.useRef({});
+  const updateField = (eo_id, field, value) => {
+    setRows(prev => prev.map(r => r.id === eo_id ? { ...r, [field]: value } : r));
+    clearTimeout(patchTimers.current[`${eo_id}:${field}`]);
+    patchTimers.current[`${eo_id}:${field}`] = setTimeout(async () => {
+      try {
+        const body = { [field]: value || null };
+        await api.patch(`/api/gestor/archivo/evento/${eventoId}/obras/${eo_id}`, body);
+        // Si cambia titulo_provisional, refrescar para que match catálogo se vea
+        if (field === 'titulo_provisional') fetchPrograma();
+      } catch (e) {
+        alert('No se pudo guardar: ' + (e.response?.data?.detail || e.message));
+        fetchPrograma();
+      }
+    }, 500);
+  };
+
+  const removeRow = async (eo_id) => {
+    if (!window.confirm('¿Borrar esta obra del programa?')) return;
+    try {
+      await api.delete(`/api/gestor/archivo/evento/${eventoId}/obras/${eo_id}`);
+      setRows(prev => prev.filter(r => r.id !== eo_id));
+    } catch (e) {
+      alert('No se pudo borrar: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const aplicarLista = async (lista_id) => {
+    if (!eventoId) { alert('Guarda el evento antes de aplicar una lista.'); return; }
+    if (!window.confirm('¿Aplicar esta lista al final del programa actual?')) return;
+    try {
+      await api.post(`/api/gestor/archivo/evento/${eventoId}/programa/aplicar-lista/${lista_id}`);
+      fetchPrograma();
+    } catch (e) {
+      alert('No se pudo aplicar: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const guardarComoFavorita = async () => {
+    const nombre = (savingFavName || '').trim();
+    if (!nombre) { alert('Indica un nombre para la lista.'); return; }
+    if (!rows.length) { alert('No hay obras en el programa para guardar.'); return; }
+    const obras = rows.map((r, i) => ({
+      obra_id: r.obra_id || null,
+      titulo_provisional: r.obra?.titulo || r.titulo_provisional || '',
+      duracion_display: r.duracion_display || null,
+      autor_display: r.obra?.autor || r.autor_display || null,
+      notas: r.notas || null,
+      orden: i + 1,
+    }));
+    try {
+      await api.post('/api/gestor/archivo/listas-obras-favoritas', {
+        nombre, descripcion: null, obras,
+      });
+      setSavingFavName('');
+      fetchListas();
+      alert('Lista guardada ✅');
+    } catch (e) {
+      alert('No se pudo guardar la lista: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const eliminarLista = async (lista_id) => {
+    if (!window.confirm('¿Eliminar esta lista favorita?')) return;
+    try {
+      await api.delete(`/api/gestor/archivo/listas-obras-favoritas/${lista_id}`);
+      fetchListas();
+    } catch (e) {
+      alert('No se pudo eliminar: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const puedeEditarLista = (lista) =>
+    isSuperAdmin || (lista.creado_por && lista.creado_por === currentUserId);
+
+  return (
+    <div className="overflow-x-auto" data-testid="programa-musical-backend">
+      {/* Panel listas favoritas */}
+      <div className="mb-3 flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setShowFavPanel(s => !s)}
+          className="text-xs px-3 py-1.5 rounded border border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100"
+          data-testid="btn-toggle-listas-obras-favoritas"
+        >
+          ⭐ Listas favoritas {listas.length ? `(${listas.length})` : ''}
+        </button>
+        {!eventoId && (
+          <span className="text-xs text-slate-500">Guarda el evento para añadir obras.</span>
+        )}
+      </div>
+
+      {showFavPanel && (
+        <div className="mb-3 border border-purple-200 rounded-lg p-3 bg-purple-50/40" data-testid="panel-listas-obras-favoritas">
+          {listas.length === 0 && (
+            <div className="text-xs text-slate-500 mb-2">No hay listas favoritas todavía.</div>
+          )}
+          {listas.map(l => (
+            <div key={l.id} className="flex items-center justify-between gap-2 py-1 border-b border-purple-100 last:border-b-0">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-slate-800 truncate">{l.nombre}</div>
+                <div className="text-xs text-slate-500">{(l.obras || []).length} obras</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => aplicarLista(l.id)}
+                className="text-xs px-2 py-1 rounded bg-purple-600 text-white hover:bg-purple-700"
+                data-testid={`btn-aplicar-lista-obras-${l.id}`}
+                disabled={!eventoId}
+              >Aplicar</button>
+              {puedeEditarLista(l) && (
+                <button
+                  type="button"
+                  onClick={() => eliminarLista(l.id)}
+                  className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                  data-testid={`btn-eliminar-lista-obras-${l.id}`}
+                >🗑</button>
+              )}
+            </div>
+          ))}
+          {eventoId && rows.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-purple-200 flex items-center gap-2">
+              <input
+                value={savingFavName}
+                onChange={e => setSavingFavName(e.target.value)}
+                placeholder="Nombre de la nueva lista..."
+                className="flex-1 px-2 py-1 border border-purple-200 rounded text-sm"
+                data-testid="input-nombre-lista-obras"
+              />
+              <button
+                type="button"
+                onClick={guardarComoFavorita}
+                className="text-xs px-3 py-1.5 rounded bg-purple-600 text-white hover:bg-purple-700"
+                data-testid="btn-guardar-lista-obras"
+              >Guardar programa actual</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-slate-50">
+            <th className="px-3 py-2 text-left font-medium text-slate-600 w-24">Duración</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Autor</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Obra</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600">Observaciones</th>
+            <th className="px-3 py-2 w-32">Estado</th>
+            <th className="px-3 py-2 w-10"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading && (
+            <tr><td colSpan="6" className="px-3 py-3 text-slate-500 text-xs">Cargando programa...</td></tr>
+          )}
+          {!loading && rows.length === 0 && (
+            <tr><td colSpan="6" className="px-3 py-3 text-slate-400 text-xs">Sin obras todavía.</td></tr>
+          )}
+          {!loading && rows.map((r) => {
+            const tituloDisplay = r.obra?.titulo || r.titulo_provisional || '';
+            const autorDisplay = r.obra?.autor || r.autor_display || '';
+            const isConfirmada = !!r.obra_id;
+            return (
+              <tr key={r.id} className="border-b border-slate-100" data-testid={`programa-row-${r.id}`}>
+                <td className="px-3 py-2">
+                  <input
+                    value={r.duracion_display || ''}
+                    onChange={(e) => updateField(r.id, 'duracion_display', e.target.value)}
+                    className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                    placeholder="15'"
+                    data-testid={`input-duracion-${r.id}`}
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  {isConfirmada ? (
+                    <div className="px-2 py-1 text-sm text-slate-700 bg-slate-50 rounded">{autorDisplay}</div>
+                  ) : (
+                    <input
+                      value={r.autor_display || ''}
+                      onChange={(e) => updateField(r.id, 'autor_display', e.target.value)}
+                      className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                      data-testid={`input-autor-${r.id}`}
+                    />
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  {isConfirmada ? (
+                    <div className="px-2 py-1 text-sm text-slate-700 bg-emerald-50 rounded flex items-center gap-2">
+                      <span>✅</span><span className="truncate">{tituloDisplay}</span>
+                    </div>
+                  ) : (
+                    <input
+                      value={r.titulo_provisional || ''}
+                      onChange={(e) => updateField(r.id, 'titulo_provisional', e.target.value)}
+                      className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                      placeholder="Título de la obra"
+                      data-testid={`input-titulo-${r.id}`}
+                    />
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <input
+                    value={r.notas || ''}
+                    onChange={(e) => updateField(r.id, 'notas', e.target.value)}
+                    className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                    data-testid={`input-notas-${r.id}`}
+                  />
+                </td>
+                <td className="px-3 py-2 text-xs">
+                  {isConfirmada ? (
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">Confirmada</span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-700">Provisional</span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => removeRow(r.id)}
+                    className="text-red-500 hover:text-red-700 text-sm"
+                    title="Borrar fila"
+                    data-testid={`btn-borrar-obra-${r.id}`}
+                  >🗑</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <button
+        type="button"
+        onClick={addRow}
+        disabled={!eventoId}
+        className="mt-2 text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1 disabled:opacity-40"
+        data-testid="btn-anadir-obra-programa"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
+        Añadir obra
+      </button>
+    </div>
+  );
+};
+
 // Accordion Component
 const Accordion = ({ title, subtitle, isOpen, onToggle, children }) => (
   <div className="border border-slate-200 rounded-lg mb-3 bg-white">
@@ -613,11 +936,15 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
   }, [rehearsals, program]);
 
   const addProgramItem = () => {
+    // Iter F3: deprecated. El programa musical se gestiona via ProgramaMusicalBackend
+    // contra evento_obras. Mantenido por compat: solo añade a `program` legacy si no
+    // existe event.id (modo creación). En la práctica, la UI ya no invoca este helper.
     const newProgram = [...program, { duration: '', author: '', obra: '', observaciones: '' }];
     setProgram(newProgram);
   };
 
   const updateProgramItem = (index, field, value) => {
+    // Iter F3: deprecated (idem addProgramItem).
     const newProgram = [...program];
     newProgram[index] = { ...newProgram[index], [field]: value };
     setProgram(newProgram);
@@ -960,66 +1287,16 @@ const EventForm = ({ event, onChange, onSave, onDelete, canDelete }) => {
         />
       </Section>
 
-      {/* Programa Musical */}
+      {/* Programa Musical — Iter F3: conectado con Archivo + Listas favoritas */}
       <Section titulo="Programa Musical" icono={ICONOS_SECCION.programa_musical}
                color="purple" sectionKey="programa_musical"
                badge={event?.id ? renderBadge('programa_musical') : null}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-slate-50">
-              <th className="px-3 py-2 text-left font-medium text-slate-600">Duración</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-600">Autor</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-600">Obra</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-600">Observaciones</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {program.map((item, index) => (
-              <tr key={index} className="border-b border-slate-100">
-                <td className="px-3 py-2">
-                  <input
-                    value={item.duration || ''}
-                    onChange={(e) => updateProgramItem(index, 'duration', e.target.value)}
-                    className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
-                    placeholder="15'"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    value={item.author || ''}
-                    onChange={(e) => updateProgramItem(index, 'author', e.target.value)}
-                    className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    value={item.obra || ''}
-                    onChange={(e) => updateProgramItem(index, 'obra', e.target.value)}
-                    className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    value={item.observaciones || ''}
-                    onChange={(e) => updateProgramItem(index, 'observaciones', e.target.value)}
-                    className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
-                  />
-                </td>
-                <td className="px-3 py-2"><ProgramaArchivoCell item={item} eventoId={event?.id} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <button
-          onClick={addProgramItem}
-          className="mt-2 text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
-          Añadir obra
-        </button>
-      </div>
+        <ProgramaMusicalBackend
+          event={event}
+          legacyProgram={program}
+          isSuperAdmin={puedeEditarSync}
+          currentUserId={user?.profile?.id || user?.id}
+        />
       </Section>
 
       {/* Partituras y materiales por sección */}

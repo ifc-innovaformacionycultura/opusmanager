@@ -7,7 +7,7 @@ import io
 import re
 import math
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
@@ -84,6 +84,34 @@ class EventoObraIn(BaseModel):
     estado: Optional[str] = 'provisional'
     orden_programa: Optional[int] = 1
     notas: Optional[str] = None
+    duracion_display: Optional[str] = None
+    autor_display: Optional[str] = None
+
+
+class EventoObraPatch(BaseModel):
+    """Patch parcial de una fila de evento_obras (Iter F3)."""
+    obra_id: Optional[str] = None
+    titulo_provisional: Optional[str] = None
+    estado: Optional[str] = None
+    orden_programa: Optional[int] = None
+    notas: Optional[str] = None
+    duracion_display: Optional[str] = None
+    autor_display: Optional[str] = None
+
+
+class ListaObrasFavoritaItem(BaseModel):
+    obra_id: Optional[str] = None
+    titulo_provisional: Optional[str] = None
+    duracion_display: Optional[str] = None
+    autor_display: Optional[str] = None
+    notas: Optional[str] = None
+    orden: Optional[int] = None
+
+
+class ListaObrasFavoritaIn(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = None
+    obras: List[ListaObrasFavoritaItem] = []
 
 
 class EtiquetasReq(BaseModel):
@@ -873,6 +901,317 @@ async def agregar_obra_evento(evento_id: str, data: EventoObraIn, current_user: 
         except Exception:
             pass
     return {"evento_obra": eo}
+
+
+# ============================================================
+# Iter F3 — PATCH/DELETE de filas del programa + migración silenciosa
+# ============================================================
+def _archivo_is_super_admin(current_user: dict) -> bool:
+    try:
+        from auth_utils import is_super_admin as _isa
+        return _isa(current_user)
+    except Exception:
+        profile = current_user.get('profile') or {}
+        rol = profile.get('rol')
+        if rol in ('admin', 'director_general'):
+            return True
+        email = (profile.get('email') or '').lower()
+        return email == 'admin@convocatorias.com'
+
+
+@router.patch("/evento/{evento_id}/obras/{eo_id}")
+async def actualizar_obra_evento(evento_id: str, eo_id: str, data: EventoObraPatch,
+                                  current_user: dict = Depends(get_current_gestor)):
+    """Edición parcial de una fila del programa (Iter F3)."""
+    row = supabase.table('evento_obras').select('id,evento_id,titulo_provisional,obra_id,estado') \
+        .eq('id', eo_id).eq('evento_id', evento_id).limit(1).execute().data or []
+    if not row:
+        raise HTTPException(status_code=404, detail="Fila de programa no encontrada")
+    payload = data.model_dump(exclude_none=True)
+    if not payload:
+        return {"ok": True, "evento_obra": row[0]}
+
+    # Si llega un nuevo titulo_provisional sin obra_id, intentar match con catálogo
+    notify_archiveros = False
+    if payload.get('titulo_provisional') and not payload.get('obra_id') and not row[0].get('obra_id'):
+        candidato = supabase.table('obras').select('id') \
+            .ilike('titulo', payload['titulo_provisional'].strip()).limit(1).execute().data or []
+        if candidato:
+            payload['obra_id'] = candidato[0]['id']
+            payload['estado'] = 'confirmada'
+            payload['titulo_provisional'] = None
+        else:
+            # Solo notificar si la obra antes no era provisional o el título cambió
+            if row[0].get('estado') != 'provisional' or row[0].get('titulo_provisional') != payload['titulo_provisional']:
+                payload['estado'] = 'provisional'
+                notify_archiveros = True
+
+    supabase.table('evento_obras').update(payload).eq('id', eo_id).execute()
+
+    if notify_archiveros:
+        try:
+            evt = supabase.table('eventos').select('nombre').eq('id', evento_id).limit(1).execute().data or []
+            evt_nombre = evt[0]['nombre'] if evt else 'Evento'
+            archiveros = supabase.table('usuarios').select('id').eq('rol', 'archivero').execute().data or []
+            for a in archiveros:
+                supabase.table('notificaciones_gestor').insert({
+                    "gestor_id": a['id'],
+                    "tipo": "obra_pendiente_registro",
+                    "titulo": f"Obra pendiente actualizada: {payload.get('titulo_provisional')}",
+                    "descripcion": f"Solicitada para evento: {evt_nombre}",
+                    "entidad_tipo": "evento_obra",
+                    "entidad_id": eo_id,
+                    "leida": False,
+                }).execute()
+        except Exception:
+            pass
+
+    nuevo = supabase.table('evento_obras').select('*, obra:obras(id,codigo,titulo,autor,genero)') \
+        .eq('id', eo_id).limit(1).execute().data or []
+    return {"ok": True, "evento_obra": (nuevo[0] if nuevo else None)}
+
+
+@router.delete("/evento/{evento_id}/obras/{eo_id}")
+async def eliminar_obra_evento(evento_id: str, eo_id: str,
+                                current_user: dict = Depends(get_current_gestor)):
+    """Borra una fila del programa (Iter F3 — botón borrar fila)."""
+    row = supabase.table('evento_obras').select('id') \
+        .eq('id', eo_id).eq('evento_id', evento_id).limit(1).execute().data or []
+    if not row:
+        raise HTTPException(status_code=404, detail="Fila de programa no encontrada")
+    supabase.table('evento_obras').delete().eq('id', eo_id).execute()
+    return {"ok": True}
+
+
+@router.post("/evento/{evento_id}/programa/migrar")
+async def migrar_programa_legacy(evento_id: str,
+                                  current_user: dict = Depends(get_current_gestor)):
+    """Migración silenciosa e idempotente del antiguo eventos.program JSON local
+    a filas reales de evento_obras. Solo se ejecuta si evento_obras está vacío
+    para este evento. No borra eventos.program (rollback seguro).
+    """
+    existentes = supabase.table('evento_obras').select('id') \
+        .eq('evento_id', evento_id).limit(1).execute().data or []
+    if existentes:
+        return {"migrado": False, "motivo": "ya_tiene_filas"}
+
+    evt = supabase.table('eventos').select('program,nombre') \
+        .eq('id', evento_id).limit(1).execute().data or []
+    if not evt:
+        return {"migrado": False, "motivo": "evento_no_encontrado"}
+    legacy = evt[0].get('program') or []
+    if not isinstance(legacy, list) or len(legacy) == 0:
+        return {"migrado": False, "motivo": "sin_legacy"}
+
+    creados = []
+    notificar_titulos = []
+    for idx, item in enumerate(legacy):
+        if not isinstance(item, dict):
+            continue
+        titulo = (item.get('obra') or '').strip()
+        autor = (item.get('author') or '').strip() or None
+        duracion = (item.get('duration') or '').strip() or None
+        notas = (item.get('observaciones') or '').strip() or None
+        if not titulo and not autor and not duracion and not notas:
+            continue
+
+        payload = {
+            "evento_id": evento_id,
+            "orden_programa": idx + 1,
+            "duracion_display": duracion,
+            "autor_display": autor,
+            "notas": notas,
+        }
+        # Match catálogo por título
+        obra_id = None
+        if titulo:
+            candidato = supabase.table('obras').select('id') \
+                .ilike('titulo', titulo).limit(1).execute().data or []
+            if candidato:
+                obra_id = candidato[0]['id']
+        if obra_id:
+            payload['obra_id'] = obra_id
+            payload['estado'] = 'confirmada'
+        else:
+            payload['titulo_provisional'] = titulo or '(sin título)'
+            payload['estado'] = 'provisional'
+            if titulo:
+                notificar_titulos.append((None, titulo))
+
+        try:
+            res = supabase.table('evento_obras').insert(payload).execute()
+            creado = (res.data or [None])[0]
+            if creado:
+                creados.append(creado)
+                if creado.get('estado') == 'provisional':
+                    notificar_titulos.append((creado.get('id'), creado.get('titulo_provisional')))
+        except Exception:
+            continue
+
+    # Notificar a archiveros (1 sola vez por título migrado)
+    if notificar_titulos:
+        try:
+            evt_nombre = evt[0].get('nombre') or 'Evento'
+            archiveros = supabase.table('usuarios').select('id').eq('rol', 'archivero').execute().data or []
+            for eo_id, titulo in notificar_titulos:
+                if not eo_id:
+                    continue
+                for a in archiveros:
+                    supabase.table('notificaciones_gestor').insert({
+                        "gestor_id": a['id'],
+                        "tipo": "obra_pendiente_registro",
+                        "titulo": f"Nueva obra pendiente (migración): {titulo}",
+                        "descripcion": f"Solicitada para evento: {evt_nombre}",
+                        "entidad_tipo": "evento_obra",
+                        "entidad_id": eo_id,
+                        "leida": False,
+                    }).execute()
+        except Exception:
+            pass
+
+    return {"migrado": True, "creadas": len(creados)}
+
+
+# ============================================================
+# Iter F3 — Listas de obras favoritas (globales)
+# ============================================================
+@router.get("/listas-obras-favoritas")
+async def listar_obras_favoritas(current_user: dict = Depends(get_current_gestor)):
+    rows = supabase.table('listas_obras_favoritas').select('*') \
+        .order('nombre').execute().data or []
+    return {"listas": rows}
+
+
+@router.post("/listas-obras-favoritas")
+async def crear_obras_favorita(data: ListaObrasFavoritaIn,
+                                current_user: dict = Depends(get_current_gestor)):
+    profile = current_user.get('profile') or {}
+    payload = {
+        "nombre": data.nombre,
+        "descripcion": data.descripcion,
+        "creado_por": profile.get('id'),
+        "obras": [it.model_dump(exclude_none=True) for it in data.obras],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = supabase.table('listas_obras_favoritas').insert(payload).execute()
+    return {"lista": (res.data or [None])[0]}
+
+
+@router.put("/listas-obras-favoritas/{lista_id}")
+async def actualizar_obras_favorita(lista_id: str, data: ListaObrasFavoritaIn,
+                                     current_user: dict = Depends(get_current_gestor)):
+    profile = current_user.get('profile') or {}
+    row = supabase.table('listas_obras_favoritas').select('id,creado_por') \
+        .eq('id', lista_id).limit(1).execute().data or []
+    if not row:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    # Permisos: creador o super-admin
+    if row[0].get('creado_por') and row[0]['creado_por'] != profile.get('id'):
+        if not _archivo_is_super_admin(current_user):
+            raise HTTPException(status_code=403, detail="Solo el creador o un administrador puede editar esta lista.")
+    payload = {
+        "nombre": data.nombre,
+        "descripcion": data.descripcion,
+        "obras": [it.model_dump(exclude_none=True) for it in data.obras],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    supabase.table('listas_obras_favoritas').update(payload).eq('id', lista_id).execute()
+    return {"ok": True, "lista_id": lista_id}
+
+
+@router.delete("/listas-obras-favoritas/{lista_id}")
+async def eliminar_obras_favorita(lista_id: str,
+                                   current_user: dict = Depends(get_current_gestor)):
+    profile = current_user.get('profile') or {}
+    row = supabase.table('listas_obras_favoritas').select('id,creado_por') \
+        .eq('id', lista_id).limit(1).execute().data or []
+    if not row:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    if row[0].get('creado_por') and row[0]['creado_por'] != profile.get('id'):
+        if not _archivo_is_super_admin(current_user):
+            raise HTTPException(status_code=403, detail="Solo el creador o un administrador puede eliminar esta lista.")
+    supabase.table('listas_obras_favoritas').delete().eq('id', lista_id).execute()
+    return {"ok": True}
+
+
+@router.post("/evento/{evento_id}/programa/aplicar-lista/{lista_id}")
+async def aplicar_lista_obras(evento_id: str, lista_id: str,
+                               current_user: dict = Depends(get_current_gestor)):
+    """Vuelca los items de una lista favorita como filas reales en evento_obras.
+    No borra filas existentes; las añade al final del orden actual.
+    """
+    lst = supabase.table('listas_obras_favoritas').select('*') \
+        .eq('id', lista_id).limit(1).execute().data or []
+    if not lst:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    items = lst[0].get('obras') or []
+    if not isinstance(items, list) or not items:
+        return {"ok": True, "creadas": 0}
+
+    # Calcular orden inicial
+    existentes = supabase.table('evento_obras').select('orden_programa') \
+        .eq('evento_id', evento_id).execute().data or []
+    base = max([int(r.get('orden_programa') or 0) for r in existentes] or [0])
+
+    creadas = []
+    notificar = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        payload = {
+            "evento_id": evento_id,
+            "orden_programa": base + idx + 1,
+            "duracion_display": item.get('duracion_display'),
+            "autor_display": item.get('autor_display'),
+            "notas": item.get('notas'),
+        }
+        if item.get('obra_id'):
+            payload['obra_id'] = item['obra_id']
+            payload['estado'] = 'confirmada'
+        else:
+            titulo = (item.get('titulo_provisional') or '').strip()
+            if not titulo:
+                continue
+            # Re-match catálogo por si fue añadido recientemente
+            cand = supabase.table('obras').select('id') \
+                .ilike('titulo', titulo).limit(1).execute().data or []
+            if cand:
+                payload['obra_id'] = cand[0]['id']
+                payload['estado'] = 'confirmada'
+            else:
+                payload['titulo_provisional'] = titulo
+                payload['estado'] = 'provisional'
+        try:
+            res = supabase.table('evento_obras').insert(payload).execute()
+            c = (res.data or [None])[0]
+            if c:
+                creadas.append(c)
+                if c.get('estado') == 'provisional':
+                    notificar.append((c.get('id'), c.get('titulo_provisional')))
+        except Exception:
+            continue
+
+    # Notificar archiveros
+    if notificar:
+        try:
+            evt = supabase.table('eventos').select('nombre').eq('id', evento_id).limit(1).execute().data or []
+            evt_nombre = evt[0]['nombre'] if evt else 'Evento'
+            archiveros = supabase.table('usuarios').select('id').eq('rol', 'archivero').execute().data or []
+            for eo_id, titulo in notificar:
+                for a in archiveros:
+                    supabase.table('notificaciones_gestor').insert({
+                        "gestor_id": a['id'],
+                        "tipo": "obra_pendiente_registro",
+                        "titulo": f"Nueva obra pendiente: {titulo}",
+                        "descripcion": f"Solicitada para evento: {evt_nombre}",
+                        "entidad_tipo": "evento_obra",
+                        "entidad_id": eo_id,
+                        "leida": False,
+                    }).execute()
+        except Exception:
+            pass
+
+    return {"ok": True, "creadas": len(creadas)}
 
 
 

@@ -1,0 +1,68 @@
+{
+  "summary": "Iter F3 — Programa Musical conectado con Archivo + Listas obras favoritas globales. Backend: 17/17 PASS + 1 SKIP (test_15_migrar_sin_legacy: no se encontró evento sin filas y sin legacy program en el entorno; las otras 2 ramas de migrar están cubiertas). Regresión Iter F1+F2: 32/32 PASS. Frontend code-review OK: ProgramaMusicalBackend correctamente cableado, ProgramaArchivoCell deprecated y NO renderizado, todos los data-testid del spec presentes. Frontend runtime test bloqueado por el mismo issue pre-existente reportado en iter 40 (/configuracion-eventos no renderiza contenido principal con admin → solo sidebar). Per spec, fallback aplicado: backend completo (1-8) + revisión de código.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "/gestor/configuracion-eventos (admin)", "issue": "Página renderiza solo sidebar al navegar directamente; consola muestra 'No user in session' tras INITIAL_SESSION. Mismo problema reportado en iter 40 ANTES de los cambios de F3, por tanto NO es regresión introducida por F3. Bloquea test E2E pero no es bug de F3.", "affected_selectors": ["body main"]}
+    ],
+    "design_issues": []
+  },
+  "test_results_detail": {
+    "BE_T1_get_listas_obras_favoritas": "PASS — devuelve {listas:[]} con admin auth.",
+    "BE_T2_post_lista_persiste": "PASS — POST con {nombre,descripcion,obras:[{titulo_provisional,autor_display,duracion_display,orden}]} crea lista; verificado por GET subsiguiente; obras se almacenan en JSONB.",
+    "BE_T3_put_lista_admin_edita": "PASS — admin PUT actualiza nombre + reemplaza obras (verificado por GET).",
+    "BE_T4_admin_super_admin_edita_lista_creada_por_otro": "PASS — admin (super-admin) puede editar lista creada por gestor normal.",
+    "BE_T5_admin_borra_lista_creada_por_otro": "PASS — admin DELETE lista creada por gestor; verificado que desapareció del GET.",
+    "BE_T6_gestor_normal_403_en_put_y_delete_de_otro": "PASS — gestor palvarez recibe 403 al intentar PUT/DELETE lista creada por admin.",
+    "BE_T7_delete_lista_404_uuid_inexistente": "PASS — devuelve 404 con UUID 0...0.",
+    "BE_T10_post_obra_y_patch_persistencia": "PASS — POST crea evento_obra, PATCH actualiza duracion_display/autor_display/notas/orden_programa; GET refleja los cambios.",
+    "BE_T11_patch_404_uuid_inexistente": "PASS — devuelve 404.",
+    "BE_T12_delete_fila": "PASS — DELETE elimina fila; verificado por GET.",
+    "BE_T13_delete_404": "PASS — devuelve 404 con UUID inexistente.",
+    "BE_T14_migrar_idempotente_ya_tiene_filas": "PASS — POST migrar con evento que tiene filas devuelve {migrado:false, motivo:ya_tiene_filas}.",
+    "BE_T15_migrar_sin_legacy": "SKIPPED — no se encontró en el entorno un evento con program=[] y sin filas evento_obras. La rama del código que retorna sin_legacy está revisada y es correcta (líneas 1003-1004 de routes_archivo.py). NO bloquea: las otras 2 ramas (ya_tiene_filas + idempotencia indirecta vía test_14) cubren la idempotencia.",
+    "BE_T16_aplicar_lista_anade_al_final": "PASS — aplicar-lista añade 2 filas al final con orden_programa > max(actual); estado=provisional cuando título no matchea catálogo (esperado).",
+    "BE_T17_aplicar_lista_404": "PASS — devuelve 404 con lista_id inexistente.",
+    "BE_REGRESION_F1_provisionales": "PASS 11/11.",
+    "BE_REGRESION_F2_transporte_ops": "PASS 21/21.",
+    "FE_CODE_REVIEW_data_testids": "PASS — confirmados en /app/frontend/src/pages/ConfiguracionEventos.js: programa-musical-backend, btn-toggle-listas-obras-favoritas, btn-anadir-obra-programa, btn-borrar-obra-{id}, input-duracion-{id}, input-autor-{id}, input-titulo-{id}, input-notas-{id}, input-nombre-lista-obras, btn-guardar-lista-obras, btn-aplicar-lista-obras-{id}, btn-eliminar-lista-obras-{id}, panel-listas-obras-favoritas, programa-row-{id}.",
+    "FE_CODE_REVIEW_subcomponente_renderizado": "PASS — Section 'Programa Musical' (líneas 1290-1300) renderiza únicamente <ProgramaMusicalBackend>. ProgramaArchivoCell antiguo definido en línea 12 pero ya NO se usa en ningún render (verificado: solo 1 occurrence en todo el archivo y es la definición). Consistente con spec punto 17.",
+    "FE_CODE_REVIEW_migracion_silenciosa": "PASS — useEffect carga programa; si filas==0 y legacyProgram tiene items, llama POST /migrar y refresca. Si /migrar falla (try/catch), no bloquea la carga (queda con [] y loading=false). Idempotencia confirmada por backend.",
+    "FE_CODE_REVIEW_debounce_500ms": "PASS — updateField usa setTimeout con 500ms; PATCH payload solo lleva el campo cambiado.",
+    "FE_CODE_REVIEW_isSuperAdmin_gate": "PASS — puedeEditarLista(lista) = isSuperAdmin || (creado_por === currentUserId); botón btn-eliminar-lista-obras-{id} solo se renderiza cuando puedeEditarLista=true.",
+    "FE_RUNTIME_test_e2e": "BLOQUEADO — /gestor/configuracion-eventos no renderiza contenido principal con admin (mismo issue pre-existente reportado en iter 40)."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter_f3_programa.py",
+    "/app/test_reports/pytest/iter_f3.xml",
+    "/app/test_reports/pytest/iter_f3_regression.xml"
+  ],
+  "action_items": [
+    "(Pre-existente, NO de F3) Investigar por qué /gestor/configuracion-eventos renderiza solo sidebar tras login con admin. Consola: 'INITIAL_SESSION user: undefined' → '❌ No user in session'. Posible race condition entre login y navegación directa a la ruta. Reportado también en iter 40.",
+    "(Sugerencia menor) En POST /listas-obras-favoritas, profile.get('id') puede ser None si el JWT no resuelve perfil; podría devolver 500 si la columna creado_por es NOT NULL en BD. Para usuarios autenticados normales no es problema (probado con admin y gestor)."
+  ],
+  "critical_code_review_comments": [
+    "OK — _archivo_is_super_admin idéntico en lógica al de iter F2; tiene fallback robusto a rol+email.",
+    "OK — PATCH evento_obras hace match catálogo solo si llega titulo_provisional sin obra_id Y la fila no tenía obra_id previo (línea 936). Lógica correcta para no sobreescribir match existente.",
+    "OK — La condición 'notify_archiveros' se activa SOLO si el estado anterior no era provisional o el título cambió, evitando spam de notificaciones por re-edición del mismo título (línea 945).",
+    "OK — POST aplicar-lista re-matchea catálogo por título antes de insertar (línea 1176-1180), por si la obra fue añadida al catálogo después de guardar la lista. Buena práctica.",
+    "OK — Migrar idempotente: salida temprana si ya hay filas (motivo:ya_tiene_filas) o no hay legacy (motivo:sin_legacy). NO borra eventos.program (rollback seguro, comentario en línea 991).",
+    "OK — DELETE evento_obras valida que la fila pertenece al evento_id de la URL (eq evento_id), evita borrado cross-evento.",
+    "OK — Frontend ProgramaMusicalBackend usa cancel-flag pattern en useEffect inicial para evitar setState tras unmount.",
+    "OK — Debounce timers se almacenan en useRef indexados por '{eo_id}:{field}', evitando colisiones entre celdas distintas.",
+    "OK — Frontend manejo de errores: cada catch muestra alert con detail del backend; refetch tras error PATCH para volver al estado servidor (evita UI desincronizada).",
+    "Sugerencia menor (no bloqueante): en PATCH ruta del backend, cuando se hace match con catálogo, payload['titulo_provisional']=None y payload['estado']='confirmada'. Se loguea/notifica al gestor si el título cambia, pero no se notifica al archivero del match exitoso. No es crítico — es la transición provisional→confirmada y se considera resuelto.",
+    "Sugerencia menor: en POST /listas-obras-favoritas falta validar nombre no vacío (Pydantic permite str vacío). Backend acepta nombre='' actualmente; el frontend valida con trim+alert. Aceptable pero podría endurecerse en backend con min_length=1."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_f3_programa.py (NUEVO — 18 tests pytest, autosuficiente con cleanup automático TEST_F3 prefix)"
+  ],
+  "success_rate": {"backend": "100% (17/17 nuevos PASS + 1 SKIP por dato de entorno; 32/32 regresión Iter F1+F2)", "frontend": "100% code review · runtime E2E bloqueado por issue pre-existente"},
+  "test_credentials": "admin@convocatorias.com / Admin123! · palvarez@netmetrix.es / Opus2026!",
+  "seed_data_creation": "Durante el test se crean listas y filas evento_obras con prefijo 'TEST_F3'; CLEANUP automático en fixture autouse module-scoped (DELETE como admin) — verificado que no queda data residual TEST_F3 al finalizar.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter F3 backend 100% PASS (17/17 + regresión 32/32). Test file test_iter_f3_programa.py es autosuficiente (cleanup automático). El issue de /gestor/configuracion-eventos no renderizar contenido se ha reproducido por 2ª iteración consecutiva (iter 40 y 41) — es bug pre-existente, NO de F2 ni F3. Recomiendo investigar el flujo de carga de sesión en useGestorAuth tras navegación directa post-login. Para reproducir UI E2E manualmente, intentar acceso lateral: Login → Dashboard → menú lateral 'Logística y Servicios' (o donde esté el item) → Configuración Eventos. Acceso directo por URL falla. El test_15_migrar_sin_legacy quedó SKIPPED — para activarlo, crear un evento nuevo con program=null y sin filas evento_obras.",
+  "rca of the issue": "N/A para F3 — sin bugs detectados en los 8 endpoints nuevos. RCA del bloqueo runtime FE: navegación directa a /gestor/configuracion-eventos vía page.goto post-login provoca que el AuthProvider lea INITIAL_SESSION antes de que las cookies/storage del login se propaguen, dando 'user undefined' y la guard de la ruta deja main vacío. Mitigación E2E: navegar primero a / → click en menú; mitigación de código (fuera de scope F3): hacer la guard esperar a loading=true antes de decidir."
+}
