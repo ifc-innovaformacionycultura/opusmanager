@@ -13,6 +13,25 @@ const fmtFecha = (iso) => {
   } catch { return iso; }
 };
 
+// Iter E2 — Helpers de cierre. Copia exacta de PlantillasDefinitivas.js.
+const isSuperAdminUser = (user) => {
+  if (!user) return false;
+  const rol = user.rol || user.profile?.rol;
+  if (rol === 'admin' || rol === 'director_general') return true;
+  const email = (user.email || user.profile?.email || '').toLowerCase();
+  return email === 'admin@convocatorias.com';
+};
+const fmtFechaCierre = (iso) => {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('es-ES', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return iso; }
+};
+const plantillaConcluida = (ev) => (ev?.estado_cierre || 'abierto') === 'cerrado_plantilla';
+const economicoCerrado = (ev) => (ev?.estado_cierre || 'abierto') === 'cerrado_economico';
+
 const ESTADO_PAGO_COLORS = {
   pendiente: 'bg-slate-100 text-slate-700',
   pagado: 'bg-green-100 text-green-800',
@@ -20,7 +39,8 @@ const ESTADO_PAGO_COLORS = {
 };
 
 const AsistenciaPagos = () => {
-  const { api } = useAuth();
+  const { api, user } = useAuth();
+  const isSuperAdmin = isSuperAdminUser(user);
   const [data, setData] = useState({ eventos: [], total_temporada: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,6 +48,16 @@ const AsistenciaPagos = () => {
   const [temporada, setTemporada] = useState('');
   const [temporadas, setTemporadas] = useState([]);
   const [busy, setBusy] = useState(false);
+  // Iter E2 — modales y feedback
+  const [cerrarEconModal, setCerrarEconModal] = useState(null);   // {ev}
+  const [reabrirEconModal, setReabrirEconModal] = useState(null); // {ev}
+  const [historialModal, setHistorialModal] = useState(null);     // {ev, loading, entries, error}
+  const [econBusy, setEconBusy] = useState(false);
+  const [feedback, setFeedback] = useState(null);
+  const showFeedback = (type, text) => {
+    setFeedback({ type, text });
+    setTimeout(() => setFeedback(null), 3500);
+  };
 
   const cargar = async (tempSel = temporada) => {
     try {
@@ -130,6 +160,58 @@ const AsistenciaPagos = () => {
     }
   };
 
+  // ============================================================
+  // Iter E2 — Cerrar / Reabrir económico + Historial
+  // ============================================================
+  const cerrarEconomico = async (ev) => {
+    try {
+      setEconBusy(true);
+      const r = await api.post(`/api/gestor/eventos/${ev.id}/cerrar-economico`);
+      const generados = r.data?.recibos_generados || 0;
+      showFeedback(
+        'success',
+        generados > 0
+          ? `Económico de "${ev.nombre}" cerrado. ${generados} recibo${generados !== 1 ? 's' : ''} generado${generados !== 1 ? 's' : ''}.`
+          : `Económico de "${ev.nombre}" cerrado correctamente.`,
+      );
+      setCerrarEconModal(null);
+      await cargar(temporada);
+    } catch (err) {
+      showFeedback('error', err.response?.data?.detail || err.message);
+    } finally {
+      setEconBusy(false);
+    }
+  };
+
+  const reabrirEconomico = async (ev) => {
+    try {
+      setEconBusy(true);
+      await api.post(`/api/gestor/eventos/${ev.id}/reabrir-economico`);
+      showFeedback('success', `Económico de "${ev.nombre}" reabierto. Volverás a poder modificar pagos.`);
+      setReabrirEconModal(null);
+      await cargar(temporada);
+    } catch (err) {
+      showFeedback('error', err.response?.data?.detail || err.message);
+    } finally {
+      setEconBusy(false);
+    }
+  };
+
+  const abrirHistorial = async (ev) => {
+    setHistorialModal({ ev, loading: true, entries: [], error: null });
+    try {
+      const r = await api.get(`/api/gestor/eventos/${ev.id}/historial-cierres`);
+      setHistorialModal({ ev, loading: false, entries: r.data?.entries || [], error: null });
+    } catch (err) {
+      setHistorialModal({
+        ev,
+        loading: false,
+        entries: [],
+        error: err.response?.data?.detail || err.message,
+      });
+    }
+  };
+
   const totalTemporada = data.total_temporada || 0;
 
   if (loading) {
@@ -177,31 +259,70 @@ const AsistenciaPagos = () => {
 
       {data.eventos.map(ev => {
         const open = openSet.has(ev.id);
+        const econCerrado = economicoCerrado(ev);
+        const plantOk = plantillaConcluida(ev);
         return (
           <div key={ev.id} className="bg-white rounded-lg border border-slate-200 mb-3 overflow-hidden" data-testid={`evento-econ-${ev.id}`}>
             <div
               className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between cursor-pointer"
               onClick={() => toggleAccordion(ev.id)}
             >
-              <div>
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-base">{ev.nombre}</span>
+                {econCerrado && (
+                  <span
+                    data-testid={`badge-econ-cerrado-${ev.id}`}
+                    title={ev.cerrado_economico_at
+                      ? `Cerrado por ${ev.cerrado_economico_por_nombre || '—'} el ${fmtFechaCierre(ev.cerrado_economico_at)}`
+                      : 'Económico cerrado'}
+                    className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-200 border border-amber-400/30"
+                  >
+                    💰 Económico cerrado
+                  </span>
+                )}
                 <span className="text-xs text-slate-300 ml-3">{fmtFecha(ev.fecha_inicio)} · {ev.total_musicos} músicos</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold">{fmtEuro(ev.totales.total)}</span>
+                {ev.tiene_historial_cierre && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); abrirHistorial(ev); }}
+                    data-testid={`btn-historial-econ-${ev.id}`}
+                    className="px-2 py-0.5 bg-slate-600 hover:bg-slate-500 text-xs rounded border border-slate-400"
+                    title="Ver historial de cierres y reaperturas"
+                  >🕒 Historial</button>
+                )}
+                {!econCerrado && isSuperAdmin && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); if (plantOk) setCerrarEconModal({ ev }); }}
+                    data-testid={`btn-cerrar-econ-${ev.id}`}
+                    disabled={!plantOk || busy || econBusy}
+                    className="px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-xs rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={plantOk ? 'Cerrar económicamente este evento' : 'Concluye primero la plantilla del evento'}
+                  >💰 Cerrar económico</button>
+                )}
+                {econCerrado && isSuperAdmin && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setReabrirEconModal({ ev }); }}
+                    data-testid={`btn-reabrir-econ-${ev.id}`}
+                    disabled={busy || econBusy}
+                    className="px-2 py-0.5 bg-amber-700 hover:bg-amber-600 text-xs rounded disabled:opacity-40"
+                    title="Reabrir el económico (solo administradores)"
+                  >🔓 Reabrir económico</button>
+                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); marcarPagosBulk(ev, 'pagado'); }}
-                  disabled={busy}
-                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-xs rounded disabled:opacity-50"
+                  disabled={busy || econCerrado}
+                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-xs rounded disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid={`btn-bulk-pagado-${ev.id}`}
-                  title="Marcar todos los músicos confirmados como Pagado"
+                  title={econCerrado ? 'Económico cerrado — pagos bloqueados' : 'Marcar todos los músicos confirmados como Pagado'}
                 >✓ Marcar todos como Pagado</button>
                 <button
                   onClick={(e) => { e.stopPropagation(); marcarPagosBulk(ev, 'pendiente'); }}
-                  disabled={busy}
-                  className="px-2 py-0.5 bg-slate-600 hover:bg-slate-700 text-xs rounded disabled:opacity-50"
+                  disabled={busy || econCerrado}
+                  className="px-2 py-0.5 bg-slate-600 hover:bg-slate-700 text-xs rounded disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid={`btn-bulk-pendiente-${ev.id}`}
-                  title="Revertir todos a Pendiente"
+                  title={econCerrado ? 'Económico cerrado — pagos bloqueados' : 'Revertir todos a Pendiente'}
                 >↩ Marcar todos como Pendiente</button>
                 <button
                   onClick={(e) => { e.stopPropagation(); exportXlsx(ev.id); }}
@@ -289,10 +410,10 @@ const AsistenciaPagos = () => {
                           <td className="px-2 py-1.5 text-center">
                             <button
                               onClick={() => marcarPago(m.asignacion_id, m.estado_pago === 'pagado' ? 'pendiente' : 'pagado')}
-                              disabled={busy}
+                              disabled={busy || econCerrado}
                               data-testid={`btn-pago-${m.asignacion_id}`}
-                              className={`px-2 py-0.5 rounded text-xs font-medium ${ESTADO_PAGO_COLORS[m.estado_pago] || 'bg-slate-100 text-slate-700'}`}
-                              title="Click para alternar pagado/pendiente"
+                              className={`px-2 py-0.5 rounded text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed ${ESTADO_PAGO_COLORS[m.estado_pago] || 'bg-slate-100 text-slate-700'}`}
+                              title={econCerrado ? 'Económico cerrado — pagos bloqueados' : 'Click para alternar pagado/pendiente'}
                             >
                               {m.estado_pago === 'pagado' ? '✓ Pagado' : m.estado_pago === 'anulado' ? '✗ Anulado' : 'Pendiente'}
                             </button>
@@ -341,6 +462,161 @@ const AsistenciaPagos = () => {
           </div>
         );
       })}
+
+      {/* Iter E2 — Feedback flotante */}
+      {feedback && (
+        <div
+          data-testid="econ-feedback"
+          className={`fixed top-20 right-4 z-50 px-4 py-3 rounded-lg shadow-lg border max-w-sm text-sm ${
+            feedback.type === 'success' ? 'bg-green-50 border-green-200 text-green-800'
+                                         : 'bg-red-50 border-red-200 text-red-800'
+          }`}
+        >
+          <strong>{feedback.type === 'success' ? '✅ ' : '❌ '}</strong>{feedback.text}
+        </div>
+      )}
+
+      {/* Iter E2 — Modal: Cerrar económico */}
+      {cerrarEconModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="modal-cerrar-econ">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200">
+            <h3 className="text-base font-bold text-slate-900 mb-2">💰 Cerrar económico</h3>
+            <p className="text-sm text-slate-700 mb-5 leading-relaxed">
+              ¿Cerrar económicamente el evento <strong>{cerrarEconModal.ev.nombre}</strong>?
+              Se generarán automáticamente los recibos pendientes y los pagos quedarán bloqueados.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCerrarEconModal(null)}
+                disabled={econBusy}
+                data-testid="btn-cancelar-cerrar-econ"
+                className="px-3 py-1.5 text-sm rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => cerrarEconomico(cerrarEconModal.ev)}
+                disabled={econBusy}
+                data-testid="btn-confirmar-cerrar-econ"
+                className="px-3 py-1.5 text-sm font-semibold rounded bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50"
+              >
+                {econBusy ? 'Cerrando…' : '💰 Sí, cerrar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Iter E2 — Modal: Reabrir económico (solo super admins) */}
+      {reabrirEconModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="modal-reabrir-econ">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200">
+            <h3 className="text-base font-bold text-slate-900 mb-2">🔓 Reabrir económico</h3>
+            <p className="text-sm text-slate-700 mb-5 leading-relaxed">
+              ¿Reabrir el económico del evento <strong>{reabrirEconModal.ev.nombre}</strong>?
+              Volverás al estado de plantilla concluida y podrás modificar pagos.
+              Si existen recibos emitidos, se regenerarán al volver a cerrar.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReabrirEconModal(null)}
+                disabled={econBusy}
+                data-testid="btn-cancelar-reabrir-econ"
+                className="px-3 py-1.5 text-sm rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => reabrirEconomico(reabrirEconModal.ev)}
+                disabled={econBusy}
+                data-testid="btn-confirmar-reabrir-econ"
+                className="px-3 py-1.5 text-sm font-semibold rounded bg-amber-700 hover:bg-amber-600 text-white disabled:opacity-50"
+              >
+                {econBusy ? 'Reabriendo…' : '🔓 Sí, reabrir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Iter E2 — Modal: Historial de cierres/reaperturas */}
+      {historialModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="modal-historial-econ">
+          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full p-5 border border-slate-200 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-start justify-between mb-3 gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">🕒 Historial de cierres</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{historialModal.ev.nombre}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistorialModal(null)}
+                data-testid="btn-cerrar-historial-econ"
+                className="text-slate-400 hover:text-slate-700 text-lg leading-none"
+                title="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 -mx-5 px-5">
+              {historialModal.loading && (
+                <p className="text-sm text-slate-500 py-4 text-center" data-testid="historial-econ-loading">Cargando historial…</p>
+              )}
+              {!historialModal.loading && historialModal.error && (
+                <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3" data-testid="historial-econ-error">
+                  {historialModal.error}
+                </p>
+              )}
+              {!historialModal.loading && !historialModal.error && historialModal.entries.length === 0 && (
+                <p className="text-sm text-slate-500 py-4 text-center" data-testid="historial-econ-empty">
+                  Sin actividad de cierre/reapertura registrada.
+                </p>
+              )}
+              {!historialModal.loading && !historialModal.error && historialModal.entries.length > 0 && (
+                <ol className="relative border-l-2 border-slate-200 ml-2 pl-5 space-y-4 py-1" data-testid="historial-econ-timeline">
+                  {historialModal.entries.map((entry) => {
+                    const meta = (() => {
+                      switch (entry.tipo) {
+                        case 'evento_concluido':   return { icon: '🏁', label: 'Plantilla concluida', color: 'bg-emerald-500', text: 'text-emerald-700' };
+                        case 'evento_reabierto':   return { icon: '🔓', label: 'Plantilla reabierta', color: 'bg-amber-500', text: 'text-amber-700' };
+                        case 'economico_cerrado':  return { icon: '💰', label: 'Económico cerrado', color: 'bg-amber-600', text: 'text-amber-800' };
+                        case 'economico_reabierto':return { icon: '🔓', label: 'Económico reabierto', color: 'bg-amber-700', text: 'text-amber-900' };
+                        default:                   return { icon: '•', label: entry.tipo, color: 'bg-slate-500', text: 'text-slate-700' };
+                      }
+                    })();
+                    return (
+                      <li key={entry.id} className="relative" data-testid={`historial-econ-entry-${entry.id}`}>
+                        <span className={`absolute -left-[1.7rem] top-0.5 flex items-center justify-center w-6 h-6 rounded-full text-xs ring-4 ring-white text-white ${meta.color}`} aria-hidden>
+                          {meta.icon}
+                        </span>
+                        <div className="text-sm">
+                          <div className={`font-semibold ${meta.text}`}>{meta.label}</div>
+                          <div className="text-slate-700">por <strong>{entry.usuario_nombre || '—'}</strong></div>
+                          <div className="text-xs text-slate-500 mt-0.5">{fmtFechaCierre(entry.created_at)}</div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setHistorialModal(null)}
+                data-testid="btn-cerrar-historial-econ-footer"
+                className="px-3 py-1.5 text-sm rounded border border-slate-300 hover:bg-slate-50"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

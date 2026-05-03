@@ -61,6 +61,14 @@ def _dias_concluir_evento() -> int:
         return 3
 
 
+def _dias_cerrar_economico() -> int:
+    """Iter E2 — Días después de cerrado_plantilla_at sin cerrar económicamente."""
+    try:
+        return int(os.environ.get("DIAS_DESPUES_CERRAR_ECONOMICO", "7"))
+    except Exception:
+        return 7
+
+
 # Buffer en memoria para los últimos errores de push (suscripciones purgadas, fallos).
 # No persiste tras reinicio, pero es suficiente para diagnosticar el día actual.
 _PUSH_ERRORS = []  # [{when, kind, message, usuario_id}]
@@ -263,14 +271,15 @@ def run_all_jobs() -> Dict:
     rc = job_comidas()
     rt = job_tareas()
     rce = job_concluir_evento()
+    rcec = job_cerrar_economico()
     return {
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
-        "results": [rj, rl, rc, rt, rce],
+        "results": [rj, rl, rc, rt, rce, rcec],
         "total_enviados": (
             rj.get('enviados', 0) + rl.get('enviados', 0) +
             rc.get('enviados', 0) + rt.get('enviados', 0) +
-            rce.get('enviados', 0)
+            rce.get('enviados', 0) + rcec.get('enviados', 0)
         ),
     }
 
@@ -446,6 +455,96 @@ def job_concluir_evento(force_dias_antes: Optional[int] = None) -> Dict:
     return {"job": "concluir_evento", "enviados": enviados, "revisados": revisados, "dias_antes": dias}
 
 
+# ============ Job: aviso "cerrar económico" (Iter E2) ============
+
+def job_cerrar_economico(force_dias_antes: Optional[int] = None) -> Dict:
+    """Aviso a super admins cuando un evento lleva > N días con plantilla concluida
+    pero sin cerrar económicamente.
+
+    Detecta eventos donde:
+      - alguna asignación tiene estado_cierre='cerrado_plantilla'
+      - cerrado_plantilla_at < hoy - N días (N por env DIAS_DESPUES_CERRAR_ECONOMICO, default 7)
+      - ninguna asignación del evento tiene estado_cierre='cerrado_economico'
+
+    Idempotente: usa `recordatorios_enviados` con tipo='cerrar_economico'.
+    """
+    dias = force_dias_antes if force_dias_antes is not None else _dias_cerrar_economico()
+    today = date.today()
+    cutoff = today - timedelta(days=dias)
+    cutoff_iso = cutoff.isoformat()
+    enviados = 0
+    revisados = 0
+    try:
+        # Asignaciones con plantilla concluida hace más de N días.
+        asigs = supabase.table('asignaciones').select(
+            'evento_id,estado_cierre,cerrado_plantilla_at'
+        ).eq('estado', 'confirmado').execute().data or []
+        if not asigs:
+            return {"job": "cerrar_economico", "enviados": 0, "revisados": 0, "dias_antes": dias}
+        # Agrupar por evento.
+        evs_estados: Dict[str, set] = {}
+        evs_cerrado_at: Dict[str, str] = {}
+        for a in asigs:
+            evid = a.get('evento_id')
+            if not evid:
+                continue
+            evs_estados.setdefault(evid, set()).add(a.get('estado_cierre') or 'abierto')
+            ca = a.get('cerrado_plantilla_at')
+            if ca and (evid not in evs_cerrado_at or str(ca) < evs_cerrado_at[evid]):
+                evs_cerrado_at[evid] = str(ca)
+        # Eventos candidatos: tienen cerrado_plantilla, NO tienen cerrado_economico,
+        # y la fecha más antigua de cierre de plantilla está antes del cutoff.
+        evs_pendientes = []
+        for evid, estados in evs_estados.items():
+            if 'cerrado_plantilla' not in estados:
+                continue
+            if 'cerrado_economico' in estados:
+                continue
+            ca = evs_cerrado_at.get(evid)
+            if not ca:
+                continue
+            if str(ca)[:10] >= cutoff_iso:
+                continue
+            evs_pendientes.append(evid)
+        if not evs_pendientes:
+            return {"job": "cerrar_economico", "enviados": 0, "revisados": 0, "dias_antes": dias}
+        # Cargar nombres y super admins (admin + director_general).
+        try:
+            er = supabase.table('eventos').select('id,nombre').in_('id', evs_pendientes).execute().data or []
+            evs_nombre = {e['id']: e.get('nombre', 'evento') for e in er}
+        except Exception:
+            evs_nombre = {}
+        try:
+            super_admins = supabase.table('usuarios').select('id') \
+                .in_('rol', ['admin', 'director_general']).execute().data or []
+        except Exception:
+            super_admins = []
+        for ev_id in evs_pendientes:
+            nombre = evs_nombre.get(ev_id, 'evento')
+            for sa in super_admins:
+                gid = sa.get('id')
+                if not gid:
+                    continue
+                revisados += 1
+                if _ya_enviado(gid, 'cerrar_economico', ev_id, 0):
+                    continue
+                titulo = "💰 Cerrar económico pendiente"
+                body = (
+                    f"El evento {nombre} fue concluido hace más de {dias} días. "
+                    f"Recuerda cerrar el económico en Gestión Económica."
+                )
+                try:
+                    from routes_push import notify_push
+                    notify_push(gid, titulo, body, '/admin/asistencia-pagos', tipo='general')
+                except Exception:
+                    pass
+                _marcar_enviado(gid, 'cerrar_economico', ev_id, 0, today.isoformat())
+                enviados += 1
+    except Exception as e:
+        logger.error(f"Job cerrar_economico error: {e}")
+    return {"job": "cerrar_economico", "enviados": enviados, "revisados": revisados, "dias_antes": dias}
+
+
 # ============ APScheduler bootstrap ============
 
 _scheduler = None
@@ -471,6 +570,11 @@ def init_scheduler():
         sched.add_job(
             job_concluir_evento, CronTrigger(hour=9, minute=30, timezone=tz),
             id="concluir_evento_alert", replace_existing=True, max_instances=1,
+        )
+        # Iter E2 — Aviso "cerrar económico" diario @ 09:35.
+        sched.add_job(
+            job_cerrar_economico, CronTrigger(hour=9, minute=35, timezone=tz),
+            id="cerrar_economico_alert", replace_existing=True, max_instances=1,
         )
         # Segundo recordatorio: "última llamada" el mismo día del deadline @ 12:00
         sched.add_job(

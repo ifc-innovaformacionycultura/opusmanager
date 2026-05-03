@@ -802,13 +802,13 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 pass
 
         # Iter E1.1 — Eventos que tienen al menos una entrada en registro_actividad
-        # con tipo IN ('evento_concluido','evento_reabierto'). El frontend usa este
-        # flag para mostrar el botón "🕒 Historial" solo cuando aporta valor.
+        # Iter E2 — ampliado a tipos económicos para mostrar el botón "🕒 Historial"
+        # también cuando solo hay entradas de cierre/reapertura económica.
         eventos_con_historial: set = set()
         try:
             ra = supabase.table('registro_actividad').select('entidad_id,tipo') \
                 .eq('entidad_tipo', 'evento') \
-                .in_('tipo', ['evento_concluido', 'evento_reabierto']) \
+                .in_('tipo', ['evento_concluido', 'evento_reabierto', 'economico_cerrado', 'economico_reabierto']) \
                 .in_('entidad_id', evento_ids).execute().data or []
             for r in ra:
                 if r.get('entidad_id'):
@@ -1501,21 +1501,230 @@ async def get_historial_cierres(
 ):
     """Iter E1.1 — Historial de cierres y reaperturas del evento.
 
-    Devuelve las entradas de `registro_actividad` con
-    `entidad_tipo='evento'`, `entidad_id={evento_id}` y
-    `tipo IN ('evento_concluido','evento_reabierto')` ordenadas DESC.
+    Iter E2 — Ampliado a 4 tipos: cierre/reapertura de plantilla y de económico.
     """
     try:
         rows = supabase.table('registro_actividad') \
             .select('id,tipo,descripcion,usuario_nombre,created_at') \
             .eq('entidad_tipo', 'evento') \
             .eq('entidad_id', evento_id) \
-            .in_('tipo', ['evento_concluido', 'evento_reabierto']) \
+            .in_('tipo', ['evento_concluido', 'evento_reabierto', 'economico_cerrado', 'economico_reabierto']) \
             .order('created_at', desc=True) \
             .execute().data or []
         return {"evento_id": evento_id, "entries": rows}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error cargando historial: {str(e)}")
+
+
+# ============================================================
+# Iter E2 — Cerrar / Reabrir económico del evento
+# ============================================================
+
+@router.post("/eventos/{evento_id}/cerrar-economico")
+async def cerrar_economico(
+    evento_id: str,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Cierra económicamente un evento. Solo super admins.
+
+    Pre-condición: la plantilla debe estar concluida (estado_cierre='cerrado_plantilla').
+    Acción: estado_cierre='cerrado_economico', genera recibos faltantes para asignaciones
+    pagadas, notifica push + notificaciones_gestor a admins/director_general.
+    """
+    if not is_super_admin(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo el director general o administradores pueden cerrar económicamente.",
+        )
+    profile = current_user.get('profile') or {}
+    gestor_id = profile.get('id')
+    gestor_nombre = (
+        f"{profile.get('nombre','')} {profile.get('apellidos','')}".strip()
+        or (profile.get('email') or 'Admin')
+    )
+
+    ev_row = supabase.table('eventos').select('id,nombre').eq('id', evento_id).limit(1).execute().data or []
+    if not ev_row:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    evento = ev_row[0]
+
+    # Pre-condición: plantilla concluida
+    asigs = supabase.table('asignaciones').select(
+        'id,estado_pago,estado_cierre'
+    ).eq('evento_id', evento_id).eq('estado', 'confirmado').execute().data or []
+    if not asigs:
+        raise HTTPException(status_code=400, detail="El evento no tiene asignaciones confirmadas.")
+    estados = {(a.get('estado_cierre') or 'abierto') for a in asigs}
+    if estados != {'cerrado_plantilla'}:
+        # Bien todas en abierto, bien mezcla, bien ya cerrado_economico → bloquear con mensaje claro
+        if 'cerrado_economico' in estados:
+            raise HTTPException(status_code=400, detail="El económico ya está cerrado.")
+        raise HTTPException(
+            status_code=400,
+            detail="Debes concluir primero la plantilla del evento antes de cerrar el económico.",
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 1) UPDATE asignaciones
+    upd = supabase.table('asignaciones').update({
+        "estado_cierre": "cerrado_economico",
+        "cerrado_economico_por": gestor_id,
+        "cerrado_economico_at": now_iso,
+        "updated_at": now_iso,
+    }).eq('evento_id', evento_id).eq('estado', 'confirmado').execute()
+    actualizadas = len(upd.data or [])
+
+    # 2) Generar recibos faltantes (solo para asignaciones pagadas sin recibo).
+    recibos_generados = 0
+    try:
+        pagadas = [a for a in asigs if (a.get('estado_pago') == 'pagado')]
+        if pagadas:
+            asig_ids_pagadas = [a['id'] for a in pagadas]
+            existentes = supabase.table('recibos').select('asignacion_id') \
+                .in_('asignacion_id', asig_ids_pagadas).execute().data or []
+            con_recibo = {r['asignacion_id'] for r in existentes if r.get('asignacion_id')}
+            faltan = [aid for aid in asig_ids_pagadas if aid not in con_recibo]
+            if faltan:
+                try:
+                    from routes_documentos import generar_recibo as _gen_recibo
+                except Exception as e:
+                    _gen_recibo = None
+                    logger.warning(f"cerrar_economico: generar_recibo no disponible: {e}")
+                if _gen_recibo:
+                    for aid in faltan:
+                        try:
+                            res = _gen_recibo(aid)
+                            if res:
+                                recibos_generados += 1
+                        except Exception as e:
+                            logger.warning(f"Error generando recibo {aid}: {e}")
+    except Exception as e:
+        logger.warning(f"cerrar_economico: bloque recibos falló: {e}")
+
+    # 3) Notificación push + notificaciones_gestor a admins + director_general.
+    try:
+        admins_rows = supabase.table('usuarios').select('id') \
+            .in_('rol', ['admin', 'director_general']).execute().data or []
+    except Exception:
+        admins_rows = []
+    titulo = "💰 Económico cerrado"
+    body = f"El económico del evento {evento.get('nombre','evento')} ha sido cerrado."
+    try:
+        from routes_push import notify_push as _notify_push
+    except Exception:
+        _notify_push = None
+    for a in admins_rows:
+        aid = a.get('id')
+        if not aid:
+            continue
+        try:
+            supabase.table('notificaciones_gestor').insert({
+                "gestor_id": aid,
+                "tipo": "economico_cerrado",
+                "titulo": titulo,
+                "descripcion": body,
+                "entidad_tipo": "evento",
+                "entidad_id": evento_id,
+                "leida": False,
+            }).execute()
+        except Exception:
+            pass
+        if _notify_push:
+            try:
+                _notify_push(aid, titulo, body, '/admin/asistencia-pagos', tipo='general')
+            except Exception:
+                pass
+
+    # 4) Registro de actividad
+    try:
+        supabase.table('registro_actividad').insert({
+            "tipo": "economico_cerrado",
+            "descripcion": f"Económico del evento '{evento.get('nombre','')}' cerrado por {gestor_nombre}",
+            "usuario_id": gestor_id,
+            "usuario_nombre": gestor_nombre,
+            "entidad_tipo": "evento",
+            "entidad_id": evento_id,
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "evento_id": evento_id,
+        "actualizadas": actualizadas,
+        "recibos_generados": recibos_generados,
+        "cerrado_economico_at": now_iso,
+        "cerrado_economico_por_nombre": gestor_nombre,
+    }
+
+
+@router.post("/eventos/{evento_id}/reabrir-economico")
+async def reabrir_economico(
+    evento_id: str,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Reabre el económico de un evento. Solo super admins.
+
+    Vuelve estado_cierre a 'cerrado_plantilla' (NO a 'abierto'). Marca recibos del
+    evento con regenerar_pendiente=TRUE para que se regeneren al volver a cerrar.
+    """
+    if not is_super_admin(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo el director general o administradores pueden reabrir económicamente.",
+        )
+    profile = current_user.get('profile') or {}
+    gestor_id = profile.get('id')
+    gestor_nombre = (
+        f"{profile.get('nombre','')} {profile.get('apellidos','')}".strip()
+        or (profile.get('email') or 'Admin')
+    )
+
+    ev_row = supabase.table('eventos').select('id,nombre').eq('id', evento_id).limit(1).execute().data or []
+    if not ev_row:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    evento = ev_row[0]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    upd = supabase.table('asignaciones').update({
+        "estado_cierre": "cerrado_plantilla",
+        "cerrado_economico_por": None,
+        "cerrado_economico_at": None,
+        "updated_at": now_iso,
+    }).eq('evento_id', evento_id).eq('estado_cierre', 'cerrado_economico').execute()
+    actualizadas = len(upd.data or [])
+
+    # Marcar recibos para regenerar al volver a cerrar.
+    recibos_marcados = 0
+    try:
+        rec = supabase.table('recibos').update({
+            "regenerar_pendiente": True,
+            "actualizado_at": now_iso,
+        }).eq('evento_id', evento_id).execute()
+        recibos_marcados = len(rec.data or [])
+    except Exception as e:
+        logger.warning(f"reabrir_economico: error marcando recibos: {e}")
+
+    # Registro de actividad
+    try:
+        supabase.table('registro_actividad').insert({
+            "tipo": "economico_reabierto",
+            "descripcion": f"Económico del evento '{evento.get('nombre','')}' reabierto por {gestor_nombre}",
+            "usuario_id": gestor_id,
+            "usuario_nombre": gestor_nombre,
+            "entidad_tipo": "evento",
+            "entidad_id": evento_id,
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "evento_id": evento_id,
+        "actualizadas": actualizadas,
+        "recibos_marcados_regenerar": recibos_marcados,
+    }
 
 
 # ==================== Cachets Config & Upload justificantes ====================
@@ -3233,8 +3442,9 @@ async def get_gestion_economica(
     """
     try:
         # Arrancamos con asignaciones confirmadas
+        # Iter E2 — añadidos campos de cierre (plantilla + económico).
         a_res = supabase.table('asignaciones') \
-            .select('id,usuario_id,evento_id,estado,estado_pago,cache_presupuestado,importe,numero_atril,letra,comentarios,nivel_estudios,porcentaje_asistencia') \
+            .select('id,usuario_id,evento_id,estado,estado_pago,cache_presupuestado,importe,numero_atril,letra,comentarios,nivel_estudios,porcentaje_asistencia,estado_cierre,cerrado_plantilla_por,cerrado_plantilla_at,cerrado_economico_por,cerrado_economico_at') \
             .eq('estado', 'confirmado') \
             .execute()
         confirmadas = a_res.data or []
@@ -3249,6 +3459,54 @@ async def get_gestion_economica(
             ev_q = ev_q.eq('temporada', temporada)
         eventos_raw = ev_q.order('fecha_inicio', desc=False).execute().data or []
         evento_ids_vistos = [e['id'] for e in eventos_raw]
+
+        # Iter E2 — Resolver cierre por evento (mismo patrón que plantillas-definitivas).
+        cierre_by_evento_econ: Dict[str, Dict] = {}
+        for a in confirmadas:
+            evid = a['evento_id']
+            if evid not in evento_ids_vistos:
+                continue
+            ec = a.get('estado_cierre') or 'abierto'
+            cur = cierre_by_evento_econ.get(evid)
+            # Priorizar el "más cerrado": cerrado_economico > cerrado_plantilla > abierto.
+            rank = {'abierto': 0, 'cerrado_plantilla': 1, 'cerrado_economico': 2}
+            if cur is None or rank.get(ec, 0) > rank.get(cur.get('estado_cierre'), 0):
+                cierre_by_evento_econ[evid] = {
+                    "estado_cierre": ec,
+                    "cerrado_plantilla_por": a.get('cerrado_plantilla_por'),
+                    "cerrado_plantilla_at": a.get('cerrado_plantilla_at'),
+                    "cerrado_economico_por": a.get('cerrado_economico_por'),
+                    "cerrado_economico_at": a.get('cerrado_economico_at'),
+                }
+        # Resolver nombres de gestores que cerraron.
+        gestor_ids_cierre = set()
+        for v in cierre_by_evento_econ.values():
+            for k in ('cerrado_plantilla_por', 'cerrado_economico_por'):
+                if v.get(k):
+                    gestor_ids_cierre.add(v[k])
+        gestores_cierre_econ_by_id: Dict[str, str] = {}
+        if gestor_ids_cierre:
+            try:
+                gres = supabase.table('usuarios').select('id,nombre,apellidos') \
+                    .in_('id', list(gestor_ids_cierre)).execute().data or []
+                gestores_cierre_econ_by_id = {
+                    g['id']: f"{g.get('nombre','')} {g.get('apellidos','')}".strip() or g.get('id')
+                    for g in gres
+                }
+            except Exception:
+                pass
+        # Iter E2 — flag de historial (4 tipos: cierre y reapertura de plantilla y económico).
+        eventos_con_historial_econ: set = set()
+        try:
+            ra = supabase.table('registro_actividad').select('entidad_id,tipo') \
+                .eq('entidad_tipo', 'evento') \
+                .in_('tipo', ['evento_concluido', 'evento_reabierto', 'economico_cerrado', 'economico_reabierto']) \
+                .in_('entidad_id', evento_ids_vistos).execute().data or []
+            for r in ra:
+                if r.get('entidad_id'):
+                    eventos_con_historial_econ.add(r['entidad_id'])
+        except Exception:
+            pass
 
         ens_res = supabase.table('ensayos').select('*').in_('evento_id', evento_ids_vistos).execute()
         ensayos_by_evento = {}
@@ -3417,6 +3675,7 @@ async def get_gestion_economica(
                 secciones_out.append({"key":"otros","label":"Sin sección","count":len(sin_seccion),
                                       "musicos":sin_seccion,"totales":sec_tot})
 
+            cierre_info_e = cierre_by_evento_econ.get(ev['id']) or {}
             eventos_out.append({
                 "id": ev['id'],
                 "nombre": ev.get('nombre'),
@@ -3428,6 +3687,17 @@ async def get_gestion_economica(
                 "total_musicos": len(asigs_ev),
                 "totales": {k: round(v, 2) for k, v in total_ev.items()},
                 "secciones": secciones_out,
+                # Iter E2 — cierre plantilla + económico
+                "estado_cierre": cierre_info_e.get("estado_cierre") or "abierto",
+                "cerrado_plantilla_at": cierre_info_e.get("cerrado_plantilla_at"),
+                "cerrado_plantilla_por_nombre": gestores_cierre_econ_by_id.get(
+                    cierre_info_e.get("cerrado_plantilla_por")
+                ) if cierre_info_e.get("cerrado_plantilla_por") else None,
+                "cerrado_economico_at": cierre_info_e.get("cerrado_economico_at"),
+                "cerrado_economico_por_nombre": gestores_cierre_econ_by_id.get(
+                    cierre_info_e.get("cerrado_economico_por")
+                ) if cierre_info_e.get("cerrado_economico_por") else None,
+                "tiene_historial_cierre": ev['id'] in eventos_con_historial_econ,
             })
             total_temporada += total_ev["total"]
 
@@ -3440,6 +3710,32 @@ async def get_gestion_economica(
 async def marcar_pago(asignacion_id: str, payload: dict, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_gestor)):
     """Marca estado_pago de una asignación. {estado_pago: 'pagado'|'pendiente'|'anulado'}"""
     try:
+        # Iter E2 — Defensa backend: no permitir cambios si el económico del evento está cerrado.
+        try:
+            asig_row = supabase.table('asignaciones') \
+                .select('id,evento_id,estado_cierre') \
+                .eq('id', asignacion_id).limit(1).execute().data or []
+            if asig_row and (asig_row[0].get('estado_cierre') or 'abierto') == 'cerrado_economico':
+                ev_nombre = ''
+                try:
+                    er = supabase.table('eventos').select('nombre') \
+                        .eq('id', asig_row[0].get('evento_id')).limit(1).execute().data or []
+                    ev_nombre = (er[0].get('nombre') if er else '') or ''
+                except Exception:
+                    pass
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"No se permiten cambios: el económico del evento "
+                        f"'{ev_nombre}' está cerrado." if ev_nombre
+                        else "No se permiten cambios: el económico del evento está cerrado."
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
         estado = payload.get('estado_pago') or 'pendiente'
         r = supabase.table('asignaciones').update({
             "estado_pago": estado,
@@ -3452,6 +3748,8 @@ async def marcar_pago(asignacion_id: str, payload: dict, background_tasks: Backg
             except Exception:
                 pass
         return {"ok": True, "asignacion": r.data[0] if r.data else None}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al marcar pago: {str(e)}")
 
@@ -3466,6 +3764,32 @@ async def marcar_pagos_bulk(evento_id: str, payload: dict, background_tasks: Bac
         estado = (payload or {}).get('estado_pago') or 'pendiente'
         if estado not in ('pagado', 'pendiente', 'anulado'):
             raise HTTPException(status_code=400, detail="estado_pago inválido")
+
+        # Iter E2 — Defensa backend: no permitir bulk si el económico del evento está cerrado.
+        try:
+            cerr = supabase.table('asignaciones').select('estado_cierre') \
+                .eq('evento_id', evento_id).eq('estado', 'confirmado').execute().data or []
+            if any((c.get('estado_cierre') or 'abierto') == 'cerrado_economico' for c in cerr):
+                ev_nombre = ''
+                try:
+                    er = supabase.table('eventos').select('nombre') \
+                        .eq('id', evento_id).limit(1).execute().data or []
+                    ev_nombre = (er[0].get('nombre') if er else '') or ''
+                except Exception:
+                    pass
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"No se permiten cambios: el económico del evento "
+                        f"'{ev_nombre}' está cerrado." if ev_nombre
+                        else "No se permiten cambios: el económico del evento está cerrado."
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
         r = supabase.table('asignaciones').update({
             "estado_pago": estado,
             "updated_at": datetime.now().isoformat(),
