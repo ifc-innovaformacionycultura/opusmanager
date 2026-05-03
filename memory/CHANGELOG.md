@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## Iter 31 · 2026-05-03 · Preferencias UI en servidor (prefs_ui)
+
+### 🆕 Backend
+- Nueva columna `usuarios.prefs_ui JSONB NOT NULL DEFAULT '{}'` (SQL ejecutado por el usuario).
+- Nuevo router `routes_prefs.py` con:
+  - `GET /api/gestor/prefs-ui` → devuelve `{prefs: {...}}` del usuario autenticado.
+  - `PUT /api/gestor/prefs-ui` con body `{prefs: {key: value, key2: null}}` — merge parcial (no pisa claves no enviadas, `null` borra la clave).
+- Reutilizable por cualquier rol (usa `get_current_user`).
+
+### 🎣 Frontend — Hook genérico
+- `/app/frontend/src/hooks/usePrefsUI.js`: `useServerPref(key, defaultValue) → [value, setValue, {ready, syncing}]`.
+  - Inicialización instantánea desde `localStorage` (prefix `prefs_ui_` + compatibilidad legacy sin prefijo).
+  - Al montar, GET hidrata con el valor del servidor si existe.
+  - Migración transparente: si localStorage tiene valor y servidor no, PUT automático.
+  - `setValue()` hace optimistic update + `localStorage.write` + PUT con debounce 500ms.
+  - Fallback offline: si GET/PUT fallan, sigue usando localStorage sin bloquear UX.
+  - StrictMode-safe (sólo usa `cancelled` scoped-per-effect; sin `mountedRef`).
+
+### 🔧 Aplicación
+- `SeguimientoConvocatorias.js`: `eventosOcultos` ahora se sincroniza con servidor. Los cambios viajan automáticamente con el usuario a cualquier dispositivo.
+
+### ✅ Validación
+- Backend: **10/10 pytest PASS** — estado inicial vacío, persistencia, merge parcial, borrado con `null`, aislamiento entre usuarios, 403 sin auth, regresión bandeja/mi-perfil.
+- Frontend: 4/4 flows PASS — hidratación server→UI, migración LS→servidor, click ocultar→PUT, mostrar-todos→PUT [].
+- **0 regresiones** iter28/29/30/Iter B.
+
+### 🐛 Bug intermedio y fix
+- Tras la primera implementación el test detectó que la hidratación servidor→UI fallaba por interacción del guard `mountedRef.current` con `React.StrictMode`: el effect se ejecuta 2× en dev; el cleanup del primer mount ponía `cancelled=true` y el guard impedía relanzar el fetch en el segundo mount, de modo que `setValueState` nunca se llamaba.
+- Fix quirúrgico: eliminadas 4 líneas del guard `mountedRef`, dejando sólo el patrón `let cancelled = false; return () => cancelled = true;`. Compatible con StrictMode.
+
+
+
 ## Iter B · 2026-05-03 · 5 puntos quirúrgicos (1A, 4, 13, 15, 16)
 
 ### 🎯 Cambios
