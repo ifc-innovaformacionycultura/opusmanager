@@ -6,6 +6,15 @@ import { useNavigate } from "react-router-dom";
 import { useAuth as useGestorAuth } from "../contexts/AuthContext";
 import ActividadPendiente from "../components/ActividadPendiente";
 
+// Iter F1 — Helper de permisos (copia exacta de la lógica usada en otras páginas).
+const isSuperAdminUser = (user) => {
+  if (!user) return false;
+  const rol = user.rol || user.profile?.rol;
+  if (rol === 'admin' || rol === 'director_general') return true;
+  const email = (user.email || user.profile?.email || '').toLowerCase();
+  return email === 'admin@convocatorias.com';
+};
+
 const DashboardPage = () => {
   const [stats, setStats] = useState({ events: 0, contacts: 0, seasons: 0 });
   const [recentEvents, setRecentEvents] = useState([]);
@@ -31,7 +40,8 @@ const DashboardPage = () => {
     try { localStorage.setItem('dashboard_bloques_collapsed', JSON.stringify(collapsed)); } catch { /* noop */ }
   }, [collapsed]);
   const toggle = (key) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
-  const { api } = useGestorAuth();
+  const { api, user } = useGestorAuth();
+  const isSuperAdmin = isSuperAdminUser(user);
   const navigate = useNavigate();
   const loadedRef = useRef(false);
 
@@ -167,7 +177,7 @@ const DashboardPage = () => {
         {!collapsed['bloque-1'] && (<>
 
         {/* Pendientes de atención (tiles) */}
-        {pendientes && (pendientes.reclamaciones_pendientes + pendientes.perfiles_actualizados + pendientes.respuestas_nuevas + pendientes.tareas_proximas) > 0 && (
+        {pendientes && (pendientes.reclamaciones_pendientes + pendientes.perfiles_actualizados + pendientes.respuestas_nuevas + pendientes.tareas_proximas + (isSuperAdmin ? (pendientes.importes_pendientes_validacion || 0) : 0)) > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" data-testid="pendientes-section">
             <button onClick={() => navigate('/admin/reclamaciones')}
               data-testid="tile-reclamaciones"
@@ -203,6 +213,17 @@ const DashboardPage = () => {
               </div>
               <p className="text-xs font-medium text-blue-800 mt-2 uppercase">Tareas en 24h</p>
             </div>
+            {isSuperAdmin && (pendientes.importes_pendientes_validacion || 0) > 0 && (
+              <button onClick={() => navigate('/plantillas-definitivas')}
+                data-testid="tile-importes-pendientes"
+                className="p-4 bg-orange-50 border border-orange-300 hover:bg-orange-100 rounded-lg text-left transition-colors">
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl">⏳</span>
+                  <span className="text-3xl font-bold text-orange-900">{pendientes.importes_pendientes_validacion}</span>
+                </div>
+                <p className="text-xs font-medium text-orange-800 mt-2 uppercase">Importes pendientes validar</p>
+              </button>
+            )}
           </div>
         )}
 

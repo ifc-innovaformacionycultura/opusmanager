@@ -1,0 +1,50 @@
+{
+  "summary": "Iter F1 — Importes provisionales (cache_extra y transporte) en PlantillasDefinitivas. Backend + Frontend. 11/11 backend tests PASS, 24/24 regresión (Iter D, E1, E2) PASS, UI verificada (badge, botón validar admin, tile dashboard, ocultos para gestor normal).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results_detail": {
+    "BE_T1_schema_plantillas_definitivas": "PASS — campos provisional/validador presentes en músicos (gasto_id, cache_extra_provisional, cache_extra_validado_por_nombre, cache_extra_validado_at, transporte_provisional, transporte_validado_por_nombre, transporte_validado_at).",
+    "BE_T2_gestor_introduce_provisional_TRUE": "PASS — gestor PUT cache_extra=50 → cache_extra_provisional=true; TOTAL del músico NO incluye 50 (total≈cache_real).",
+    "BE_T3_admin_valida_total_incluye": "PASS — POST /gastos/{id}/validar {campo:'cache_extra'} → 200, provisional=false, validado_por_nombre+validado_at presentes; TOTAL = cache_real+50.",
+    "BE_T4_validar_ya_validado_400": "PASS — segundo POST validar devuelve 400 'Este importe ya está validado.'",
+    "BE_T5_admin_directo_no_provisional": "PASS — admin PUT transporte_importe=30 → transporte_provisional=false, validado_por_nombre+validado_at poblados.",
+    "BE_T6_validar_403_gestor_normal": "PASS — gestor normal recibe 403 con mensaje 'director general/administradores'.",
+    "BE_T7_validar_400_campo_invalido": "PASS — campo='otros' devuelve 400.",
+    "BE_T8_validar_404_gasto_inexistente": "PASS — UUID 0...0 devuelve 404.",
+    "BE_T9_pendientes_admin": "PASS — admin recibe importes_pendientes_validacion (int >=0). Probado con provisional creado: contador=1.",
+    "BE_T10_pendientes_gestor_cero": "PASS — gestor normal recibe importes_pendientes_validacion=0 (oculto por is_super_admin).",
+    "BE_T11_gestion_economica_excluye_provisional": "PASS — GET /gestion-economica devuelve cache_extra_provisional/transporte_provisional por músico; TOTAL excluye provisionales.",
+    "BE_R1_iter_d_comedor": "PASS — 6/6 (regresión Iter D).",
+    "BE_R2_iter_e1_concluir": "PASS — 9/9 (regresión Iter E1).",
+    "BE_R3_iter_e2_cerrar_economico": "PASS — 9/9 (regresión Iter E2).",
+    "FE_UI1_badge_extra_prov": "PASS — [data-testid=badge-extra-prov-{uid}-{eid}] visible con texto '⏳ Pendiente validación' cuando provisional=true.",
+    "FE_UI2_btn_validar_extra_visible_admin": "PASS — [data-testid=btn-validar-extra-{uid}-{eid}] visible para admin@convocatorias.com.",
+    "FE_UI3_click_validar_oculta_badge": "PASS — tras click validar, badge desaparece (POST API exitoso, UI re-renderiza).",
+    "FE_UI4_tile_importes_pendientes_admin": "PASS — [data-testid=tile-importes-pendientes] muestra '⏳ 1 Importes pendientes validar' tras esperar carga de /pendientes; click navega a /plantillas-definitivas.",
+    "FE_UI5_gestor_no_ve_tile_ni_btn": "PASS — gestor normal palvarez@netmetrix.es no ve tile-importes-pendientes ni btn-validar-extra (oculto por isSuperAdmin)."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter_f1_provisionales.py",
+    "/app/test_reports/pytest/iter_f1.xml",
+    "/app/test_reports/pytest/iter_f1_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "OK — Idempotencia confirmada: gestor reescribiendo el mismo valor que ya está validado NO altera provisional/validado_por (verificado en test setup).",
+    "OK — POST /gastos/{id}/validar busca registro_actividad tipo='importe_provisional_creado' para localizar al gestor original y enviar notificacion_gestor + push (envoltorio en try/except, no rompe si push falla).",
+    "OK — TOTAL = cache_real + extras_validados + transporte_validado + aloj + otros − comedor (verificado: con provisional 50 total NO suma; tras validar suma).",
+    "OK — Tile dashboard condicionado a isSuperAdmin && importes_pendientes_validacion>0 (oculto correctamente para gestor y cuando 0).",
+    "OK — supabase.or_('cache_extra_provisional.eq.true,transporte_provisional.eq.true') con count='exact' funciona correctamente (probado: 0 → 1 al crear provisional).",
+    "Sugerencia menor (no bloqueante): el error handler del POST validar usa 'except Exception: pass' en notificacion al gestor; sería bueno loguear con logger.warning para diagnosticar si push/insert falla en producción."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_f1_provisionales.py (NUEVO — 11 tests pytest)"
+  ],
+  "success_rate": {"backend": "100% (11/11 nuevos + 24/24 regresión)", "frontend": "100% (5/5 escenarios UI clave)"},
+  "test_credentials": "admin@convocatorias.com / Admin123! · palvarez@netmetrix.es / Opus2026!",
+  "seed_data_creation": "Ninguno permanente. Durante el flujo se crearon provisionales temporales en evento c4409142 / músico Jesús Alonso (8bf521fa); CLEANUP final ejecutado vía admin PUT cache_extra=0 + transporte_importe=0. Verificado: /pendientes admin = 0 al terminar.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter F1 100% PASS. Estado dejado limpio: Concierto de Navidad (c4409142) con cache_extra=0 y transporte_importe=0 para músico Jesús (validado_por=admin, no provisional). Si una iter futura necesita reproducir provisional, gestor palvarez puede PUT cache_extra=N (con N distinto al actual) → provisional=true. El test file test_iter_f1_provisionales.py es autosuficiente (incluye reset+cleanup). NOTA UI: Dashboard tile-importes-pendientes requiere wait_for_selector (~5-10s) tras login porque /api/gestor/pendientes es asíncrono.",
+  "rca of the issue": "N/A — no se encontraron bugs. Una observación: durante el primer ciclo de UI testing, /pendientes devolvió 0 cuando esperaba 1; el RCA fue idempotencia (gestor re-escribió 75 cuando ya había sido validado a 75 → no cambia provisional). Tras escribir un valor distinto (88), el contador subió a 1 correctamente. Comportamiento esperado por spec 'cuando gestor introduce un valor que NO cambia, NO se modifica provisional'."
+}

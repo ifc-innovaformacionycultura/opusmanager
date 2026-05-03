@@ -843,11 +843,28 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 disp_by_pair[(d['usuario_id'], d['ensayo_id'])] = d
 
         gastos_res = supabase.table('gastos_adicionales') \
-            .select('*') \
+            .select('id,usuario_id,evento_id,cache_extra,transporte_importe,transporte_justificante_url,alojamiento_importe,alojamiento_justificante_url,otros_importe,otros_justificante_url,notas,cache_extra_provisional,cache_extra_validado_por,cache_extra_validado_at,transporte_provisional,transporte_validado_por,transporte_validado_at') \
             .in_('evento_id', evento_ids) \
             .in_('usuario_id', usuario_ids) \
             .execute()
         gastos_by_pair = {(g['usuario_id'], g['evento_id']): g for g in (gastos_res.data or [])}
+
+        # Iter F1 — Resolver nombres de validadores (cache_extra + transporte).
+        validador_ids = set()
+        for g in (gastos_res.data or []):
+            if g.get('cache_extra_validado_por'): validador_ids.add(g['cache_extra_validado_por'])
+            if g.get('transporte_validado_por'): validador_ids.add(g['transporte_validado_por'])
+        validadores_by_id: Dict[str, str] = {}
+        if validador_ids:
+            try:
+                vrows = supabase.table('usuarios').select('id,nombre,apellidos') \
+                    .in_('id', list(validador_ids)).execute().data or []
+                validadores_by_id = {
+                    v['id']: f"{v.get('nombre','')} {v.get('apellidos','')}".strip() or v.get('id')
+                    for v in vrows
+                }
+            except Exception:
+                pass
 
         # Iter D · Comedor descontable: importe a descontar del TOTAL por (usuario, evento)
         # Suma de las comidas confirmadas (precio_menu + precio_cafe si toma_cafe) por músico.
@@ -959,8 +976,13 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 cache_real = round(cache_prev * (pct_real / 100.0), 2)
 
                 g = gastos_by_pair.get((u['id'], ev['id'])) or {}
-                extras = float(g.get('cache_extra') or 0)
-                transp = float(g.get('transporte_importe') or 0)
+                extras_visibles = float(g.get('cache_extra') or 0)
+                transp_visibles = float(g.get('transporte_importe') or 0)
+                # Iter F1 — provisionales NO suman al TOTAL.
+                cache_extra_prov = bool(g.get('cache_extra_provisional'))
+                transporte_prov = bool(g.get('transporte_provisional'))
+                extras = 0.0 if cache_extra_prov else extras_visibles
+                transp = 0.0 if transporte_prov else transp_visibles
                 aloj = float(g.get('alojamiento_importe') or 0)
                 otros = float(g.get('otros_importe') or 0)
                 comida = float(comida_by_pair.get((u['id'], ev['id'])) or 0)
@@ -994,9 +1016,9 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                     "cache_previsto": round(cache_prev, 2),
                     "cache_fuente": cache_fuente,
                     "cache_real": cache_real,
-                    "cache_extra": extras,
+                    "cache_extra": extras_visibles,
                     "motivo_extra": g.get('notas') or '',
-                    "transporte_importe": transp,
+                    "transporte_importe": transp_visibles,
                     "transporte_justificante_url": g.get('transporte_justificante_url'),
                     "alojamiento_importe": aloj,
                     "alojamiento_justificante_url": g.get('alojamiento_justificante_url'),
@@ -1004,6 +1026,17 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                     "otros_justificante_url": g.get('otros_justificante_url'),
                     "comida_importe": comida,
                     "total": total,
+                    # Iter F1 — Provisional / Validación
+                    "gasto_id": g.get('id'),
+                    "cache_extra_provisional": cache_extra_prov,
+                    "cache_extra_validado_por_nombre": validadores_by_id.get(g.get('cache_extra_validado_por')) if g.get('cache_extra_validado_por') else None,
+                    "cache_extra_validado_at": g.get('cache_extra_validado_at'),
+                    "transporte_provisional": transporte_prov,
+                    "transporte_validado_por_nombre": validadores_by_id.get(g.get('transporte_validado_por')) if g.get('transporte_validado_por') else None,
+                    "transporte_validado_at": g.get('transporte_validado_at'),
+                    # Iter F1 — auxiliares (uso interno para subtotales coherentes con TOTAL).
+                    "_extras_efectivo": extras,
+                    "_transp_efectivo": transp,
                 }
                 sec_key = seccion_de_instrumento(u.get('instrumento'))
                 if sec_key:
@@ -1026,8 +1059,8 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 for m in musicos_sec:
                     sec_totals["cache_previsto"] += m["cache_previsto"]
                     sec_totals["cache_real"]     += m["cache_real"]
-                    sec_totals["extras"]         += m["cache_extra"]
-                    sec_totals["transporte"]     += m["transporte_importe"]
+                    sec_totals["extras"]         += m["_extras_efectivo"]
+                    sec_totals["transporte"]     += m["_transp_efectivo"]
                     sec_totals["alojamiento"]    += m["alojamiento_importe"]
                     sec_totals["otros"]          += m["otros_importe"]
                     sec_totals["total"]          += m["total"]
@@ -1042,8 +1075,8 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                 for m in sin_seccion:
                     sec_totals["cache_previsto"] += m["cache_previsto"]
                     sec_totals["cache_real"]     += m["cache_real"]
-                    sec_totals["extras"]         += m["cache_extra"]
-                    sec_totals["transporte"]     += m["transporte_importe"]
+                    sec_totals["extras"]         += m["_extras_efectivo"]
+                    sec_totals["transporte"]     += m["_transp_efectivo"]
                     sec_totals["alojamiento"]    += m["alojamiento_importe"]
                     sec_totals["otros"]          += m["otros_importe"]
                     sec_totals["total"]          += m["total"]
@@ -1053,6 +1086,12 @@ async def get_plantillas_definitivas(current_user: dict = Depends(get_current_ge
                     "musicos": sin_seccion,
                     "totales": {k: round(v, 2) for k, v in sec_totals.items()},
                 })
+
+            # Iter F1 — Limpiar campos auxiliares antes de serializar.
+            for sec in secciones_out:
+                for m in sec.get('musicos', []):
+                    m.pop('_extras_efectivo', None)
+                    m.pop('_transp_efectivo', None)
 
             cierre_info = cierre_by_evento.get(ev['id']) or {}
             eventos_out.append({
@@ -1204,20 +1243,133 @@ async def guardar_plantillas_definitivas(
                 resumen["asistencias"] += 1
 
         # 2) Gastos — UPSERT por (usuario_id, evento_id)
+        # Iter F1 — Marcar provisional / validado en cache_extra y transporte_importe.
+        is_admin_user = is_super_admin(current_user)
+        admin_profile = current_user.get('profile') or {}
+        admin_id_for_validar = admin_profile.get('id')
+        admin_nombre = (
+            f"{admin_profile.get('nombre','')} {admin_profile.get('apellidos','')}".strip()
+            or (admin_profile.get('email') or '')
+        )
+        notif_provisional_pendientes = []  # acumulamos para enviar push tras commit
         for g in data.gastos:
             payload = {k: v for k, v in g.model_dump(exclude_unset=True).items() if k not in ('usuario_id', 'evento_id')}
             if not payload:
                 payload = {}
             payload["updated_at"] = now
+
+            # Iter F1 — leer fila actual para detectar cambios reales en cache_extra/transporte
             ex = supabase.table('gastos_adicionales') \
-                .select('id') \
+                .select('id,cache_extra,cache_extra_provisional,transporte_importe,transporte_provisional') \
                 .eq('usuario_id', g.usuario_id).eq('evento_id', g.evento_id).limit(1).execute()
-            if ex.data:
-                supabase.table('gastos_adicionales').update(payload).eq('id', ex.data[0]['id']).execute()
+            ex_row = ex.data[0] if ex.data else None
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            def _flo(x):
+                try: return float(x) if x is not None else 0.0
+                except Exception: return 0.0
+
+            for campo, prov_col, val_por_col, val_at_col in (
+                ('cache_extra', 'cache_extra_provisional', 'cache_extra_validado_por', 'cache_extra_validado_at'),
+                ('transporte_importe', 'transporte_provisional', 'transporte_validado_por', 'transporte_validado_at'),
+            ):
+                if campo not in payload:
+                    continue
+                nuevo = _flo(payload.get(campo))
+                actual = _flo((ex_row or {}).get(campo))
+                cambio = abs(nuevo - actual) > 0.001
+                if not cambio:
+                    continue
+                if is_admin_user:
+                    payload[prov_col] = False
+                    payload[val_por_col] = admin_id_for_validar
+                    payload[val_at_col] = now_iso
+                else:
+                    payload[prov_col] = True
+                    payload[val_por_col] = None
+                    payload[val_at_col] = None
+                    notif_provisional_pendientes.append({
+                        'usuario_id': g.usuario_id,
+                        'evento_id': g.evento_id,
+                        'campo': campo,
+                        'importe': nuevo,
+                    })
+
+            if ex_row:
+                supabase.table('gastos_adicionales').update(payload).eq('id', ex_row['id']).execute()
+                gasto_id_after = ex_row['id']
             else:
                 insert_payload = {"usuario_id": g.usuario_id, "evento_id": g.evento_id, **payload}
-                supabase.table('gastos_adicionales').insert(insert_payload).execute()
+                ins_res = supabase.table('gastos_adicionales').insert(insert_payload).execute()
+                gasto_id_after = (ins_res.data or [{}])[0].get('id')
+            # Registro de actividad para cada importe nuevo provisional (para notificar al validar).
+            for n in [x for x in notif_provisional_pendientes if x['usuario_id'] == g.usuario_id and x['evento_id'] == g.evento_id]:
+                if not gasto_id_after:
+                    continue
+                try:
+                    supabase.table('registro_actividad').insert({
+                        "tipo": "importe_provisional_creado",
+                        "descripcion": f"Importe provisional {n['campo']}={n['importe']}€ creado por {admin_nombre or 'gestor'}",
+                        "usuario_id": admin_id_for_validar,
+                        "usuario_nombre": admin_nombre,
+                        "entidad_tipo": "gasto",
+                        "entidad_id": gasto_id_after,
+                    }).execute()
+                except Exception:
+                    pass
+                n['gasto_id'] = gasto_id_after
             resumen["gastos"] += 1
+
+        # Iter F1 — Notificar a super admins sobre importes pendientes (después del commit).
+        if notif_provisional_pendientes and not is_admin_user:
+            try:
+                # Lookup nombres de músico + evento (cacheado por id).
+                u_ids = list({n['usuario_id'] for n in notif_provisional_pendientes})
+                e_ids = list({n['evento_id'] for n in notif_provisional_pendientes})
+                u_rows = supabase.table('usuarios').select('id,nombre,apellidos') \
+                    .in_('id', u_ids).execute().data or []
+                e_rows = supabase.table('eventos').select('id,nombre') \
+                    .in_('id', e_ids).execute().data or []
+                u_by_id = {u['id']: f"{u.get('nombre','')} {u.get('apellidos','')}".strip() for u in u_rows}
+                e_by_id = {e['id']: e.get('nombre') for e in e_rows}
+                admins_rows = supabase.table('usuarios').select('id') \
+                    .in_('rol', ['admin', 'director_general']).execute().data or []
+                try:
+                    from routes_push import notify_push as _notify_push
+                except Exception:
+                    _notify_push = None
+                gestor_nombre = admin_nombre or 'Un gestor'
+                for n in notif_provisional_pendientes:
+                    tipo_label = 'caché extra' if n['campo'] == 'cache_extra' else 'transporte'
+                    titulo = "⚠️ Importe pendiente validación"
+                    body = (
+                        f"{gestor_nombre} ha introducido {n['importe']:.2f}€ de "
+                        f"{tipo_label} para {u_by_id.get(n['usuario_id'], 'músico')} "
+                        f"en {e_by_id.get(n['evento_id'], 'evento')}"
+                    )
+                    for a in admins_rows:
+                        aid = a.get('id')
+                        if not aid:
+                            continue
+                        try:
+                            supabase.table('notificaciones_gestor').insert({
+                                "gestor_id": aid,
+                                "tipo": "importe_pendiente_validacion",
+                                "titulo": titulo,
+                                "descripcion": body,
+                                "entidad_tipo": "gasto",
+                                "entidad_id": n.get('gasto_id'),
+                                "leida": False,
+                            }).execute()
+                        except Exception:
+                            pass
+                        if _notify_push:
+                            try:
+                                _notify_push(aid, titulo, body, '/plantillas-definitivas', tipo='general')
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.warning(f"Iter F1 notif provisionales: {e}")
 
         # 3) Anotaciones
         asigs_ids_tocadas = set()
@@ -2278,6 +2430,16 @@ async def get_pendientes(current_user: dict = Depends(get_current_gestor)):
         except Exception:
             solicitudes_pendientes = 0
 
+        # Iter F1 — Importes provisionales pendientes de validación (solo super admins).
+        importes_pendientes_validacion = 0
+        if is_super_admin(current_user):
+            try:
+                ipv = supabase.table('gastos_adicionales').select('id', count='exact') \
+                    .or_('cache_extra_provisional.eq.true,transporte_provisional.eq.true').execute()
+                importes_pendientes_validacion = ipv.count or 0
+            except Exception:
+                importes_pendientes_validacion = 0
+
         return {
             "reclamaciones_pendientes": reclamaciones_pendientes,
             "perfiles_actualizados": perfiles_actualizados,
@@ -2285,15 +2447,114 @@ async def get_pendientes(current_user: dict = Depends(get_current_gestor)):
             "tareas_proximas": tareas_proximas,
             "comentarios_pendientes": comentarios_pendientes,
             "solicitudes_pendientes": solicitudes_pendientes,
+            "importes_pendientes_validacion": importes_pendientes_validacion,
             "ultimo_acceso_gestor": ultimo_acceso
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
+# Iter F1 — Validar importes provisionales (solo super admins).
+@router.post("/gastos/{gasto_id}/validar")
+async def validar_importe_provisional(
+    gasto_id: str,
+    payload: dict,
+    current_user: dict = Depends(get_current_gestor),
+):
+    """Valida un importe provisional (cache_extra o transporte) de un gasto_adicional.
+    Solo super admins. Body: { campo: 'cache_extra' | 'transporte' }.
+    """
+    if not is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="Solo el director general o administradores pueden validar importes.")
+    campo = (payload or {}).get('campo')
+    if campo not in ('cache_extra', 'transporte'):
+        raise HTTPException(status_code=400, detail="Campo inválido. Debe ser 'cache_extra' o 'transporte'.")
+    prov_col = 'cache_extra_provisional' if campo == 'cache_extra' else 'transporte_provisional'
+    val_por_col = 'cache_extra_validado_por' if campo == 'cache_extra' else 'transporte_validado_por'
+    val_at_col = 'cache_extra_validado_at' if campo == 'cache_extra' else 'transporte_validado_at'
+    importe_col = 'cache_extra' if campo == 'cache_extra' else 'transporte_importe'
+
+    rows = supabase.table('gastos_adicionales').select(
+        f'id,usuario_id,evento_id,{importe_col},{prov_col}'
+    ).eq('id', gasto_id).limit(1).execute().data or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado.")
+    row = rows[0]
+    if not row.get(prov_col):
+        raise HTTPException(status_code=400, detail="Este importe ya está validado.")
+
+    profile = current_user.get('profile') or {}
+    admin_id = profile.get('id')
+    admin_nombre = (
+        f"{profile.get('nombre','')} {profile.get('apellidos','')}".strip()
+        or (profile.get('email') or 'Admin')
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    importe = float(row.get(importe_col) or 0)
+
+    supabase.table('gastos_adicionales').update({
+        prov_col: False,
+        val_por_col: admin_id,
+        val_at_col: now_iso,
+        "updated_at": now_iso,
+    }).eq('id', gasto_id).execute()
+
+    # Buscar al gestor que lo introdujo (vía registro_actividad) y notificarle.
+    try:
+        ra_rows = supabase.table('registro_actividad').select('usuario_id') \
+            .eq('entidad_tipo', 'gasto').eq('entidad_id', gasto_id) \
+            .eq('tipo', 'importe_provisional_creado') \
+            .order('created_at', desc=True).limit(1).execute().data or []
+        if ra_rows:
+            gestor_id = ra_rows[0].get('usuario_id')
+            if gestor_id:
+                tipo_label = 'caché extra' if campo == 'cache_extra' else 'transporte'
+                titulo = "✅ Importe validado"
+                body = f"Tu importe de {importe:.2f}€ de {tipo_label} ha sido validado."
+                try:
+                    supabase.table('notificaciones_gestor').insert({
+                        "gestor_id": gestor_id,
+                        "tipo": "importe_validado",
+                        "titulo": titulo,
+                        "descripcion": body,
+                        "entidad_tipo": "gasto",
+                        "entidad_id": gasto_id,
+                        "leida": False,
+                    }).execute()
+                except Exception:
+                    pass
+                try:
+                    from routes_push import notify_push as _notify_push
+                    _notify_push(gestor_id, titulo, body, '/plantillas-definitivas', tipo='general')
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Registro de actividad de la validación.
+    try:
+        supabase.table('registro_actividad').insert({
+            "tipo": "importe_validado",
+            "descripcion": f"Importe {campo}={importe}€ validado por {admin_nombre}",
+            "usuario_id": admin_id,
+            "usuario_nombre": admin_nombre,
+            "entidad_tipo": "gasto",
+            "entidad_id": gasto_id,
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "gasto_id": gasto_id,
+        "campo": campo,
+        "validado_por_nombre": admin_nombre,
+        "validado_at": now_iso,
+    }
+
+
 @router.post("/marcar-acceso")
 async def marcar_acceso_gestor(current_user: dict = Depends(get_current_gestor)):
-    """Marca el acceso actual del gestor (para tracking de 'respuestas desde último acceso')."""
     try:
         gestor_id = (current_user.get('profile') or {}).get('id')
         if not gestor_id:
@@ -3595,8 +3856,13 @@ async def get_gestion_economica(
                     cache_fuente = 'asignacion' if cache_prev > 0 else 'sin_datos'
                 cache_real = round(cache_prev * (pct_real / 100.0), 2)
                 g = gastos_by_pair.get((u['id'], ev['id'])) or {}
-                extras = float(g.get('cache_extra') or 0)
-                transp = float(g.get('transporte_importe') or 0)
+                extras_visibles = float(g.get('cache_extra') or 0)
+                transp_visibles = float(g.get('transporte_importe') or 0)
+                # Iter F1 — provisionales NO suman al TOTAL.
+                cache_extra_prov = bool(g.get('cache_extra_provisional'))
+                transporte_prov = bool(g.get('transporte_provisional'))
+                extras = 0.0 if cache_extra_prov else extras_visibles
+                transp = 0.0 if transporte_prov else transp_visibles
                 aloj = float(g.get('alojamiento_importe') or 0)
                 otros = float(g.get('otros_importe') or 0)
                 total = round(cache_real + extras + transp + aloj + otros, 2)
@@ -3630,11 +3896,16 @@ async def get_gestion_economica(
                     "cache_previsto": round(cache_prev, 2),
                     "cache_fuente": cache_fuente,
                     "cache_real": cache_real,
-                    "cache_extra": extras,
-                    "transporte_importe": transp,
+                    "cache_extra": extras_visibles,
+                    "transporte_importe": transp_visibles,
                     "alojamiento_importe": aloj,
                     "otros_importe": otros,
                     "total": total,
+                    # Iter F1 — Provisional / Validación
+                    "cache_extra_provisional": cache_extra_prov,
+                    "transporte_provisional": transporte_prov,
+                    "_extras_efectivo": extras,
+                    "_transp_efectivo": transp,
                 }
                 sec_key = seccion_de_instrumento(u.get('instrumento'))
                 if sec_key:
@@ -3650,11 +3921,11 @@ async def get_gestion_economica(
                 sec_tot = {
                     "cache_previsto": round(sum(m["cache_previsto"] for m in lst), 2),
                     "cache_real":     round(sum(m["cache_real"] for m in lst), 2),
-                    "transporte":     round(sum(m["transporte_importe"] for m in lst), 2),
+                    "transporte":     round(sum(m["_transp_efectivo"] for m in lst), 2),
                     "alojamiento":    round(sum(m["alojamiento_importe"] for m in lst), 2),
                     "otros":          round(sum(m["otros_importe"] for m in lst), 2),
                     "total":          round(sum(m["total"] for m in lst), 2),
-                    "extras":         round(sum(m["cache_extra"] for m in lst), 2),
+                    "extras":         round(sum(m["_extras_efectivo"] for m in lst), 2),
                 }
                 secciones_out.append({
                     "key": key, "label": label,
@@ -3666,14 +3937,20 @@ async def get_gestion_economica(
                 sec_tot = {
                     "cache_previsto": round(sum(m["cache_previsto"] for m in sin_seccion), 2),
                     "cache_real":     round(sum(m["cache_real"] for m in sin_seccion), 2),
-                    "transporte":     round(sum(m["transporte_importe"] for m in sin_seccion), 2),
+                    "transporte":     round(sum(m["_transp_efectivo"] for m in sin_seccion), 2),
                     "alojamiento":    round(sum(m["alojamiento_importe"] for m in sin_seccion), 2),
                     "otros":          round(sum(m["otros_importe"] for m in sin_seccion), 2),
                     "total":          round(sum(m["total"] for m in sin_seccion), 2),
-                    "extras":         round(sum(m["cache_extra"] for m in sin_seccion), 2),
+                    "extras":         round(sum(m["_extras_efectivo"] for m in sin_seccion), 2),
                 }
                 secciones_out.append({"key":"otros","label":"Sin sección","count":len(sin_seccion),
                                       "musicos":sin_seccion,"totales":sec_tot})
+
+            # Iter F1 — Limpiar campos auxiliares antes de serializar.
+            for sec in secciones_out:
+                for m in sec.get('musicos', []):
+                    m.pop('_extras_efectivo', None)
+                    m.pop('_transp_efectivo', None)
 
             cierre_info_e = cierre_by_evento_econ.get(ev['id']) or {}
             eventos_out.append({

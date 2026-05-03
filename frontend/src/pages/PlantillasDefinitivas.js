@@ -104,7 +104,7 @@ const PctInput = ({ value, onChange, dataTestId, disabled }) => (
 // ==========================================================================
 // Tabla de una sección de un evento
 // ==========================================================================
-const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajesByUser, mostrarQR, cerrado }) => {
+const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajesByUser, mostrarQR, cerrado, isSuperAdmin, onValidarImporte }) => {
   const ensayos = evento.ensayos || [];
   return (
     <div className="overflow-x-auto border-t border-slate-200" data-testid={`seccion-${evento.id}-${seccion.key}`}>
@@ -295,14 +295,39 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                 <td className={`px-1 py-1 text-right ${m.cache_fuente && (m.cache_fuente.startsWith('base') || m.cache_fuente === 'asignacion') ? 'text-orange-600 font-semibold' : 'text-amber-900'} bg-amber-50/40`} title={`Fuente: ${m.cache_fuente || '—'}`} data-testid={`cache-prev-${m.usuario_id}-${evento.id}`}>{fmtEuro(cachePrev)}</td>
                 <td className="px-1 py-1 text-right text-amber-900 bg-amber-50/40 font-medium" data-testid={`cache-real-${m.usuario_id}-${evento.id}`}>{fmtEuro(cacheReal)}</td>
                 <td className="px-1 py-1 bg-amber-50/40">
-                  <input
-                    type="number" step="0.01" min="0"
-                    value={extra || ''}
-                    onChange={(e) => onChange(m, evento.id, { cache_extra: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
-                    data-testid={`extra-${m.usuario_id}-${evento.id}`}
-                    disabled={cerrado}
-                    className="w-16 px-1 py-0.5 border border-slate-300 rounded text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
-                  />
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={extra || ''}
+                      onChange={(e) => onChange(m, evento.id, { cache_extra: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
+                      data-testid={`extra-${m.usuario_id}-${evento.id}`}
+                      disabled={cerrado}
+                      className={`w-16 px-1 py-0.5 border rounded text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed ${
+                        m.cache_extra_provisional ? 'border-orange-400 bg-orange-50 text-orange-900'
+                        : (extra > 0 ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-300')
+                      }`}
+                      title={m.cache_extra_provisional
+                        ? '⏳ Pendiente de validación'
+                        : (m.cache_extra_validado_at ? `✓ Validado por ${m.cache_extra_validado_por_nombre || '—'} · ${fmtFechaCierre(m.cache_extra_validado_at)}` : '')}
+                    />
+                    {m.cache_extra_provisional && isSuperAdmin && !cerrado && m.gasto_id && (
+                      <button
+                        type="button"
+                        onClick={() => onValidarImporte(m.gasto_id, 'cache_extra')}
+                        data-testid={`btn-validar-extra-${m.usuario_id}-${evento.id}`}
+                        className="px-1 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold whitespace-nowrap"
+                        title="Validar importe"
+                      >✓</button>
+                    )}
+                    {!m.cache_extra_provisional && extra > 0 && (
+                      <span className="text-emerald-600 text-xs leading-none" title="Importe validado" aria-hidden>✓</span>
+                    )}
+                  </div>
+                  {m.cache_extra_provisional && (
+                    <div data-testid={`badge-extra-prov-${m.usuario_id}-${evento.id}`} className="text-[9px] text-orange-700 font-semibold mt-0.5">
+                      ⏳ Pendiente validación
+                    </div>
+                  )}
                 </td>
                 <td className="px-1 py-1 bg-amber-50/40">
                   <input
@@ -320,8 +345,26 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                       value={transp || ''}
                       onChange={(e) => onChange(m, evento.id, { transporte_importe: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
                       disabled={cerrado}
-                      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
+                      className={`w-14 px-1 py-0.5 border rounded text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed ${
+                        m.transporte_provisional ? 'border-orange-400 bg-orange-50 text-orange-900'
+                        : (transp > 0 ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-300')
+                      }`}
+                      title={m.transporte_provisional
+                        ? '⏳ Pendiente de validación'
+                        : (m.transporte_validado_at ? `✓ Validado por ${m.transporte_validado_por_nombre || '—'} · ${fmtFechaCierre(m.transporte_validado_at)}` : '')}
                     />
+                    {m.transporte_provisional && isSuperAdmin && !cerrado && m.gasto_id && (
+                      <button
+                        type="button"
+                        onClick={() => onValidarImporte(m.gasto_id, 'transporte')}
+                        data-testid={`btn-validar-transp-${m.usuario_id}-${evento.id}`}
+                        className="px-1 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold whitespace-nowrap"
+                        title="Validar importe"
+                      >✓</button>
+                    )}
+                    {!m.transporte_provisional && transp > 0 && (
+                      <span className="text-emerald-600 text-xs leading-none" title="Importe validado" aria-hidden>✓</span>
+                    )}
                     <FileButton
                       url={transpUrl}
                       onFile={(f) => onUploadJust(m.usuario_id, evento.id, 'transporte', f)}
@@ -329,6 +372,11 @@ const SeccionTable = ({ evento, seccion, state, onChange, onUploadJust, fichajes
                       disabled={cerrado}
                     />
                   </div>
+                  {m.transporte_provisional && (
+                    <div data-testid={`badge-transp-prov-${m.usuario_id}-${evento.id}`} className="text-[9px] text-orange-700 font-semibold mt-0.5">
+                      ⏳ Pendiente validación
+                    </div>
+                  )}
                 </td>
                 <td className="px-1 py-1 bg-amber-50/40">
                   <div className="flex items-center gap-1">
@@ -665,6 +713,18 @@ const PlantillasDefinitivas = () => {
     }
   };
 
+  // Iter F1 — Validar importe provisional (solo super admins).
+  const validarImporte = async (gastoId, campo) => {
+    try {
+      await api.post(`/api/gestor/gastos/${gastoId}/validar`, { campo });
+      const tipoLabel = campo === 'cache_extra' ? 'caché extra' : 'transporte';
+      showFeedback('success', `Importe de ${tipoLabel} validado.`);
+      await cargar();
+    } catch (err) {
+      showFeedback('error', err.response?.data?.detail || err.message);
+    }
+  };
+
   if (loading) return <div className="p-6" data-testid="plantillas-page"><p className="text-slate-500">Cargando...</p></div>;
 
   return (
@@ -867,6 +927,8 @@ const PlantillasDefinitivas = () => {
                             fichajesByUser={fichajesByUser}
                             mostrarQR={mostrarQR}
                             cerrado={eventoCerrado}
+                            isSuperAdmin={isSuperAdmin}
+                            onValidarImporte={validarImporte}
                           />
                           {/* Fila de totales por sección */}
                           <div className="bg-slate-100 border-t border-slate-300 px-4 py-2 flex items-center justify-end gap-6 flex-wrap text-xs">
