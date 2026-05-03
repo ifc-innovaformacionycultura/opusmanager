@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## Iter B · 2026-05-03 · 5 puntos quirúrgicos (1A, 4, 13, 15, 16)
+
+### 🎯 Cambios
+- **1A** · `PlantillasDefinitivas.js`: toggle renombrado a "📊 Mostrar datos de fichaje QR" + `<p data-testid="qr-toggle-help">` con texto explicativo completo.
+- **4** · `PerfilCompletitudAlerts.js`: `NIVELES` ahora son los 4 valores canónicos — Superior finalizado / Superior cursando / Profesional finalizado / Profesional cursando.
+- **4** · `portal/MiPerfil.js`: nuevo `<select data-testid="perfil-nivel_estudios">` con los mismos 4 valores dentro de "Datos profesionales".
+- **4** · `routes_portal.py`: añadida línea `nivel_estudios: Optional[str] = None` a `MiPerfilUpdate` para permitir la persistencia (fix autorizado por el usuario tras RCA).
+- **13** · `ConfiguracionEventos.js`: eliminado el `<Section form_inscripcion>` con el enlace a Google Form.
+- **15** · Verificación: bloqueo de publicación intacto en líneas 1117-1135 (alert con secciones pendientes al pasar borrador→abierto).
+- **16** · `SeguimientoConvocatorias.js`: eventos ocultables con icono EyeOff individual + botón global "Mostrar todos (N)" + colapso a columna estrecha con nombre vertical + persistencia `localStorage` key `seguimiento_eventos_ocultos`.
+
+### ✅ Validación
+- **Backend**: 7/7 pytest PASS con persistencia verificada vía admin y re-login (no se confía en el GET cacheado del JWT).
+- **Frontend**: los 5 puntos verificados runtime por testing agent (testids `toggle-mostrar-qr`, `qr-toggle-help`, `perfil-nivel_estudios`, `modal-select-nivel`, ausencia de `section-form_inscripcion`, `btn-ocultar-evento-*`, `btn-mostrar-todos-eventos`, `block-evento-*-collapsed`, `cell-collapsed-*`).
+- **0 regresiones** sobre iter28/29/30.
+
+### ℹ️ Menor (ya existente, no se toca)
+- `GET /api/portal/mi-perfil` devuelve el `profile` del JWT cacheado y no relee DB — tras un PUT es necesario `logout/login` o hacer `window.location.reload()` (que el frontend ya hace).
+
+
+
 ## Iter 30 · 2026-05-03 · Dashboard bloques colapsables
 
 ### 🎨 Cambio visual único
