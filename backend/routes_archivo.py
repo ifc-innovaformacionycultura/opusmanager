@@ -1134,6 +1134,99 @@ async def eliminar_obras_favorita(lista_id: str,
     return {"ok": True}
 
 
+@router.get("/evento/{evento_id}/programa/pdf")
+async def exportar_programa_pdf(evento_id: str, current_user: dict = Depends(get_current_gestor)):
+    """B-PDF (2026-05-03) — Exporta el Programa Musical como PDF (ReportLab vía pdf_renderer).
+    Incluye cabecera del evento (nombre, lugar, fechas, temporada), tabla de obras
+    (orden, autor, obra, duración, notas) y total de duración al pie.
+    """
+    from html import escape as _esc
+    from datetime import datetime as _dt
+    try:
+        from pdf_renderer import html_to_pdf_bytes
+    except Exception:
+        raise HTTPException(status_code=500, detail="pdf_renderer no disponible")
+
+    # 1. Cargar evento
+    ev_rows = supabase.table('eventos').select('id,nombre,lugar,fecha_inicio,fecha_fin,temporada') \
+        .eq('id', evento_id).limit(1).execute().data or []
+    if not ev_rows:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    ev = ev_rows[0]
+
+    # 2. Cargar programa
+    obras_rows = supabase.table('evento_obras') \
+        .select('orden_programa,titulo_provisional,duracion_display,autor_display,notas,obra:obras(titulo,autor)') \
+        .eq('evento_id', evento_id) \
+        .order('orden_programa').execute().data or []
+
+    # 3. Construir HTML
+    def _row_html(idx, r):
+        autor = (r.get('obra') or {}).get('autor') or r.get('autor_display') or ''
+        titulo = (r.get('obra') or {}).get('titulo') or r.get('titulo_provisional') or '(sin título)'
+        dur = r.get('duracion_display') or ''
+        notas = r.get('notas') or ''
+        return f"<tr><td>{idx}</td><td>{_esc(autor)}</td><td>{_esc(titulo)}</td><td>{_esc(dur)}</td><td>{_esc(notas)}</td></tr>"
+
+    # 4. Suma tolerante de duración (acepta "15", "15'", "15:30", "1h 20'", etc.)
+    def _to_minutes(s):
+        if not s:
+            return 0
+        s = str(s).strip().lower().replace("′", "'").replace("’", "'")
+        total = 0
+        # h
+        mh = re.search(r"(\d+)\s*h", s)
+        if mh:
+            total += int(mh.group(1)) * 60
+            s = re.sub(r"\d+\s*h", "", s)
+        # mm:ss → solo mm
+        mc = re.search(r"(\d+)\s*:\s*\d+", s)
+        if mc:
+            total += int(mc.group(1))
+            return total
+        # primer número que aparezca = minutos
+        mn = re.search(r"\d+", s)
+        if mn:
+            total += int(mn.group())
+        return total
+
+    total_min = sum(_to_minutes(r.get('duracion_display')) for r in obras_rows)
+    total_str = f"{total_min // 60}h {total_min % 60:02d}'" if total_min >= 60 else f"{total_min}'"
+    ahora = _dt.now().strftime('%d/%m/%Y %H:%M')
+
+    fecha_str = ''
+    if ev.get('fecha_inicio') and ev.get('fecha_fin') and ev['fecha_inicio'] != ev['fecha_fin']:
+        fecha_str = f"{ev['fecha_inicio']} – {ev['fecha_fin']}"
+    elif ev.get('fecha_inicio'):
+        fecha_str = ev['fecha_inicio']
+
+    info_partes = [p for p in [ev.get('lugar'), fecha_str, ev.get('temporada')] if p]
+    info_linea = ' · '.join(info_partes)
+
+    rows_html = "\n".join(_row_html(i + 1, r) for i, r in enumerate(obras_rows)) or \
+        '<tr><td colspan="5"><i>Sin obras en el programa.</i></td></tr>'
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<h1>Programa Musical</h1>
+<h2>{_esc(ev.get('nombre') or 'Evento')}</h2>
+<p>{_esc(info_linea)}</p>
+<table>
+  <tr><th>Nº</th><th>Autor</th><th>Obra</th><th>Duración</th><th>Notas</th></tr>
+  {rows_html}
+</table>
+<p><b>Duración total estimada:</b> {_esc(total_str)}</p>
+<p><i>Generado el {_esc(ahora)} por OPUS Manager.</i></p>
+</body></html>"""
+
+    pdf_bytes = html_to_pdf_bytes(html)
+    safe_name = re.sub(r'[^\w\-]+', '_', (ev.get('nombre') or 'evento'))[:60]
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="programa_{safe_name}.pdf"'},
+    )
+
+
 @router.post("/evento/{evento_id}/programa/aplicar-lista/{lista_id}")
 async def aplicar_lista_obras(evento_id: str, lista_id: str,
                                current_user: dict = Depends(get_current_gestor)):

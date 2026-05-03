@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## Iter F4.3 · 2026-05-03 · Exportar Programa Musical a PDF + debounce typeahead
+
+### 🎯 Cambios (2 archivos · 0 SQL)
+
+#### Backend `routes_archivo.py`
+- Nuevo `GET /api/gestor/archivo/evento/{evento_id}/programa/pdf` (~95 líneas).
+- Reutiliza `pdf_renderer.html_to_pdf_bytes` (ReportLab puro — sin WeasyPrint, sin nuevas deps).
+- Contenido: cabecera evento (nombre, lugar, fecha_inicio–fecha_fin, temporada) + tabla numerada (Nº · Autor · Obra · Duración · Notas) + total estimado + footer con timestamp.
+- Suma tolerante de duración (acepta `15`, `15'`, `15:30`, `1h 20'`, etc.).
+- Devuelve `StreamingResponse(media_type='application/pdf')` con `Content-Disposition: attachment; filename="programa_<nombre>.pdf"`.
+- Validaciones: 404 si evento no existe, 403 si sin auth.
+
+#### Frontend `ConfiguracionEventos.js`
+- Botón **📄 Exportar PDF** en cabecera del Programa Musical (junto a "💾 Guardar todo"), `data-testid="btn-exportar-programa-pdf"`.
+- Función `exportarPDF`: hace `flushRow` de pendientes ANTES de llamar al endpoint, descarga blob PDF como anchor `download`.
+- Debounce typeahead Programa Musical: 250ms → **200ms** (sugerencia del sub-agente F4.2 aceptada).
+
+### ✅ Self-test
+- Lint OK ambos archivos (los warnings de routes_archivo.py son preexistentes E701 estilísticos del codebase).
+- E2E backend: 200 con `application/pdf` + 2.3 KB + cabecera `%PDF-1.4` correcta. 404 para evento inexistente. 403 sin auth.
+- E2E frontend: dashboard y `/configuracion/eventos` renderizan correctamente.
+
+---
+
 ## Iter F4.2 · 2026-05-03 · Refactor + 4 bugs
 
 ### 🎯 Cambios (4 archivos · 0 SQL)

@@ -374,6 +374,30 @@ const ProgramaMusicalBackend = ({ event, legacyProgram, isSuperAdmin, currentUse
     }
   };
 
+  // B-PDF (2026-05-03) — Exporta el Programa Musical a PDF descargable.
+  const exportarPDF = async () => {
+    if (!eventoId) return;
+    // Asegura que cualquier cambio pendiente esté persistido antes de generar el PDF
+    const pendingIds = Object.keys(patchTimers.current);
+    if (pendingIds.length > 0) {
+      await Promise.all(pendingIds.map(id => flushRow(id)));
+    }
+    try {
+      const r = await api.get(`/api/gestor/archivo/evento/${eventoId}/programa/pdf`, { responseType: 'blob' });
+      const blob = new Blob([r.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `programa_${(event?.name || event?.nombre || 'evento').replace(/[^\w\-]+/g, '_').slice(0, 60)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      alert('No se pudo exportar el PDF: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
   const puedeEditarLista = (lista) =>
     isSuperAdmin || (lista.creado_por && lista.creado_por === currentUserId);
 
@@ -398,6 +422,16 @@ const ProgramaMusicalBackend = ({ event, legacyProgram, isSuperAdmin, currentUse
           title="Fuerza el guardado inmediato de cualquier cambio pendiente"
         >
           💾 Guardar todo
+        </button>
+        <button
+          type="button"
+          onClick={exportarPDF}
+          disabled={!eventoId || rows.length === 0}
+          className="text-xs px-3 py-1.5 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-40"
+          data-testid="btn-exportar-programa-pdf"
+          title="Descargar PDF del programa con cabecera del evento"
+        >
+          📄 Exportar PDF
         </button>
         {Object.values(saveState).some(v => v === 'pending' || v === 'saving') && (
           <span className="text-[10px] text-amber-700 italic">Guardando cambios…</span>
