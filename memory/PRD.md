@@ -52,7 +52,9 @@ Sistema integral para gestión de convocatorias, temporadas, eventos y plantilla
 - [x] **Iter F2.1 — Reordenar operaciones de transporte con flechas ↑↓**
 - [x] **Iter F3 — Programa Musical conectado con Archivo + Listas obras favoritas globales** (2026-05-03)
 - [x] **Iter F4 — Reglas de fichaje por ensayo + plantillas globales** (2026-05-03 · 3 archivos · backend 17/17 PASS · regresión 49/50)
-- [ ] **Iter F5 — TBD** (siguiente P0 — Tour interactivo / QR rápido / Adjuntos comunicaciones / Google OAuth — esperar prioridad del usuario)
+- [x] **Iter F4.1 — Fix routing 404 + badge "Regla específica"** (2026-05-03 · 2 archivos · self-test E2E PASS)
+- [x] **Iter F4.2 — Refactor FichajeConfigPanel + 4 bugs (Programa Musical / ensayos 404 / reclamaciones 500 / inventario typeahead)** (2026-05-03 · 4 archivos · 7/7 PASS + regresión 66/67)
+- [ ] **Iter F5 — TBD** (próximo P0; opciones en cola: PDF Programa Musical, Tour interactivo, Google OAuth, Adjuntos comunicaciones)
 
 > Ver `/app/memory/CHANGELOG.md` para el detalle del sprint Iter 20.
 

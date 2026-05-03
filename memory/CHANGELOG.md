@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## Iter F4.2 · 2026-05-03 · Refactor + 4 bugs
+
+### 🎯 Cambios (4 archivos · 0 SQL)
+
+#### B1 — Refactor `FichajeConfigPanel`
+- **Nuevo** `/app/frontend/src/components/FichajeConfigPanel.js` (~410 líneas): exporta `FichajeConfigPanel` y `FichajePlantillaEventoButton`.
+- **Editado** `ConfiguracionEventos.js`: añadido import; eliminadas las definiciones locales (líneas 455-857 antes; -398 líneas netas; archivo 2310 → 1912 antes de B2).
+
+#### B2 — Fix Programa Musical
+- **`ProgramaMusicalBackend` reescrito** (`ConfiguracionEventos.js`):
+  - **Autosave quirúrgico**: `flushRow` hace merge de campos devueltos por el server (no recarga toda la tabla), evita race condition con typing concurrente. Debounce 800ms por fila.
+  - **Indicador `save-state` por fila**: 4 estados visuales (`pending`/`saving`/`saved`/`error`) con auto-dismiss tras 1500ms.
+  - **Typeahead** sobre `/api/gestor/archivo/obras?q=…`: dropdown bajo input título, click vincula `obra_id` automáticamente.
+  - **Botón "💾 Guardar todo"** en cabecera (force-flush de pendientes).
+  - **Botón "desvincular"** en filas confirmadas para revertir a provisional.
+
+#### B3 — Endpoint `GET /api/gestor/eventos/{id}/ensayos`
+- **`routes_gestor.py`** (~línea 2148): nuevo endpoint que devuelve 200 con `{ensayos:[...]}` (antes 404 → afectaba `MontajeRiderSection`).
+- Usa columna `hora` (no `hora_inicio`).
+
+#### B4 — Fix Reclamaciones 500 (PostgREST PGRST201)
+- **`routes_gestor.py:3474`**: cambio quirúrgico de `usuario:usuarios(...)` a `usuario:usuarios!reclamaciones_usuario_id_fkey(...)`. Resuelve embed ambiguo (la tabla tiene 2 FKs a usuarios: `usuario_id` y `gestor_id`).
+
+#### B5 — Typeahead + multi-select inventario en Montaje
+- **`MontajeRiderSection.js`**: nuevo subcomponente `InventarioPicker` (~línea 30-135).
+- Botón "🔍 Añadir desde catálogo" en cabecera de items por operación.
+- Filtro typeahead client-side (nombre/código/tipo, top 30).
+- Multi-select con checkboxes + contador "N seleccionado(s)".
+- Click-outside cierra dropdown automáticamente.
+
+### ✅ Tests (`iteration_43.json`)
+- Backend: **7/7 PASS** (B2, B3, B4 endpoints) + **66/67 regresión PASS** (1 SKIP pre-existente F3 iter 41).
+- Frontend code review: **100%** — todos los `data-testid` presentes, gates correctos, autosave robusto.
+- Runtime: **dashboard** y **/configuracion/eventos** renderizan correctamente (resuelve bloqueo pre-existente iter 40-42 como efecto colateral del refactor).
+- Test file: `/app/backend/tests/test_iter_f42_bloques.py` (autosuficiente, prefix TEST_F42_).
+
+---
+
 ## Iter F4.1 · 2026-05-03 · Fix routing 404 + badge "Regla específica"
 
 ### 🎯 Cambios (2 archivos · 0 SQL)
