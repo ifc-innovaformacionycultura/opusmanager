@@ -1,0 +1,67 @@
+{
+  "summary": "Iter F2 — Transporte de Material multi-operación + Listas favoritas. Backend 21/21 PASS (100%) incluyendo CRUD operaciones, items REPLACE, 5 tipos válidos, items repetidos en carga_origen, listas favoritas CRUD globales, 403 gestor normal en DELETE, regresión legacy GET/PUT intactos. Regresión Iter D/E1/E2/F1: 35/35 PASS. Frontend: code-level review OK (data-testids correctos, isSuperAdmin gate, modales, useEffect carga ops+listasFav). UI runtime test parcial — la página /configuracion-eventos no renderiza contenido principal con admin (solo sidebar), bloqueando el test de expandir un evento. Como permite el agent_to_agent_context_note, fallback aplicado: backend completo + revisión código frontend.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "/configuracion-eventos", "issue": "Página renderiza solo sidebar al entrar como admin (sin lista de eventos). No bloquea ya que MontajeRiderSection se renderiza embebida; pero impide el test E2E de expandir evento → ver section-transporte. Puede ser un bug previo de la página contenedora, NO de MontajeRiderSection. NO se ha tocado ConfiguracionEventos.js en Iter F2 según spec.", "affected_selectors": ["body main"]}
+    ],
+    "design_issues": []
+  },
+  "test_results_detail": {
+    "BE_T1_get_operaciones_estructura": "PASS — devuelve {cabecera, operaciones:[{...,items:[]}]} ordenadas por orden+created_at.",
+    "BE_T2_put_cabecera": "PASS — actualiza solo empresa/contacto/teléfono/presupuesto/estado/notas; verificado vía GET subsecuente.",
+    "BE_T3_post_operacion_con_items": "PASS — crea op con 2 items, persistencia verificada (GET devuelve op con items[]).",
+    "BE_T4_post_tipo_invalido_422": "PASS — Pydantic Literal rechaza 'tipo_invalido_xx' con 422.",
+    "BE_T5_carga_origen_items_repetidos": "PASS — 3 items con mismo nombre_manual aceptados.",
+    "BE_T6_put_replace_items": "PASS — los items previos se borran y se insertan los nuevos (verificado vía GET).",
+    "BE_T7_put_404": "PASS — operación inexistente devuelve 404.",
+    "BE_T8_delete_cascada": "PASS — DELETE op borra items + op; verificado que ya no aparece en GET.",
+    "BE_T9_delete_404": "PASS — operación inexistente devuelve 404.",
+    "BE_T10_5_tipos_validos": "PASS (5/5) — carga_origen, descarga_destino, carga_destino, descarga_origen, otro → todos 200.",
+    "BE_T11_get_listas_favoritas": "PASS — devuelve {listas:[...]} ordenadas por nombre.",
+    "BE_T12_post_lista_creado_por_auto": "PASS — creado_por (UUID gestor) y creado_por_nombre auto-rellenados.",
+    "BE_T13_put_lista_actualiza": "PASS — nombre/descripcion/items reemplazados, verificado vía GET.",
+    "BE_T14_delete_403_gestor_normal": "PASS — palvarez@netmetrix.es recibe 403 con detail conteniendo 'director general' o 'administradores'.",
+    "BE_T15_delete_admin_ok": "PASS — admin@convocatorias.com elimina correctamente; verificado que desapareció.",
+    "BE_T16_regresion_legacy_get": "PASS — GET /api/gestor/transporte-material/{evento_id} (sin /operaciones) sigue devolviendo {transporte:{...campos planos}} sin 'cabecera' ni 'operaciones'.",
+    "BE_T17_regresion_legacy_put": "PASS — PUT /api/gestor/transporte-material/{evento_id} con TransporteMaterialIn (campos planos) sigue funcionando, action=updated.",
+    "BE_REGRESION_iter_f1": "PASS 11/11 (provisionales).",
+    "BE_REGRESION_iter_e2": "PASS 9/9 (cerrar económico).",
+    "BE_REGRESION_iter_e1": "PASS 9/9 (concluir plantilla).",
+    "BE_REGRESION_iter_d": "PASS 6/6 (comedor).",
+    "FE_CODE_REVIEW_data_testids": "PASS — todos los testids del spec presentes: section-transporte, btn-listas-favoritas, btn-add-operacion, op-tipo-{idx}, op-fecha-{idx}, op-hora-{idx}, btn-eliminar-op-{idx}, btn-cargar-fav-{idx}, btn-guardar-fav-{idx}, btn-add-item-{idx}, btn-guardar-op-{idx}, modal-listas-fav, modal-cargar-fav, modal-guardar-fav, btn-eliminar-fav-{lista_id}, input-nombre-fav, btn-confirmar-guardar-fav, btn-aplicar-fav-{lista_id}.",
+    "FE_CODE_REVIEW_isSuperAdmin": "PASS — gate isSuperAdminUser(user) verifica rol 'admin'/'director_general' o email 'admin@convocatorias.com', usado para mostrar btn-eliminar-fav-{id}.",
+    "FE_CODE_REVIEW_useEffect": "PASS — carga inicial llama /transporte-material/{id}/operaciones y /listas-material-favoritas dentro de useEffect con dependencia [api, evento.id]; manejo de errores por bloque (try/catch independientes).",
+    "FE_RUNTIME_montaje_section": "SKIPPED — /configuracion-eventos no renderiza contenido principal (solo sidebar) con admin, impide expandir un evento. No es regresión de Iter F2 (ConfiguracionEventos.js NO modificado)."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter_f2_transporte_ops.py",
+    "/app/test_reports/pytest/iter_f2.xml",
+    "/app/test_reports/pytest/iter_f2_regression.xml"
+  ],
+  "action_items": [
+    "Investigar por qué /configuracion-eventos no muestra la lista de eventos al entrar como admin@convocatorias.com (posible regresión previa o requiere navegar primero por menú lateral 'Logística y Servicios → Configuración Eventos'). NO bloquea Iter F2 backend.",
+    "(Sugerencia menor, no bloqueante) En backend POST/PUT operaciones: data.tipo se valida vía Literal pero sin trim de strings; aceptable."
+  ],
+  "critical_code_review_comments": [
+    "OK — _ensure_transporte_id crea transporte_material si no existe, idempotente.",
+    "OK — PUT operaciones hace REPLACE de items via delete+insert (no merge), consistente con spec.",
+    "OK — DELETE operación hace cascada manual de items (no depende de FK ON DELETE CASCADE en BD).",
+    "OK — _is_super_admin_local usa auth_utils.is_super_admin con fallback robusto a rol+email match.",
+    "OK — Cabecera PUT usa exclude_unset=True para no sobrescribir con None campos no enviados.",
+    "OK — listas_material_favoritas usa items JSONB, no FK; permite materiales manuales y catálogo.",
+    "OK — Frontend useEffect aísla cada fetch en try/catch, evitando que un error rompa toda la sección.",
+    "Sugerencia menor: en POST /listas-material-favoritas, profile.get('id') puede ser None si profile vacío; podría devolver 500 en BD si la columna creado_por es NOT NULL. No probado por límite de scope (admin/gestor del test sí tienen profile.id válido)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_f2_transporte_ops.py (NUEVO — 21 tests pytest, incluye cleanup automático)"
+  ],
+  "success_rate": {"backend": "100% (21/21 nuevos + 35/35 regresión)", "frontend": "100% code review (runtime UI test bloqueado por página contenedora)"},
+  "test_credentials": "admin@convocatorias.com / Admin123! · palvarez@netmetrix.es / Opus2026!",
+  "seed_data_creation": "Durante el test se crean operaciones y listas favoritas con prefijo 'TEST_F2'; CLEANUP automático en fixture autouse module-scoped que borra todas las ops creadas (DELETE como admin) y listas favoritas (DELETE como admin). Verificado que no quedan datos residuales TEST_F2 al finalizar (excepto posiblemente la cabecera del evento c4409142 que mantiene los valores 'TEST_F2_LEGACY' del test legacy regresión — main agent puede limpiarlos manualmente vía PUT cabecera con valores reales si lo desea).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter F2 backend 100% PASS (21/21) + regresión Iter D/E1/E2/F1 100% (35/35). Test file test_iter_f2_transporte_ops.py es autosuficiente con cleanup automático. UI runtime testing parcial: /configuracion-eventos renderiza solo sidebar con admin — investigar como issue separado, NO toca Iter F2 (ConfiguracionEventos.js no modificado en Iter F2). Para reproducir UI E2E: verificar que la página principal carga eventos al entrar como admin; alternativamente probar como gestor normal si tiene eventos asignados. La cabecera del evento c4409142 puede tener valores TEST_F2_LEGACY (empresa='TEST_F2_LEGACY Empresa', etc.) — limpieza manual opcional.",
+  "rca of the issue": "N/A — no se encontraron bugs en Iter F2. El issue de /configuracion-eventos vacío con admin existe fuera del scope de Iter F2 (no hay cambios en ConfiguracionEventos.js)."
+}

@@ -306,3 +306,247 @@ async def upsert_transporte_material(evento_id: str, data: TransporteMaterialIn,
         return {"transporte": payload, "action": "updated"}
     res = supabase.table('transporte_material').insert(payload).execute()
     return {"transporte": (res.data or [None])[0], "action": "created"}
+
+
+# ============================================================
+# Iter F2 — Transporte multi-operación
+# ============================================================
+TIPO_OP_VALIDOS = ('carga_origen', 'descarga_destino', 'carga_destino', 'descarga_origen', 'otro')
+
+
+class TransporteOperacionItemIn(BaseModel):
+    id: Optional[str] = None
+    material_id: Optional[str] = None
+    nombre_manual: Optional[str] = None
+    cantidad: Optional[int] = 1
+    notas: Optional[str] = None
+    foto_url: Optional[str] = None
+
+
+class TransporteOperacionIn(BaseModel):
+    tipo: Literal['carga_origen', 'descarga_destino', 'carga_destino', 'descarga_origen', 'otro']
+    orden: Optional[int] = 0
+    fecha: Optional[str] = None
+    hora: Optional[str] = None
+    direccion: Optional[str] = None
+    notas: Optional[str] = None
+    items: List[TransporteOperacionItemIn] = []
+
+
+class TransporteCabeceraIn(BaseModel):
+    """Cabecera nueva (sin tocar campos legacy de fechas/horas/direcciones)."""
+    empresa: Optional[str] = None
+    contacto_empresa: Optional[str] = None
+    telefono_empresa: Optional[str] = None
+    presupuesto_euros: Optional[float] = None
+    estado: Optional[Literal['pendiente', 'confirmado', 'cancelado']] = None
+    notas: Optional[str] = None
+
+
+class ListaFavoritaItem(BaseModel):
+    material_id: Optional[str] = None
+    nombre_manual: Optional[str] = None
+    cantidad: Optional[int] = 1
+    notas: Optional[str] = None
+    orden: Optional[int] = 0
+
+
+class ListaFavoritaIn(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = None
+    items: List[ListaFavoritaItem] = []
+
+
+def _ensure_transporte_id(evento_id: str) -> str:
+    """Devuelve transporte_material.id para el evento (lo crea si no existe)."""
+    rows = supabase.table('transporte_material').select('id').eq('evento_id', evento_id).limit(1).execute().data or []
+    if rows:
+        return rows[0]['id']
+    res = supabase.table('transporte_material').insert({'evento_id': evento_id}).execute()
+    return (res.data or [{}])[0].get('id')
+
+
+@router.get("/transporte-material/{evento_id}/operaciones")
+async def get_transporte_operaciones(evento_id: str, current_user: dict = Depends(get_current_gestor)):
+    """Devuelve cabecera + operaciones (con items[]) del transporte del evento."""
+    cab_rows = supabase.table('transporte_material').select('*').eq('evento_id', evento_id).limit(1).execute().data or []
+    cabecera = cab_rows[0] if cab_rows else None
+    operaciones: List[Dict] = []
+    if cabecera:
+        ops = supabase.table('transporte_material_operaciones').select('*') \
+            .eq('transporte_id', cabecera['id']).order('orden').order('created_at').execute().data or []
+        op_ids = [o['id'] for o in ops]
+        items_by_op: Dict[str, List[Dict]] = {oid: [] for oid in op_ids}
+        if op_ids:
+            its = supabase.table('transporte_material_items').select('*') \
+                .in_('operacion_id', op_ids).order('created_at').execute().data or []
+            for it in its:
+                items_by_op.setdefault(it['operacion_id'], []).append(it)
+        for o in ops:
+            o['items'] = items_by_op.get(o['id'], [])
+            operaciones.append(o)
+    return {"cabecera": cabecera, "operaciones": operaciones}
+
+
+@router.put("/transporte-material/{evento_id}/cabecera")
+async def update_transporte_cabecera(evento_id: str, data: TransporteCabeceraIn, current_user: dict = Depends(get_current_gestor)):
+    """Actualiza solo la cabecera nueva. NO toca campos legacy."""
+    payload = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
+    payload['updated_at'] = datetime.now(timezone.utc).isoformat()
+    existing = supabase.table('transporte_material').select('id').eq('evento_id', evento_id).limit(1).execute().data or []
+    if existing:
+        supabase.table('transporte_material').update(payload).eq('id', existing[0]['id']).execute()
+        tm_id = existing[0]['id']
+    else:
+        payload['evento_id'] = evento_id
+        res = supabase.table('transporte_material').insert(payload).execute()
+        tm_id = (res.data or [{}])[0].get('id')
+    return {"ok": True, "transporte_id": tm_id}
+
+
+@router.post("/transporte-material/{evento_id}/operaciones")
+async def crear_operacion(evento_id: str, data: TransporteOperacionIn, current_user: dict = Depends(get_current_gestor)):
+    """Crea una nueva operación con sus items."""
+    transporte_id = _ensure_transporte_id(evento_id)
+    if not transporte_id:
+        raise HTTPException(status_code=500, detail="No se pudo crear/obtener transporte_material")
+    op_payload = {
+        "transporte_id": transporte_id,
+        "tipo": data.tipo,
+        "orden": data.orden or 0,
+        "fecha": data.fecha,
+        "hora": data.hora,
+        "direccion": data.direccion,
+        "notas": data.notas,
+    }
+    res = supabase.table('transporte_material_operaciones').insert(op_payload).execute()
+    op = (res.data or [None])[0]
+    if not op:
+        raise HTTPException(status_code=500, detail="Error creando operación")
+    # Items
+    if data.items:
+        items_payload = []
+        for it in data.items:
+            items_payload.append({
+                "operacion_id": op['id'],
+                "material_id": it.material_id,
+                "nombre_manual": it.nombre_manual,
+                "cantidad": it.cantidad if it.cantidad is not None else 1,
+                "notas": it.notas,
+                "foto_url": it.foto_url,
+            })
+        supabase.table('transporte_material_items').insert(items_payload).execute()
+    return {"ok": True, "operacion_id": op['id']}
+
+
+@router.put("/transporte-material/operaciones/{operacion_id}")
+async def actualizar_operacion(operacion_id: str, data: TransporteOperacionIn, current_user: dict = Depends(get_current_gestor)):
+    """Actualiza operación + REPLACE de sus items (delete-all + insert-all)."""
+    op_row = supabase.table('transporte_material_operaciones').select('id') \
+        .eq('id', operacion_id).limit(1).execute().data or []
+    if not op_row:
+        raise HTTPException(status_code=404, detail="Operación no encontrada")
+    op_payload = {
+        "tipo": data.tipo,
+        "orden": data.orden or 0,
+        "fecha": data.fecha,
+        "hora": data.hora,
+        "direccion": data.direccion,
+        "notas": data.notas,
+    }
+    supabase.table('transporte_material_operaciones').update(op_payload).eq('id', operacion_id).execute()
+    # Replace items
+    supabase.table('transporte_material_items').delete().eq('operacion_id', operacion_id).execute()
+    if data.items:
+        items_payload = [{
+            "operacion_id": operacion_id,
+            "material_id": it.material_id,
+            "nombre_manual": it.nombre_manual,
+            "cantidad": it.cantidad if it.cantidad is not None else 1,
+            "notas": it.notas,
+            "foto_url": it.foto_url,
+        } for it in data.items]
+        supabase.table('transporte_material_items').insert(items_payload).execute()
+    return {"ok": True, "operacion_id": operacion_id}
+
+
+@router.delete("/transporte-material/operaciones/{operacion_id}")
+async def eliminar_operacion(operacion_id: str, current_user: dict = Depends(get_current_gestor)):
+    """Elimina operación y todos sus items (cascada manual)."""
+    op_row = supabase.table('transporte_material_operaciones').select('id') \
+        .eq('id', operacion_id).limit(1).execute().data or []
+    if not op_row:
+        raise HTTPException(status_code=404, detail="Operación no encontrada")
+    supabase.table('transporte_material_items').delete().eq('operacion_id', operacion_id).execute()
+    supabase.table('transporte_material_operaciones').delete().eq('id', operacion_id).execute()
+    return {"ok": True}
+
+
+# ----- Listas favoritas globales (items en JSONB) -----
+
+def _is_super_admin_local(current_user: dict) -> bool:
+    """Mismo criterio que en routes_gestor.is_super_admin (auth_utils.is_super_admin)."""
+    try:
+        from auth_utils import is_super_admin as _isa
+        return _isa(current_user)
+    except Exception:
+        profile = current_user.get('profile') or {}
+        rol = profile.get('rol')
+        if rol in ('admin', 'director_general'):
+            return True
+        email = (profile.get('email') or '').lower()
+        return email == 'admin@convocatorias.com'
+
+
+@router.get("/listas-material-favoritas")
+async def listar_favoritas(current_user: dict = Depends(get_current_gestor)):
+    rows = supabase.table('listas_material_favoritas').select('*') \
+        .order('nombre').execute().data or []
+    return {"listas": rows}
+
+
+@router.post("/listas-material-favoritas")
+async def crear_favorita(data: ListaFavoritaIn, current_user: dict = Depends(get_current_gestor)):
+    profile = current_user.get('profile') or {}
+    nombre_creador = (
+        f"{profile.get('nombre','')} {profile.get('apellidos','')}".strip()
+        or (profile.get('email') or '')
+    )
+    payload = {
+        "nombre": data.nombre,
+        "descripcion": data.descripcion,
+        "creado_por": profile.get('id'),
+        "creado_por_nombre": nombre_creador,
+        "items": [it.model_dump(exclude_none=True) for it in data.items],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = supabase.table('listas_material_favoritas').insert(payload).execute()
+    return {"lista": (res.data or [None])[0]}
+
+
+@router.put("/listas-material-favoritas/{lista_id}")
+async def actualizar_favorita(lista_id: str, data: ListaFavoritaIn, current_user: dict = Depends(get_current_gestor)):
+    row = supabase.table('listas_material_favoritas').select('id') \
+        .eq('id', lista_id).limit(1).execute().data or []
+    if not row:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    payload = {
+        "nombre": data.nombre,
+        "descripcion": data.descripcion,
+        "items": [it.model_dump(exclude_none=True) for it in data.items],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    supabase.table('listas_material_favoritas').update(payload).eq('id', lista_id).execute()
+    return {"ok": True, "lista_id": lista_id}
+
+
+@router.delete("/listas-material-favoritas/{lista_id}")
+async def eliminar_favorita(lista_id: str, current_user: dict = Depends(get_current_gestor)):
+    if not _is_super_admin_local(current_user):
+        raise HTTPException(status_code=403, detail="Solo el director general o administradores pueden eliminar listas favoritas.")
+    row = supabase.table('listas_material_favoritas').select('id') \
+        .eq('id', lista_id).limit(1).execute().data or []
+    if not row:
+        raise HTTPException(status_code=404, detail="Lista no encontrada")
+    supabase.table('listas_material_favoritas').delete().eq('id', lista_id).execute()
+    return {"ok": True}
