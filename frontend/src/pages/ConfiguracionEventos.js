@@ -285,7 +285,7 @@ const ProgramaMusicalBackend = ({ event, legacyProgram, isSuperAdmin, currentUse
       } catch {
         setSearch(s => ({ ...s, [eo_id]: { ...(s[eo_id] || {}), results: [], loading: false } }));
       }
-    }, 250);
+    }, 200);
   };
 
   const seleccionarObra = async (eo_id, obra) => {
