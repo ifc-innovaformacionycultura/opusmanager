@@ -2145,6 +2145,21 @@ async def create_ensayo(
             detail=f"Error al crear ensayo: {str(e)}"
         )
 
+@router.get("/eventos/{evento_id}/ensayos")
+async def get_ensayos_de_evento(
+    evento_id: str,
+    current_user: dict = Depends(get_current_gestor)
+):
+    """B3 · Lista los ensayos/funciones de un evento (usado por MontajeRiderSection)."""
+    try:
+        res = supabase.table('ensayos').select('*') \
+            .eq('evento_id', evento_id) \
+            .order('fecha').order('hora').execute()
+        return {"ensayos": res.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al listar ensayos: {str(e)}")
+
+
 @router.delete("/ensayos/{ensayo_id}")
 async def delete_ensayo(
     ensayo_id: str,
@@ -3456,7 +3471,7 @@ async def get_reclamaciones_gestor(current_user: dict = Depends(get_current_gest
     """Todas las reclamaciones para el panel del gestor."""
     try:
         res = supabase.table('reclamaciones') \
-            .select('*, usuario:usuarios(nombre,apellidos,email), evento:eventos(nombre,temporada)') \
+            .select('*, usuario:usuarios!reclamaciones_usuario_id_fkey(nombre,apellidos,email), evento:eventos(nombre,temporada)') \
             .order('fecha_creacion', desc=True) \
             .execute()
         return {"reclamaciones": res.data or []}

@@ -27,6 +27,116 @@ const isSuperAdminUser = (user) => {
   return email === 'admin@convocatorias.com';
 };
 
+// ============================================================
+// B5 (2026-05-03) — Typeahead + multi-select de inventario
+// Reemplaza el <select> nativo plano para items de operaciones.
+// ============================================================
+const InventarioPicker = ({ materiales, onAddMany, testIdPrefix }) => {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [seleccion, setSeleccion] = useState(new Set());
+  const containerRef = React.useRef(null);
+
+  // Cerrar al hacer click fuera
+  useEffect(() => {
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtrados = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return materiales.slice(0, 30);
+    return materiales.filter(m => {
+      const t = `${m.nombre || ''} ${m.codigo || ''} ${m.tipo || ''}`.toLowerCase();
+      return t.includes(q);
+    }).slice(0, 30);
+  }, [materiales, query]);
+
+  const toggle = (id) => {
+    const next = new Set(seleccion);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSeleccion(next);
+  };
+
+  const aplicar = () => {
+    if (seleccion.size === 0) return;
+    const items = Array.from(seleccion).map(id => materiales.find(m => m.id === id)).filter(Boolean);
+    onAddMany(items);
+    setSeleccion(new Set());
+    setQuery('');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative" data-testid={`${testIdPrefix}-picker`}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="px-2 py-0.5 text-[10px] bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded"
+        data-testid={`${testIdPrefix}-toggle`}
+      >
+        🔍 Añadir desde catálogo
+      </button>
+      {open && (
+        <div className="absolute z-30 right-0 mt-1 w-80 bg-white border border-slate-300 rounded-lg shadow-lg p-2"
+             data-testid={`${testIdPrefix}-panel`}>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar por nombre, código o tipo..."
+            className="w-full px-2 py-1 border border-slate-200 rounded text-xs mb-2"
+            data-testid={`${testIdPrefix}-search`}
+          />
+          <div className="max-h-56 overflow-y-auto">
+            {filtrados.length === 0 && (
+              <div className="text-[11px] text-slate-400 italic px-2 py-2">Sin resultados.</div>
+            )}
+            {filtrados.map(m => {
+              const checked = seleccion.has(m.id);
+              return (
+                <label key={m.id}
+                       className={`flex items-start gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer ${checked ? 'bg-emerald-50' : ''}`}
+                       data-testid={`${testIdPrefix}-row-${m.id}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(m.id)}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1 min-w-0 text-xs">
+                    <div className="font-medium text-slate-800 truncate">{m.nombre}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      {m.codigo ? `${m.codigo} · ` : ''}{m.tipo || ''}
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+            <span className="text-[10px] text-slate-500">{seleccion.size} seleccionado(s)</span>
+            <button
+              type="button"
+              onClick={aplicar}
+              disabled={seleccion.size === 0}
+              className="px-2 py-1 text-[11px] bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-40"
+              data-testid={`${testIdPrefix}-aplicar`}
+            >
+              Añadir seleccionados ({seleccion.size})
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MontajeRiderSection = ({ evento, api, onEventChange }) => {
   // eslint-disable-next-line no-unused-vars
   const { user } = useAuth();
@@ -508,6 +618,17 @@ const MontajeRiderSection = ({ evento, api, onEventChange }) => {
                       className="px-2 py-0.5 text-[10px] bg-blue-100 hover:bg-blue-200 border border-blue-300 rounded">
                       ➕ Item
                     </button>
+                    <InventarioPicker
+                      materiales={materiales}
+                      testIdPrefix={`inv-picker-${idx}`}
+                      onAddMany={(elegidos) => {
+                        const newItems = [
+                          ...(op.items || []),
+                          ...elegidos.map(m => ({ material_id: m.id, cantidad: 1, nombre_manual: null, notas: '' })),
+                        ];
+                        opItemsPatch(idx, newItems);
+                      }}
+                    />
                   </div>
                 </div>
                 {(op.items || []).length === 0 && (
