@@ -1,0 +1,47 @@
+{
+  "summary": "Iter E3 — Bloque 'Estado de cierres' en Dashboard. Testing frontend-only sobre /app/frontend/src/pages/DashboardPage.js. Todos los casos críticos y de regresión PASAN (18/18). Probado con admin@convocatorias.com; datos actuales: 4 eventos abiertos (1 con 11 días → alerta, 3 sin alerta con 2-3 días), 0 plantilla, 0 económico.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results_detail": {
+    "T1_bloque_visible": "PASS — [data-testid=bloque-estado-cierres] presente",
+    "T2_default_expandido": "PASS — aria-expanded='true' sin localStorage previo",
+    "T3_counters_formato": "PASS — texto exacto '🟠 4 · 🟡 0 · ✅ 0'",
+    "T4_alerta_badge": "PASS — '⚠️ 1 alerta' (singular correcto cuando total=1)",
+    "T5_3_columnas_presentes": "PASS — col-abiertos, col-plantilla, col-economico visibles",
+    "T6_contadores_columna": "PASS — col-abiertos-count=4, col-plantilla-count=0, col-economico-count=0",
+    "T7_empty_states": "PASS — col-plantilla-empty='Ningún evento en esta fase.'; col-economico-empty='Ningún evento completado todavía.'",
+    "T8_tarjeta_alerta_abierto": "PASS — evento c4409142 con dias=11: bg-red-50 + border-red-300 + 🚨 + 'Hace 11 días · Pendiente de concluir'",
+    "T9_items_normales_sin_alerta": "PASS — 3 cards con días ≤3 usan border-slate-200, NO bg-red-50, sin 🚨",
+    "T10_toggle_collapse_persist": "PASS — click toggle → aria=false, col oculto, localStorage={'bloque-cierres':true}; reload conserva estado",
+    "T11_nav_abierto": "PASS — click cierre-abierto-{id} navega a /plantillas-definitivas",
+    "T13_orden_DESC_dias": "PASS — [11, 3, 3, 2] orden descendente correcto",
+    "T14_regresion_bloques_previos": "PASS — bloque-1/2/3/4 y toggles siguen funcionando con aria-expanded=true",
+    "T15_regresion_localStorage_merge": "PASS — localStorage sin key 'bloque-cierres' se mergea con defaults sin romper",
+    "T16_error_API_500": "PASS — con mock 500, aparece [data-testid=cierres-error] 'No se pudo cargar el estado de cierres.' y otros bloques intactos",
+    "T17_col_plantilla_alerta": "N/A (no hay eventos en col-plantilla; main agent puede verificar vía POST concluir-plantilla si desea)",
+    "T18_mas_de_10_items_link": "N/A (solo 4 abiertos; lógica cAbierto>10 correcta en código)"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "OK — default 'bloque-cierres': false garantiza expandido sin localStorage previo. Merge con ...defaults es correcto.",
+    "OK — useEffect con [api] dep: re-ejecuta si api cambia. Sin race condition observada.",
+    "OK — orden DESC implementado con sort((a,b) => b.dias-a.dias). economico ordenado por cerrado_economico_at desc.",
+    "OK — empty states: 'Ningún evento en esta fase.' cubre abierto y plantilla (texto idéntico), economico tiene texto distinto 'Ningún evento completado todavía.' según spec.",
+    "Pequeña nota (no crítica): pluralización '0 alertas' se mostraría también si totalAlertas=0 nunca se renderiza (condición >0 correcta). Para totalAlertas=1 sale 'alerta' (singular) y >=2 'alertas' — OK.",
+    "OK — navegación con <button> no <a>: bien para accesibilidad y onClick.",
+    "Sugerencia menor (no bloqueante): en Col 3 (económico) no hay alerta visual pero sí aria-hidden en ✓. Correcto."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (no testeado por scope)", "frontend": "100% (16/16 casos ejecutables PASS; 2 N/A por ausencia de datos pero código revisado)"},
+  "test_credentials": "admin@convocatorias.com / Admin123!",
+  "seed_data_creation": "Ninguno; datos existentes del entorno (4 eventos abiertos) suficientes para validar los escenarios con/sin alerta en col-abiertos",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter E3 PASA. Si en futuras iters se añaden eventos en col-plantilla, verificar la ruta de alerta (>7 días) usando POST /api/gestor/eventos/{id}/concluir-plantilla + manipulación manual de cerrado_plantilla_at. Datos actuales: 'Concierto de Navidad' (c4409142) tiene 11 días abierto y es el único en alerta.",
+  "rca of the issue": "N/A — no se encontraron bugs."
+}

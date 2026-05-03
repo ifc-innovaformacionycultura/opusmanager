@@ -11,13 +11,21 @@ const DashboardPage = () => {
   const [recentEvents, setRecentEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [pendientes, setPendientes] = useState(null);
+  // Iter E3 · Estado de cierres del ciclo de vida de eventos.
+  const [cierres, setCierres] = useState(null);
+  const [cierresErr, setCierresErr] = useState(false);
   // Iter 30 · Colapsar/expandir bloques con persistencia en localStorage
+  // Iter E3 · 'bloque-cierres' añadido con default seguro FALSE (expandido).
   const [collapsed, setCollapsed] = useState(() => {
+    const defaults = {
+      'bloque-1': false, 'bloque-2': false, 'bloque-3': false,
+      'bloque-cierres': false, 'bloque-4': false,
+    };
     try {
       const raw = localStorage.getItem('dashboard_bloques_collapsed');
-      if (raw) return JSON.parse(raw);
+      if (raw) return { ...defaults, ...JSON.parse(raw) };
     } catch { /* noop */ }
-    return { 'bloque-1': false, 'bloque-2': false, 'bloque-3': false, 'bloque-4': false };
+    return defaults;
   });
   useEffect(() => {
     try { localStorage.setItem('dashboard_bloques_collapsed', JSON.stringify(collapsed)); } catch { /* noop */ }
@@ -43,6 +51,55 @@ const DashboardPage = () => {
         // Marcar acceso actual (después de cargar contadores)
         await api.post('/api/gestor/marcar-acceso');
       } catch (e) { /* noop */ }
+    })();
+  }, [api]);
+
+  // Iter E3 · Cargar estado de cierres reusando GET /gestion-economica.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get('/api/gestor/gestion-economica');
+        const evs = r.data?.eventos || [];
+        const hoyMs = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+        const diasDesde = (iso) => {
+          if (!iso) return null;
+          const t = new Date(iso).getTime();
+          if (Number.isNaN(t)) return null;
+          return Math.floor((hoyMs - t) / 86400000);
+        };
+        const abierto = [];
+        const plantilla = [];
+        const economico = [];
+        for (const ev of evs) {
+          const ec = ev.estado_cierre || 'abierto';
+          if (ec === 'abierto') {
+            const d = diasDesde(ev.fecha_inicio);
+            if (d !== null && d >= 0) {
+              abierto.push({ id: ev.id, nombre: ev.nombre, dias: d, alerta: d > 3 });
+            }
+          } else if (ec === 'cerrado_plantilla') {
+            const d = diasDesde(ev.cerrado_plantilla_at) ?? diasDesde(ev.fecha_inicio);
+            plantilla.push({
+              id: ev.id, nombre: ev.nombre, dias: d ?? 0, alerta: (d ?? 0) > 7,
+            });
+          } else if (ec === 'cerrado_economico') {
+            economico.push({
+              id: ev.id, nombre: ev.nombre,
+              cerrado_economico_at: ev.cerrado_economico_at,
+              fecha_inicio: ev.fecha_inicio,
+            });
+          }
+        }
+        // Orden DESC por días (más antiguos / urgentes primero).
+        abierto.sort((a, b) => b.dias - a.dias);
+        plantilla.sort((a, b) => b.dias - a.dias);
+        // Económico cerrado: más recientes primero.
+        economico.sort((a, b) => String(b.cerrado_economico_at || '').localeCompare(String(a.cerrado_economico_at || '')));
+        setCierres({ abierto, plantilla, economico });
+        setCierresErr(false);
+      } catch (e) {
+        setCierresErr(true);
+      }
     })();
   }, [api]);
 
@@ -282,6 +339,200 @@ const DashboardPage = () => {
         </div>
         )}
       </section>
+
+      {/* ═══════════ BLOQUE E3 — Estado de cierres ═══════════ */}
+      {(() => {
+        const totalAlertas =
+          (cierres?.abierto?.filter(x => x.alerta).length || 0) +
+          (cierres?.plantilla?.filter(x => x.alerta).length || 0);
+        const cAbierto = cierres?.abierto?.length || 0;
+        const cPlantilla = cierres?.plantilla?.length || 0;
+        const cEconomico = cierres?.economico?.length || 0;
+        return (
+          <section className="bg-emerald-50 rounded-xl p-4 mb-4" data-testid="bloque-estado-cierres">
+            <button
+              type="button"
+              onClick={() => toggle('bloque-cierres')}
+              data-testid="toggle-bloque-cierres"
+              className="w-full flex items-center justify-between text-left mb-3 hover:opacity-80 transition"
+              aria-expanded={!collapsed['bloque-cierres']}
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-base font-bold text-gray-800">Estado de cierres</h2>
+                  {cierres && (
+                    <span className="text-xs text-slate-600 font-mono" data-testid="cierres-counters">
+                      🟠 {cAbierto} · 🟡 {cPlantilla} · ✅ {cEconomico}
+                    </span>
+                  )}
+                  {totalAlertas > 0 && (
+                    <span
+                      data-testid="cierres-alerta-badge"
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-800 border border-red-200"
+                    >
+                      ⚠️ {totalAlertas} alerta{totalAlertas !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500">Ciclo de vida de los eventos: abierto → concluido → económico cerrado</p>
+              </div>
+              <span className={`text-gray-500 text-sm transform transition-transform ${collapsed['bloque-cierres'] ? '' : 'rotate-90'}`}>▶</span>
+            </button>
+
+            {!collapsed['bloque-cierres'] && (
+              <>
+                {cierresErr && (
+                  <div data-testid="cierres-error" className="bg-white rounded-lg border border-slate-200 p-4 text-sm text-slate-500 text-center">
+                    No se pudo cargar el estado de cierres.
+                  </div>
+                )}
+                {!cierresErr && !cierres && (
+                  <div data-testid="cierres-loading" className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className="bg-white rounded-lg border border-slate-200 p-4 animate-pulse h-44" />
+                    ))}
+                  </div>
+                )}
+                {!cierresErr && cierres && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Col 1 — Abiertos pendientes de concluir */}
+                    <div className="bg-white rounded-lg border border-slate-200 overflow-hidden" data-testid="col-abiertos">
+                      <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-amber-900 uppercase">🟠 Pendientes de concluir</span>
+                        <span className="text-base font-mono font-bold text-amber-900" data-testid="col-abiertos-count">{cAbierto}</span>
+                      </div>
+                      <div className="p-3 space-y-2 min-h-[110px]">
+                        {cAbierto === 0 && (
+                          <p className="text-xs text-slate-400 text-center py-6" data-testid="col-abiertos-empty">
+                            Ningún evento en esta fase.
+                          </p>
+                        )}
+                        {cierres.abierto.slice(0, 10).map(it => (
+                          <button
+                            key={it.id}
+                            type="button"
+                            onClick={() => navigate('/plantillas-definitivas')}
+                            data-testid={`cierre-abierto-${it.id}`}
+                            className={`w-full text-left p-2 rounded-md border transition hover:bg-slate-50 ${
+                              it.alerta
+                                ? 'bg-red-50 border-red-300 hover:bg-red-100'
+                                : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-sm font-medium text-slate-900 truncate">{it.nombre}</span>
+                              {it.alerta && <span className="text-base leading-none" aria-label="alerta">🚨</span>}
+                            </div>
+                            <p className={`text-[11px] mt-0.5 ${it.alerta ? 'text-red-700 font-semibold' : 'text-slate-500'}`}>
+                              Hace {it.dias} día{it.dias !== 1 ? 's' : ''}
+                              {it.alerta && ' · Pendiente de concluir'}
+                            </p>
+                          </button>
+                        ))}
+                        {cAbierto > 10 && (
+                          <button
+                            onClick={() => navigate('/plantillas-definitivas')}
+                            className="w-full text-xs text-amber-700 hover:text-amber-900 underline pt-1"
+                          >
+                            …y {cAbierto - 10} más →
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Col 2 — Concluidos pendientes de cerrar económico */}
+                    <div className="bg-white rounded-lg border border-slate-200 overflow-hidden" data-testid="col-plantilla">
+                      <div className="px-3 py-2 bg-amber-100 border-b border-amber-200 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-amber-900 uppercase">🟡 Pendientes de cerrar económico</span>
+                        <span className="text-base font-mono font-bold text-amber-900" data-testid="col-plantilla-count">{cPlantilla}</span>
+                      </div>
+                      <div className="p-3 space-y-2 min-h-[110px]">
+                        {cPlantilla === 0 && (
+                          <p className="text-xs text-slate-400 text-center py-6" data-testid="col-plantilla-empty">
+                            Ningún evento en esta fase.
+                          </p>
+                        )}
+                        {cierres.plantilla.slice(0, 10).map(it => (
+                          <button
+                            key={it.id}
+                            type="button"
+                            onClick={() => navigate('/asistencia/pagos')}
+                            data-testid={`cierre-plantilla-${it.id}`}
+                            className={`w-full text-left p-2 rounded-md border transition hover:bg-slate-50 ${
+                              it.alerta
+                                ? 'bg-red-50 border-red-300 hover:bg-red-100'
+                                : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-sm font-medium text-slate-900 truncate">{it.nombre}</span>
+                              {it.alerta && <span className="text-base leading-none" aria-label="alerta">🚨</span>}
+                            </div>
+                            <p className={`text-[11px] mt-0.5 ${it.alerta ? 'text-red-700 font-semibold' : 'text-slate-500'}`}>
+                              Concluido hace {it.dias} día{it.dias !== 1 ? 's' : ''}
+                              {it.alerta && ' · Cerrar económico'}
+                            </p>
+                          </button>
+                        ))}
+                        {cPlantilla > 10 && (
+                          <button
+                            onClick={() => navigate('/asistencia/pagos')}
+                            className="w-full text-xs text-amber-800 hover:text-amber-900 underline pt-1"
+                          >
+                            …y {cPlantilla - 10} más →
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Col 3 — Económico cerrado (completados) */}
+                    <div className="bg-white rounded-lg border border-slate-200 overflow-hidden" data-testid="col-economico">
+                      <div className="px-3 py-2 bg-emerald-100 border-b border-emerald-200 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-emerald-900 uppercase">✅ Económico cerrado</span>
+                        <span className="text-base font-mono font-bold text-emerald-900" data-testid="col-economico-count">{cEconomico}</span>
+                      </div>
+                      <div className="p-3 space-y-2 min-h-[110px]">
+                        {cEconomico === 0 && (
+                          <p className="text-xs text-slate-400 text-center py-6" data-testid="col-economico-empty">
+                            Ningún evento completado todavía.
+                          </p>
+                        )}
+                        {cierres.economico.slice(0, 5).map(it => (
+                          <button
+                            key={it.id}
+                            type="button"
+                            onClick={() => navigate('/asistencia/pagos')}
+                            data-testid={`cierre-economico-${it.id}`}
+                            className="w-full text-left p-2 rounded-md border bg-white border-emerald-100 hover:bg-emerald-50 transition"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-sm font-medium text-slate-900 truncate">{it.nombre}</span>
+                              <span className="text-emerald-600 text-base leading-none" aria-hidden>✓</span>
+                            </div>
+                            {it.cerrado_economico_at && (
+                              <p className="text-[11px] mt-0.5 text-slate-500">
+                                Cerrado el {new Date(it.cerrado_economico_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </p>
+                            )}
+                          </button>
+                        ))}
+                        {cEconomico > 5 && (
+                          <button
+                            onClick={() => navigate('/asistencia/pagos')}
+                            className="w-full text-xs text-emerald-700 hover:text-emerald-900 underline pt-1"
+                          >
+                            …y {cEconomico - 5} más →
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        );
+      })()}
 
       {/* ═══════════ BLOQUE 4 — Estado del sistema ═══════════ */}
       <section className="bg-gray-50 rounded-xl p-4 mb-4" data-testid="bloque-estado-sistema">
