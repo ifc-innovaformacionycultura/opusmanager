@@ -3,7 +3,7 @@
 // en una vista previa de solo lectura (iframe con marco de smartphone).
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { Eye, Search, ExternalLink, RotateCw, Smartphone, UserCircle2 } from "lucide-react";
+import { Eye, Search, ExternalLink, RotateCw, Smartphone, UserCircle2, Menu } from "lucide-react";
 
 const avatarColors = [
   "bg-rose-500", "bg-amber-500", "bg-emerald-500", "bg-sky-500",
@@ -31,6 +31,16 @@ const PreviewMusico = () => {
   const [countdown, setCountdown] = useState("");
   const [generando, setGenerando] = useState(false);
   const [horaActual, setHoraActual] = useState(new Date());
+  // Iter C · 3A — tamaño frame responsivo + sidebar colapsable en pantallas estrechas
+  const [viewportW, setViewportW] = useState(typeof window !== 'undefined' ? window.innerWidth : 1400);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  useEffect(() => {
+    const onResize = () => setViewportW(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  useEffect(() => { setSidebarOpen(viewportW >= 1200); }, [viewportW]);
+  const frameSize = viewportW < 1400 ? { w: 375, h: 812 } : { w: 414, h: 896 };
 
   const isAdmin = useMemo(() => {
     const rol = user?.rol || user?.profile?.rol;
@@ -117,9 +127,22 @@ const PreviewMusico = () => {
   const color = (m) => avatarColors[Math.abs((m.id || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
 
   return (
-    <div className="flex h-[calc(100vh-64px)] bg-slate-100" data-testid="preview-musico-page">
+    <div className="flex h-[calc(100vh-64px)] bg-slate-100 relative" data-testid="preview-musico-page" style={{ overflow: 'hidden' }}>
+      {/* Botón toggle sidebar (solo en pantallas estrechas < 1200px) */}
+      {viewportW < 1200 && (
+        <button
+          onClick={() => setSidebarOpen(o => !o)}
+          data-testid="preview-toggle-sidebar"
+          className="absolute top-3 left-3 z-30 bg-slate-900 text-white px-3 py-2 rounded text-xs font-medium inline-flex items-center gap-1.5 shadow-lg hover:bg-slate-700"
+        >
+          <Menu className="w-4 h-4"/> {sidebarOpen ? 'Ocultar' : '☰ Músicos'}
+        </button>
+      )}
       {/* Panel izquierdo */}
-      <aside className="w-[320px] bg-slate-50 border-r border-slate-200 flex flex-col">
+      <aside
+        className={`w-[320px] bg-slate-50 border-r border-slate-200 flex flex-col transition-all duration-200 ${sidebarOpen ? '' : 'hidden'}`}
+        data-testid="preview-sidebar"
+      >
         <div className="p-4 border-b border-slate-200">
           <h1 className="text-lg font-bold text-slate-900 inline-flex items-center gap-2">
             <Eye className="w-5 h-5"/> Vista previa portal músico
@@ -193,10 +216,10 @@ const PreviewMusico = () => {
       </aside>
 
       {/* Panel derecho con smartphone frame */}
-      <main className="flex-1 flex items-center justify-center p-6 bg-[#1a1a1a] overflow-auto">
-        <div className="relative" style={{ width: 414, height: 896 }}>
+      <main className="flex-1 flex items-center justify-center p-6 bg-[#1a1a1a]" style={{ overflow: 'hidden', maxHeight: 'calc(100vh - 64px)' }}>
+        <div className="relative" style={{ width: frameSize.w, height: frameSize.h, maxHeight: 'calc(100vh - 120px)' }}>
           {/* Frame iPhone */}
-          <div className="absolute inset-0 bg-black rounded-[48px] p-[12px] shadow-2xl border border-slate-700">
+          <div className="absolute inset-0 bg-black rounded-[48px] p-[12px] shadow-2xl border border-slate-700" style={{ overflow: 'hidden' }}>
             <div className="absolute top-2 left-1/2 -translate-x-1/2 w-32 h-6 bg-black rounded-full z-20 flex items-center justify-center">
               <div className="w-16 h-1.5 bg-slate-800 rounded-full"/>
             </div>

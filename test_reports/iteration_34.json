@@ -1,0 +1,34 @@
+{
+  "summary": "Iter C+G testing — 3A responsive PreviewMusico + 3B ConvocatoriasTab inline + punto 18 seed data + 1B fichaje QR UI. BACKEND 5/5 PASS (admin recibos Jesús 300/45/255 publicado=true, admin certificado 8h temporada 2025-2026 publicado=true, portal músico mi-historial recibos & certificados, fichaje entrada token inválido devuelve 400/404 con detail). FRONTEND 3A OK (toggle visible en 1100, oculto en 1920; sidebar con clase hidden por defecto <1200; click toggle muestra/oculta; frame width 375 en viewport 1280, 414 en viewport 1920). FRONTEND 3B OK (6 tarjetas de eventos clickables, click abre detalle inline sameParent=True detNext=True, click en otra colapsa la primera y abre la segunda, click mismo colapsa, maxHeight transition 0↔2000px). FRONTEND 1B: no E2E reproducible porque Jesús Alonso no tiene ensayos asignados en BD (mis-eventos vacío) → panel fichaje-qr-panel no se renderiza (código correcto, itera sobre ensayos). Componentes verificados por code review: BotonFichajeQR.js tiene data-testid fichaje-botones/btn-fichaje-qr-entrada/salida/fichaje-alerta-salida; EscanerQRModal.js tiene data-testid escaner-qr-modal/escaner-video. jsqr instalado. Regresión /admin/musicos = 15 OK.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter_c_g.py",
+    "/app/test_reports/pytest/iter_c_g.xml"
+  ],
+  "action_items": [
+    "[INFO] Endpoints PDF de recibos/certificados no se probaron — no es bug nuevo; el main agent indicó que si existen 404 es informativo. Documentar en PRD cuál es el path real (p.ej. /api/gestor/documentos/recibos/{id}/pdf) o eliminar botones de descarga en UI si aún no están implementados.",
+    "[INFO] 1B fichaje UI no es E2E reproducible con Jesús Alonso porque /api/portal/mis-eventos devuelve vacío para su usuario → panel 'fichaje-qr-panel' no se monta. Para validar visualmente el flujo completo (modal cámara + alerta naranja >30min), asignar un ensayo de prueba con evento.fecha_inicio próxima y dos ensayos (uno futuro para entrada verde, uno pasado hace >30min con entrada registrada para alerta naranja).",
+    "[INFO] Durante Playwright se observaron errores 403 en /api/gestor/dashboard al cargar — pre-existentes iteraciones anteriores (iter32), probablemente bug StrictMode hook mountedRef o carrera sesión/token tras login. No afectó los endpoints clave de esta iteración."
+  ],
+  "critical_code_review_comments": [
+    "PreviewMusico.js: responsividad correcta. Umbral 1400 para switch 375↔414 alineado con requisito. Frame con maxHeight: calc(100vh - 120px) ajusta altura en viewports bajos (en 900 de alto, el frame se limita a 780 en lugar de 812) — correcto para evitar recortes pero diverge del valor nominal 812; si se quiere fijar 812, aumentar viewport height mínimo de la ventana. overflow:hidden OK.",
+    "PortalPreviewFrame.js ConvocatoriasTab: expandedEventId usa ev.asignacion_id como clave pero data-testid usa ev.evento?.id — si un mismo evento tuviera dos asignaciones, el testid colisionaría (poco probable en este contexto).",
+    "BotonFichajeQR.js (code review): data-testid correctos, altura mínima 56px via clases tailwind. Color verde (entrada) / azul (salida) correcto. useEffect para polling de estado con cleanup correcto.",
+    "EscanerQRModal.js (code review): decodificación por frame con jsQR y cleanup de tracks en unmount/close OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_c_g.py (NUEVO)",
+    "/app/test_reports/pytest/iter_c_g.xml (NUEVO)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 pytest; 1 skipped por falta de ensayos en BD para Jesús)",
+    "frontend": "100% en 3A y 3B (Playwright). 1B no E2E reproducible por datos; componentes verificados via code review + jsQR instalado OK."
+  },
+  "test_credentials": "admin@convocatorias.com/Admin123! OK, jesusalonsodirector@gmail.com/Musico123! OK",
+  "seed_data_creation": "No se creó seed durante el test. SQL ya ejecutado por el usuario: 1 recibo y 1 certificado para Jesús Alonso. Verificado via backend pytest.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend de documentos + portal mi-historial + fichaje-entrada-token-invalido cubiertos por test_iter_c_g.py. Regresión preview-musico 3A + ConvocatoriasTab 3B validada via Playwright. Para testear 1B end-to-end con QR real/alerta naranja, asignar ensayos a Jesús Alonso con horarios controlados (uno futuro para entrada, uno pasado >30min con entrada registrada para alerta salida-pendiente).",
+  "rca of the issue": "No bugs encontrados. Punto 1B no reproducible por ausencia de ensayos asignados a Jesús en BD — no es defecto del código; el componente iteración-por-ensayo es correcto."
+}

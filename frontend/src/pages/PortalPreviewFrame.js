@@ -54,40 +54,66 @@ const DisponibilidadPill = ({ disp }) => {
 };
 
 const ConvocatoriasTab = ({ eventos }) => {
+  // Iter C · 3B — expansión inline: solo una tarjeta abierta a la vez; detalle se renderiza debajo.
+  const [expandedEventId, setExpandedEventId] = useState(null);
   if (!eventos || eventos.length === 0) return <div className="text-sm text-slate-500 italic px-4 py-3">No hay convocatorias publicadas para este músico.</div>;
   return (
     <div className="space-y-3 pb-24">
-      {eventos.map((ev) => (
-        <div key={ev.asignacion_id} className="mx-4 bg-white border border-slate-200 rounded-xl p-3 shadow-sm" data-testid={`preview-evento-${ev.evento?.id}`}>
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="font-bold text-slate-900 text-sm truncate">{ev.evento?.nombre || "—"}</h3>
-              <div className="text-xs text-slate-600 flex items-center gap-2 mt-0.5">
-                {ev.evento?.fecha_inicio && <span>{(ev.evento.fecha_inicio || "").slice(0,10)}</span>}
-                {ev.evento?.lugar && <span className="inline-flex items-center gap-0.5"><MapPin className="w-3 h-3"/> {ev.evento.lugar}</span>}
+      {eventos.map((ev) => {
+        const isOpen = expandedEventId === ev.asignacion_id;
+        return (
+        <div key={ev.asignacion_id} className="mx-4" data-testid={`preview-evento-${ev.evento?.id}`}>
+          <button
+            type="button"
+            onClick={() => setExpandedEventId(isOpen ? null : ev.asignacion_id)}
+            data-testid={`preview-evento-toggle-${ev.evento?.id}`}
+            className={`w-full text-left bg-white border rounded-xl p-3 shadow-sm transition ${isOpen ? 'border-purple-300 ring-2 ring-purple-100' : 'border-slate-200 hover:border-slate-300'}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="font-bold text-slate-900 text-sm truncate">{ev.evento?.nombre || "—"}</h3>
+                <div className="text-xs text-slate-600 flex items-center gap-2 mt-0.5">
+                  {ev.evento?.fecha_inicio && <span>{(ev.evento.fecha_inicio || "").slice(0,10)}</span>}
+                  {ev.evento?.lugar && <span className="inline-flex items-center gap-0.5"><MapPin className="w-3 h-3"/> {ev.evento.lugar}</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Badge tone="purple">{ev.estado_asignacion || "—"}</Badge>
+                <span className={`text-slate-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▶</span>
               </div>
             </div>
-            <Badge tone="purple">{ev.estado_asignacion || "—"}</Badge>
-          </div>
+          </button>
 
-          {(ev.ensayos || []).length > 0 && (
-            <div className="mt-2 border-t border-slate-100 pt-2">
-              <div className="text-[11px] font-semibold text-slate-600 mb-1">Ensayos y funciones</div>
-              <div className="divide-y divide-slate-100">
-                {ev.ensayos.map((e) => (
-                  <div key={e.id} className="py-1.5 flex items-center justify-between gap-2">
-                    <div className="text-xs text-slate-800">
-                      <span className="font-medium">{(e.tipo || "ensayo") === "ensayo" ? "🎼" : "🎭"} {(e.fecha || "").slice(0,10)}</span>
-                      <span className="text-slate-500 ml-1">{(e.hora || e.hora_inicio || "").slice(0,5)}</span>
+          {/* Detalle expandido inline, justo debajo de la tarjeta */}
+          <div
+            className="overflow-hidden transition-all duration-300"
+            style={{ maxHeight: isOpen ? 2000 : 0 }}
+            data-testid={`preview-evento-detalle-${ev.evento?.id}`}
+          >
+            {isOpen && (ev.ensayos || []).length > 0 && (
+              <div className="bg-purple-50/40 border border-purple-100 border-t-0 rounded-b-xl -mt-1 p-3">
+                <div className="text-[11px] font-semibold text-purple-900 mb-1">Ensayos y funciones</div>
+                <div className="divide-y divide-purple-100">
+                  {ev.ensayos.map((e) => (
+                    <div key={e.id} className="py-1.5 flex items-center justify-between gap-2">
+                      <div className="text-xs text-slate-800">
+                        <span className="font-medium">{(e.tipo || "ensayo") === "ensayo" ? "🎼" : "🎭"} {(e.fecha || "").slice(0,10)}</span>
+                        <span className="text-slate-500 ml-1">{(e.hora || e.hora_inicio || "").slice(0,5)}</span>
+                      </div>
+                      <DisponibilidadPill disp={e.mi_disponibilidad}/>
                     </div>
-                    <DisponibilidadPill disp={e.mi_disponibilidad}/>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            {isOpen && (!(ev.ensayos || []).length) && (
+              <div className="bg-purple-50/40 border border-purple-100 border-t-0 rounded-b-xl -mt-1 p-3 text-xs text-slate-500 italic">
+                Sin ensayos registrados.
+              </div>
+            )}
+          </div>
         </div>
-      ))}
+      );})}
     </div>
   );
 };

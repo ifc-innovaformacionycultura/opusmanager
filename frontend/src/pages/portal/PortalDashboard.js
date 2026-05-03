@@ -11,6 +11,7 @@ import MiDisponibilidadPanel from './MiDisponibilidadPanel';
 import LogisticaMusicoPanel from './LogisticaMusicoPanel';
 import ComidasMusicoPanel from './ComidasMusicoPanel';
 import FichajeMusicoPanel from './FichajeMusicoPanel';
+import BotonFichajeQR from '../../components/portal/BotonFichajeQR';
 import FeedbackButton from '../../components/FeedbackButton';
 import PushPermissionPrompt from '../../components/PushPermissionPrompt';
 import PerfilCompletitudAlerts from '../../components/PerfilCompletitudAlerts';
@@ -459,6 +460,22 @@ const PortalDashboard = () => {
                       ensayos={eventoSeleccionado.ensayos || []}
                       onSaved={() => cargarMisEventos(true)}
                     />
+                  )}
+
+                  {/* Iter C · Punto 1B — Botón prominente fichaje QR por ensayo */}
+                  {(eventoSeleccionado.ensayos || []).length > 0 && user && (
+                    <div className="bg-white p-5 rounded-lg shadow-sm border border-slate-200 space-y-3" data-testid="fichaje-qr-panel">
+                      <h3 className="text-lg font-semibold text-slate-900">📷 Fichaje de asistencia</h3>
+                      <p className="text-xs text-slate-500">Escanea el código QR que muestra el gestor al inicio y al final de cada ensayo.</p>
+                      {(eventoSeleccionado.ensayos || []).map((en) => (
+                        <div key={en.id} className="border border-slate-100 rounded-lg p-3 bg-slate-50">
+                          <div className="text-sm font-medium text-slate-800 mb-2">
+                            {en.tipo === 'funcion' ? '🎭' : '🎼'} {(en.fecha || '').slice(0,10)} · {(en.hora_inicio || en.hora || '').slice(0,5)}–{(en.hora_fin || '').slice(0,5)}
+                          </div>
+                          <BotonFichajeQR ensayo={en} musicoId={user.profile?.id || user.id}/>
+                        </div>
+                      ))}
+                    </div>
                   )}
 
                   {/* Fichaje QR (Bloque 2E) */}
